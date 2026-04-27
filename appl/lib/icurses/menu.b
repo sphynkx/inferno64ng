@@ -42,6 +42,22 @@ init()
 	view = load IcView IcView->PATH;
 	if(view == nil)
 		raise "fail:load icview";
+
+	#
+	# IcMenu calls back into IcUi helpers such as canvas(), shadowwindow(),
+	# canvasclear(), and canvasputs().
+	#
+	# This private IcUi module instance must be initialized before any such
+	# call. Without this, IcUi's internal module variables remain nil and
+	# menu->navbar()/popupmenu() can crash the native emulator on MinGW.
+	#
+	ui->init();
+
+	#
+	# IcMenu also uses IcView helpers directly for find()/setargs().
+	# Keep this module instance initialized too.
+	#
+	view->init();
 }
 
 newitem(label, hotkey, targetid, command: string): IcMenu->Item
