@@ -6,14 +6,6 @@ sys: Sys;
 ui: IcUi;
 view: IcView;
 
-CodeMenu: con "0;30;47";
-CodeSelect: con "1;37;44";
-CodeDisabled: con "0;30;47";
-CodeBar: con "1;37;44";
-CodeBarSelect: con "1;33;41";
-CodeAction: con "1;30;47";
-CodeActionSelect: con "1;37;44";
-
 setflag: fn(it: IcMenu->Item, flag, on: int): IcMenu->Item;
 hasflag: fn(it: IcMenu->Item, flag: int): int;
 
@@ -25,8 +17,10 @@ padright: fn(s: string, w: int): string;
 itemcount: fn(items: array of IcMenu->Item): int;
 itemwidth: fn(it: IcMenu->Item): int;
 popupitemline: fn(it: IcMenu->Item, w, selected: int): string;
-baritemtext: fn(it: IcMenu->Item): string;
+baritemtext: fn(it: IcMenu->Item, selected: int): string;
 
+ensurelabel: fn(u: ref IcUi->Ui, parentid, id: string, x, y, w: int, text: string): int;
+hidelabel: fn(u: ref IcUi->Ui, id: string);
 drawbar: fn(u: ref IcUi->Ui, id: string, items: array of IcMenu->Item, sel: int, action: int): int;
 
 init()
@@ -44,18 +38,13 @@ init()
 		raise "fail:load icview";
 
 	#
-	# IcMenu calls back into IcUi helpers such as canvas(), shadowwindow(),
-	# canvasclear(), and canvasputs().
-	#
-	# This private IcUi module instance must be initialized before any such
-	# call. Without this, IcUi's internal module variables remain nil and
-	# menu->navbar()/popupmenu() can crash the native emulator on MinGW.
+	# IcMenu calls IcUi helper functions. Its private IcUi module instance
+	# must be initialized before use.
 	#
 	ui->init();
 
 	#
-	# IcMenu also uses IcView helpers directly for find()/setargs().
-	# Keep this module instance initialized too.
+	# IcMenu also manipulates nodes directly through IcView helpers.
 	#
 	view->init();
 }
@@ -325,17 +314,63 @@ popupitemline(it: IcMenu->Item, w, selected: int): string
 	if(bodyw < 0)
 		bodyw = 0;
 
-	s = prefix + mark + padright(it.label, bodyw) + tail;
+	if(!enabled(it) && !separator(it))
+		s = prefix + mark + padright("(" + it.label + ")", bodyw) + tail;
+	else
+		s = prefix + mark + padright(it.label, bodyw) + tail;
 
 	return clip(s, w);
 }
 
-baritemtext(it: IcMenu->Item): string
+baritemtext(it: IcMenu->Item, selected: int): string
 {
-	if(it.hotkey != "")
-		return " " + it.hotkey + " " + it.label + " ";
+	s: string;
 
-	return " " + it.label + " ";
+	if(it.hotkey != "")
+		s = it.hotkey + " " + it.label;
+	else
+		s = it.label;
+
+	if(selected)
+		return ">" + s + "<";
+
+	return " " + s + " ";
+}
+
+ensurelabel(u: ref IcUi->Ui, parentid, id: string, x, y, w: int, text: string): int
+{
+	n: ref IcView->Node;
+
+	if(u == nil || u.tree == nil)
+		return -1;
+
+	if(w <= 0)
+		w = 1;
+
+	n = view->find(u.tree, id);
+	if(n == nil)
+		return ui->label(u, parentid, id, x, y, w, text);
+
+	view->settext(n, text);
+	view->setbounds(n, x, y, w, 1);
+	view->show(n);
+
+	return 0;
+}
+
+hidelabel(u: ref IcUi->Ui, id: string)
+{
+	n: ref IcView->Node;
+
+	if(u == nil || u.tree == nil)
+		return;
+
+	n = view->find(u.tree, id);
+	if(n == nil)
+		return;
+
+	view->settext(n, "");
+	view->hide(n);
 }
 
 popupmenu(u: ref IcUi->Ui, parentid, id: string, x, y, w: int, title: string, items: array of IcMenu->Item, sel: int): int
@@ -362,17 +397,14 @@ popupmenu(u: ref IcUi->Ui, parentid, id: string, x, y, w: int, title: string, it
 	if(ui->shadowwindow(u, parentid, id, x, y, w, h, title, 2, 1) < 0)
 		return -1;
 
-	if(ui->canvas(u, id, id + ".cv", 1, 1, w - 2, h - 2) < 0)
-		return -1;
-
 	return setpopupmenu(u, id, items, sel);
 }
 
 setpopupmenu(u: ref IcUi->Ui, id: string, items: array of IcMenu->Item, sel: int): int
 {
 	n: ref IcView->Node;
-	cv, line, code: string;
-	rows, cols, i, count: int;
+	line, rowid: string;
+	rows, cols, i, count, oldcount, maxold: int;
 
 	if(u == nil || u.tree == nil)
 		return -1;
@@ -381,20 +413,29 @@ setpopupmenu(u: ref IcUi->Ui, id: string, items: array of IcMenu->Item, sel: int
 	if(n == nil)
 		return -1;
 
-	cv = id + ".cv";
-
 	rows = n.h - 2;
 	cols = n.w - 2;
 
 	if(rows <= 0 || cols <= 0)
 		return -1;
 
-	if(ui->canvasclear(u, cv, " ", CodeMenu) < 0)
-		return -1;
-
 	count = itemcount(items);
+	oldcount = n.iarg2;
+	maxold = oldcount;
+	if(maxold < rows)
+		maxold = rows;
+	if(maxold < count)
+		maxold = count;
+
+	for(i = 0; i < maxold; i++){
+		rowid = id + ".row." + sys->sprint("%d", i);
+		if(i >= rows || i >= count)
+			hidelabel(u, rowid);
+	}
+
 	if(count <= 0){
-		ui->canvasputs(u, cv, 0, 0, "(empty)", CodeDisabled);
+		rowid = id + ".row.0";
+		ensurelabel(u, id, rowid, 1, 1, cols, padright("(empty)", cols));
 		view->setargs(n, "", 0, -1, 0);
 		return 0;
 	}
@@ -405,15 +446,9 @@ setpopupmenu(u: ref IcUi->Ui, id: string, items: array of IcMenu->Item, sel: int
 		sel = count - 1;
 
 	for(i = 0; i < rows && i < count; i++){
-		if(i == sel && enabled(items[i]))
-			code = CodeSelect;
-		else if(!enabled(items[i]))
-			code = CodeDisabled;
-		else
-			code = CodeMenu;
-
+		rowid = id + ".row." + sys->sprint("%d", i);
 		line = popupitemline(items[i], cols, i == sel);
-		ui->canvasputs(u, cv, 0, i, line, code);
+		ensurelabel(u, id, rowid, 1, 1 + i, cols, line);
 	}
 
 	view->setargs(n, "", 0, sel, count);
@@ -428,7 +463,7 @@ navbar(u: ref IcUi->Ui, parentid, id: string, x, y, w: int, items: array of IcMe
 	if(w <= 0)
 		w = 1;
 
-	if(ui->canvas(u, parentid, id, x, y, w, 1) < 0)
+	if(ui->group(u, parentid, id, x, y, w, 1) < 0)
 		return -1;
 
 	return setnavbar(u, id, items, sel);
@@ -447,7 +482,7 @@ actionbar(u: ref IcUi->Ui, parentid, id: string, x, y, w: int, items: array of I
 	if(w <= 0)
 		w = 1;
 
-	if(ui->canvas(u, parentid, id, x, y, w, 1) < 0)
+	if(ui->group(u, parentid, id, x, y, w, 1) < 0)
 		return -1;
 
 	return setactionbar(u, id, items, sel);
@@ -461,8 +496,10 @@ setactionbar(u: ref IcUi->Ui, id: string, items: array of IcMenu->Item, sel: int
 drawbar(u: ref IcUi->Ui, id: string, items: array of IcMenu->Item, sel: int, action: int): int
 {
 	n: ref IcView->Node;
-	i, x, w, count: int;
-	s, code, basecode: string;
+	i, x, w, count, oldcount, maxold: int;
+	s, itemid: string;
+
+	action = action;
 
 	if(u == nil || u.tree == nil)
 		return -1;
@@ -475,17 +512,22 @@ drawbar(u: ref IcUi->Ui, id: string, items: array of IcMenu->Item, sel: int, act
 	if(w <= 0)
 		return -1;
 
-	if(action)
-		basecode = CodeAction;
-	else
-		basecode = CodeBar;
-
-	if(ui->canvasclear(u, id, " ", basecode) < 0)
-		return -1;
-
 	count = itemcount(items);
-	if(count <= 0)
+	oldcount = n.iarg2;
+	maxold = oldcount;
+	if(maxold < count)
+		maxold = count;
+
+	for(i = 0; i < maxold; i++){
+		itemid = id + ".item." + sys->sprint("%d", i);
+		if(i >= count)
+			hidelabel(u, itemid);
+	}
+
+	if(count <= 0){
+		view->setargs(n, "", sel, action, 0);
 		return 0;
+	}
 
 	if(sel < 0)
 		sel = 0;
@@ -495,29 +537,27 @@ drawbar(u: ref IcUi->Ui, id: string, items: array of IcMenu->Item, sel: int, act
 	x = 0;
 
 	for(i = 0; i < count; i++){
-		if(separator(items[i]))
+		itemid = id + ".item." + sys->sprint("%d", i);
+
+		if(separator(items[i])){
+			hidelabel(u, itemid);
 			continue;
+		}
 
-		s = baritemtext(items[i]);
+		s = baritemtext(items[i], i == sel);
 
-		if(x >= w)
-			break;
-
-		if(i == sel && enabled(items[i])){
-			if(action)
-				code = CodeActionSelect;
-			else
-				code = CodeBarSelect;
-		}else{
-			code = basecode;
+		if(x >= w){
+			hidelabel(u, itemid);
+			continue;
 		}
 
 		if(x + len s > w)
 			s = clip(s, w - x);
 
-		ui->canvasputs(u, id, x, 0, s, code);
+		ensurelabel(u, id, itemid, x, 0, len s, s);
 		x += len s;
 	}
 
+	view->setargs(n, "", sel, action, count);
 	return 0;
 }
