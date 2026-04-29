@@ -403,18 +403,19 @@ linuxmouseevent(int code, int x, int y, int release)
 		linuxmousebuttons = 0;
 	}else if(release || (code & 3) == 3){
 		/*
-		 * SGR mouse release normally arrives with final byte 'm'.
-		 * Some terminals can also encode release/no-button as button
-		 * number 3.  In both cases publish current buttons as none and
-		 * reset the saved button state.
+		 * SGR release normally arrives with final byte 'm'.
+		 * Passive any-motion events from 1003 commonly arrive as
+		 * button number 3 plus the motion bit.  Publish those as
+		 * hover/move with no buttons and reset the saved button state.
 		 */
 		b = 0;
 		linuxmousebuttons = 0;
 	}else if(code & 32){
 		/*
-		 * Button-motion event.  Keep the currently reported physical
-		 * button as the persistent drag state.  With 1003 disabled this
-		 * should not be flooded by passive no-button motion.
+		 * Motion with a physical button down.  In 1002/1003 mode this
+		 * is either drag or button-motion.  Keep the reported physical
+		 * button as the current drag state.  Passive motion was already
+		 * handled above by the button-number-3/no-button branch.
 		 */
 		b = linuxbuttonmask(code, 0);
 		if(b != 0)
@@ -674,6 +675,7 @@ linuxconsolemouseon(void)
 	static char seq[] =
 		"\033[?1000h"
 		"\033[?1002h"
+		"\033[?1003h"
 		"\033[?1006h";
 
 	write(1, seq, sizeof(seq)-1);
@@ -684,6 +686,7 @@ linuxconsolemouseoff(void)
 {
 	static char seq[] =
 		"\033[?1006l"
+		"\033[?1003l"
 		"\033[?1002l"
 		"\033[?1000l";
 
