@@ -1,5 +1,6 @@
 #include "lib9.h"
 #include <sys/types.h>
+#include <sys/stat.h>
 #include <fcntl.h>
 
 int
@@ -9,16 +10,16 @@ create(char *f, int mode, int perm)
 
 	m = 0;
 	switch(mode & 3){
-	case OREAD:
-	case OEXEC:
-		m = O_RDONLY;
-		break;
-	case OWRITE:
-		m = O_WRONLY;
-		break;
-	case ORDWR:
-		m = O_RDWR;
-		break;
+		case OREAD:
+		case OEXEC:
+			m = O_RDONLY;
+			break;
+		case OWRITE:
+			m = O_WRONLY;
+			break;
+		case ORDWR:
+			m = O_RDWR;
+			break;
 	}
 	m |= O_CREAT|O_TRUNC;
 

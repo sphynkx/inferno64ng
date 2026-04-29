@@ -4,12 +4,12 @@
 
 #define DP if(1){}else print
 
-#undef _POSIX_C_SOURCE 
+#undef _POSIX_C_SOURCE
 #undef getwd
 
 #include	<unistd.h>
 #include	<signal.h>
-#include 	<pthread.h>
+#include	<pthread.h>
 #include	<limits.h>
 #include	<errno.h>
 #include	<semaphore.h>
@@ -23,14 +23,13 @@
 #define PTHREAD_STACK_MIN ((size_t)sysconf(_SC_THREAD_STACK_MIN))
 #endif
 
-
 typedef struct Osdep Osdep;
 struct Osdep {
 	sem_t	sem;
 	pthread_t	self;
 };
 
-static pthread_key_t  prdakey;
+static pthread_key_t prdakey;
 
 extern int dflag;
 
@@ -51,6 +50,7 @@ pexit(char *msg, int t)
 
 	lock(&procs.l);
 	p = up;
+
 	if(p->prev)
 		p->prev->next = p->next;
 	else
@@ -60,6 +60,7 @@ pexit(char *msg, int t)
 		p->next->prev = p->prev;
 	else
 		procs.tail = p->prev;
+
 	unlock(&procs.l);
 
 	if(0)
@@ -73,12 +74,15 @@ pexit(char *msg, int t)
 		closesigs(e->sigs);
 		free(e->user);
 	}
+
 	free(p->prog);
+
 	os = p->os;
 	if(os != nil){
 		sem_destroy(&os->sem);
 		free(os);
 	}
+
 	free(p);
 	pthread_exit(0);
 }
@@ -92,19 +96,35 @@ tramp(void *arg)
 	p = arg;
 	os = p->os;
 	os->self = pthread_self();
+
 	if(pthread_setspecific(prdakey, arg))
 		panic("set specific data failed in tramp\n");
-	if(0){
-		pthread_attr_t attr;
-		memset(&attr, 0, sizeof(attr));
-		pthread_getattr_np(pthread_self(), &attr);
-		size_t s;
-		pthread_attr_getstacksize(&attr, &s);
-		print("stack size = %d\n", s);
-	}
-	p->func(p->arg);
-	pexit("{Tramp}", 0);
-	return nil;
+
+	#if 0
+	/*
+	 * Debug-only stack size probe.
+	 *
+	 * pthread_getattr_np() is a GNU extension and is not declared unless
+	 * GNU feature macros are enabled before system headers are included.
+	 * Keep this block compile-time disabled so modern compilers do not
+	 * reject the file for an implicit declaration in dead debug code.
+	 */
+	{
+	pthread_attr_t attr;
+	size_t s;
+
+	memset(&attr, 0, sizeof(attr));
+	pthread_getattr_np(pthread_self(), &attr);
+	pthread_attr_getstacksize(&attr, &s);
+	print("stack size = %d\n", s);
+	pthread_attr_destroy(&attr);
+}
+#endif
+
+p->func(p->arg);
+pexit("{Tramp}", 0);
+
+return nil;
 }
 
 void
@@ -125,6 +145,7 @@ kproc(char *name, void (*func)(void*), void *arg, int flags)
 	os = malloc(sizeof(*os));
 	if(os == nil)
 		panic("kproc: no memory");
+
 	os->self = 0;	/* set by tramp */
 	sem_init(&os->sem, 0, 0);
 	p->os = os;
@@ -134,11 +155,13 @@ kproc(char *name, void (*func)(void*), void *arg, int flags)
 		incref(&pg->r);
 		p->env->pgrp = pg;
 	}
+
 	if(flags & KPDUPFDG) {
 		fg = up->env->fgrp;
 		incref(&fg->r);
 		p->env->fgrp = fg;
 	}
+
 	if(flags & KPDUPENVG) {
 		eg = up->env->egrp;
 		incref(&eg->r);
@@ -155,6 +178,7 @@ kproc(char *name, void (*func)(void*), void *arg, int flags)
 	p->arg = arg;
 
 	lock(&procs.l);
+
 	if(procs.tail != nil) {
 		p->prev = procs.tail;
 		procs.tail->next = p;
@@ -162,20 +186,28 @@ kproc(char *name, void (*func)(void*), void *arg, int flags)
 		procs.head = p;
 		p->prev = nil;
 	}
+
+	p->next = nil;
 	procs.tail = p;
+
 	unlock(&procs.l);
 
 	memset(&attr, 0, sizeof(attr));
+
 	if(pthread_attr_init(&attr) == -1)
 		panic("pthread_attr_init failed");
+
 	if(flags & KPX11)
 		pthread_attr_setstacksize(&attr, 512*1024);	/* could be a parameter */
-	else if(KSTACK > 0)
-		pthread_attr_setstacksize(&attr, (KSTACK < PTHREAD_STACK_MIN? PTHREAD_STACK_MIN: KSTACK)+1024);
+		else if(KSTACK > 0)
+			pthread_attr_setstacksize(&attr, (KSTACK < PTHREAD_STACK_MIN ? PTHREAD_STACK_MIN : KSTACK)+1024);
+
 	pthread_attr_setinheritsched(&attr, PTHREAD_INHERIT_SCHED);
 	pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+
 	if(pthread_create(&thread, &attr, tramp, p))
 		panic("thr_create failed\n");
+
 	pthread_attr_destroy(&attr);
 }
 
@@ -197,10 +229,11 @@ osblock(void)
 	int i;
 
 	DP("osblock %d %s\n", errno, strerror(errno));
+
 	os = up->os;
-	while(i=sem_wait(&os->sem)){
-		DP("osblock sem_wait returned %d, errno %d %s\n",i, errno, strerror(errno));
-	}	/* retry on signals (which shouldn't happen) */
+	while((i = sem_wait(&os->sem))){
+		DP("osblock sem_wait returned %d, errno %d %s\n", i, errno, strerror(errno));
+	}
 }
 
 void
@@ -217,6 +250,7 @@ kprocinit(Proc *p)
 {
 	if(pthread_key_create(&prdakey, NULL))
 		panic("key_create failed");
+
 	if(pthread_setspecific(prdakey, p))
 		panic("set specific thread data failed");
 }
@@ -224,8 +258,10 @@ kprocinit(Proc *p)
 void
 osyield(void)
 {
-//	pthread_yield_np();
-	/* define pthread_yield to be sched_yield or pthread_yield_np if required */
+	/*
+	 * Define pthread_yield to be sched_yield or pthread_yield_np if
+	 * required by a platform.
+	 */
 	pthread_yield();
 }
 
@@ -246,5 +282,5 @@ oslopri(void)
 	self = pthread_self();
 	pthread_getschedparam(self, &policy, &param);
 	param.sched_priority = sched_get_priority_min(policy);
-	pthread_setschedparam(self,  policy, &param);
+	pthread_setschedparam(self, policy, &param);
 }

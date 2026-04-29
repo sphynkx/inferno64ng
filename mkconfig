@@ -10,8 +10,8 @@
 #MKSH=/usr/bin/sh.exe
 
 ## Set `yes` to get more compact binary (need the `upx` utility installed).
-#DOSTRIP=yes
-#DOUPX=yes
+DOSTRIP=yes
+DOUPX=yes
 
 #
 #	Specify the flavour of Tk (std for standard builds)

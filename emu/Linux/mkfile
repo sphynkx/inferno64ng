@@ -45,6 +45,12 @@ $O.$CONF:	$OBJ $CONF.c $CONF.root.h $LIBNAMES
 	$LD $LDFLAGS $WRAP -o $target $OBJ $CONF.$O $LIBFILES $SYSLIBS
 
 install:V: $O.$CONF
+    if test "x$DOSTRIP" = xyes; then \
+	strip $O.$CONF || exit 1; \
+    fi
+    if test "x$DOUPX" = xyes && command -v upx >/dev/null 2>&1; then \
+	upx --best --lzma $O.$CONF || exit 1; \
+    fi
 	cp $O.$CONF $INSTALLDIR/$CONF
 
 <../port/portmkfile
