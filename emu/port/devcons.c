@@ -278,7 +278,10 @@ winmouseslave(void *a)
 enum
 {
 	LinuxNoKey = -1000000,
-	LinuxMouseEvent = -1000001
+	LinuxMouseEvent = -1000001,
+
+	LinuxDeleteChar = 0x7F,
+	LinuxCtrlC = 0x03
 };
 
 static int linuxmousebuttons;
@@ -629,9 +632,9 @@ linuxreadenhancedkey(void)
 	switch(c){
 	case '\r':
 		return '\n';
-	case DELETE:
+	case LinuxDeleteChar:
 		return '\b';
-	case CTRLC:
+	case LinuxCtrlC:
 		cleanexit(0);
 		return -1;
 	case Esc:
