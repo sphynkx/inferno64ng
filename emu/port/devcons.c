@@ -164,18 +164,14 @@ static int
 ekbdsessionactive(void)
 {
 	/*
-	 * MinGW keeps draining host console input continuously, so gating
-	 * legacy mirroring on kbd.ekbd.ref alone can keep shell input
-	 * suppressed after the visible session has ended if FD finalization
-	 * lags.  The proven leak only happens while the enhanced raw session
-	 * is actively owning input, so require both raw mode and an open
-	 * /dev/ekeyboard reference there.
+	 * Enhanced keyboard ownership suppresses legacy /dev/cons only while
+	 * a raw UI session is actively owning input.
+	 *
+	 * Blocked Limbo readers can keep /dev/ekeyboard open after an app has
+	 * returned and written rawoff.  If we treated kbd.ekbd.ref alone as
+	 * ownership, shell input would remain suppressed until FD finalization.
 	 */
-#ifdef __MINGW32__
 	return kbd.raw != 0 && kbd.ekbd.ref != 0;
-#else
-	return kbd.ekbd.ref != 0;
-#endif
 }
 
 #ifdef __MINGW32__
@@ -185,14 +181,6 @@ extern void disableconsolemouse(void);
 
 static int mouseprocstarted;
 
-/*
- * MinGW/MSYS2 console keyboard reader:
- * single source of truth for console input.
- *
- * All key events go to /dev/ekeyboard.
- * Ordinary text input is also translated to the legacy console queue
- * so /dev/cons and the shell continue to work from the same event stream.
- */
 void
 winkbdslave(void *a)
 {
@@ -207,23 +195,9 @@ winkbdslave(void *a)
 		if(k < 0)
 			continue;
 
-		/*
-		 * Full event stream for enhanced console clients.
-		 * MinGW keeps draining host console input into ekbdq and trims
-		 * stale entries on open via qflush(ekbdq), rather than waiting
-		 * for kbd.ekbd.ref before it starts collecting host events.
-		 */
-		ekbdputc(k);
+		if(ekbdsessionactive())
+			ekbdputc(k);
 
-		/*
-		 * Legacy console path:
-		 * ordinary text should only reach /dev/cons when the enhanced
-		 * raw session does not currently own input.
-		 *
-		 * When MinGW raw + /dev/ekeyboard are both active, mirroring the
-		 * same ordinary key into kbdq leaks dialog-consumed text back to
-		 * the shell after the interactive session ends.
-		 */
 		if(ordinarykey(k) && !ekbdsessionactive()){
 			r = k;
 			if(r == '\r')
@@ -270,7 +244,6 @@ winmouseslave(void *a)
 	}
 	/* not reached */
 }
-
 #endif
 
 #ifdef __linux__
@@ -395,28 +368,12 @@ linuxmouseevent(int code, int x, int y, int release)
 	mods = linuxmodmask(code);
 
 	if(code & 64){
-		/*
-		 * Wheel events are momentary.  Do not make them the persistent
-		 * button state for later motion events.
-		 */
 		b = linuxbuttonmask(code, 0);
 		linuxmousebuttons = 0;
 	}else if(release || (code & 3) == 3){
-		/*
-		 * SGR release normally arrives with final byte 'm'.
-		 * Passive any-motion events from 1003 commonly arrive as
-		 * button number 3 plus the motion bit.  Publish those as
-		 * hover/move with no buttons and reset the saved button state.
-		 */
 		b = 0;
 		linuxmousebuttons = 0;
 	}else if(code & 32){
-		/*
-		 * Motion with a physical button down.  In 1002/1003 mode this
-		 * is either drag or button-motion.  Keep the reported physical
-		 * button as the current drag state.  Passive motion was already
-		 * handled above by the button-number-3/no-button branch.
-		 */
 		b = linuxbuttonmask(code, 0);
 		if(b != 0)
 			linuxmousebuttons = b;
@@ -711,10 +668,10 @@ linuxkbdslave(void *a)
 		if(k == LinuxMouseEvent)
 			continue;
 
-		if(kbd.ekbd.ref != 0)
+		if(ekbdsessionactive())
 			ekbdputc(k);
 
-		if(kbd.ekbd.ref == 0 && ordinarykey(k)){
+		if(ordinarykey(k) && !ekbdsessionactive()){
 			r = k;
 			if(r == '\r')
 				r = '\n';
@@ -802,9 +759,6 @@ consinit(void)
 	randominit();
 }
 
-/*
- *  return true if current user is eve
- */
 int
 iseve(void)
 {
@@ -872,21 +826,11 @@ consopen(Chan *c, int omode)
 	{
 #ifdef __MINGW32__
 		incref(&kbd.ekbd);
-		/*
-		 * Drop stale enhanced-key events on every open.
-		 *
-		 * The MinGW reader already drains console input continuously
-		 * into ekbdq, so flushing the queue here is enough to discard
-		 * pre-open shell/build keystrokes without depending on
-		 * first-open / last-close transitions that can lag under
-		 * GC-driven FD finalization.
-		 */
 		qflush(ekbdq);
 		qflush(kbdq);
 #else
-		if(incref(&kbd.ekbd) == 1){
+		if(incref(&kbd.ekbd) == 1)
 			qflush(ekbdq);
-		}
 #endif
 		break;
 	}
@@ -934,9 +878,18 @@ consclose(Chan *c)
 
 	switch((ulong)c->qid.path) {
 	case Qconsctl:
-		/* last close of control file turns off raw */
-		if(decref(&kbd.ctl) == 0)
+		if(decref(&kbd.ctl) == 0){
 			kbd.raw = 0;
+			qflush(ekbdq);
+			qflush(emouseq);
+#ifdef __MINGW32__
+			if(kbd.ptr.ref != 0)
+				disableconsolemouse();
+#elif defined(__linux__)
+			if(kbd.ptr.ref != 0)
+				linuxconsolemouseoff();
+#endif
+		}
 		break;
 
 	case Qemouse:
@@ -1009,7 +962,7 @@ consread(Chan *c, void *va, long n, vlong offset)
 		return readstr(offset, va, n, eve);
 
 	case Qhoststdin:
-		return read(0, va, n);	/* should be pread */
+		return read(0, va, n);
 
 	case Quser:
 		return readstr(offset, va, n, up->env->user);
@@ -1079,7 +1032,6 @@ consread(Chan *c, void *va, long n, vlong offset)
 				continue;
 			send = 0;
 			if(ch == 0){
-				/* flush output on rawoff -> rawon */
 				if(kbd.x > 0)
 					send = !qcanread(kbdq);
 			}else if(kbd.raw){
@@ -1181,11 +1133,26 @@ conswrite(Chan *c, void *va, long n, vlong offset)
 		for(a = buf; a;){
 			if(strncmp(a, "rawon", 5) == 0){
 				kbd.raw = 1;
-				/* clumsy hack - wake up reader */
 				ch = 0;
 				qwrite(kbdq, &ch, 1);
-			} else if(strncmp(buf, "rawoff", 6) == 0){
+#ifdef __MINGW32__
+				if(kbd.ptr.ref != 0)
+					enableconsolemouse();
+#elif defined(__linux__)
+				if(kbd.ptr.ref != 0)
+					linuxconsolemouseon();
+#endif
+			} else if(strncmp(a, "rawoff", 6) == 0){
 				kbd.raw = 0;
+				qflush(ekbdq);
+				qflush(emouseq);
+#ifdef __MINGW32__
+				if(kbd.ptr.ref != 0)
+					disableconsolemouse();
+#elif defined(__linux__)
+				if(kbd.ptr.ref != 0)
+					linuxconsolemouseoff();
+#endif
 			}
 			if((a = strchr(a, ' ')) != nil)
 				a++;
@@ -1222,8 +1189,6 @@ conswrite(Chan *c, void *va, long n, vlong offset)
 			buf[--n] = '\0';
 		if(n == 0)
 			error(Ebadarg);
-		/* renameuser(eve, buf); */
-		/* renameproguser(eve, buf); */
 		kstrdup(&eve, buf);
 		kstrdup(&up->env->user, buf);
 		break;
@@ -1296,7 +1261,7 @@ sysconwrite(void *va, ulong count)
 			e = atoi(cb->f[1]);
 		else
 			e = 0;
-		cleanexit(e);		/* XXX ignored for the time being (and should be a string anyway) */
+		cleanexit(e);
 	}else if(strcmp(cb->f[0], "broken") == 0)
 		keepbroken = 1;
 	else if(strcmp(cb->f[0], "nobroken") == 0)
