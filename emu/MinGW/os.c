@@ -107,7 +107,6 @@ setutf8consolecp(void)
 	}
 }
 
-
 static void
 enableconsolevtoutput(void)
 {
@@ -126,13 +125,6 @@ enableconsolevtoutput(void)
 		consoleoutstatesaved = 1;
 	}
 
-	/*
-	 * Enable VT processing, but explicitly do NOT enable
-	 * DISABLE_NEWLINE_AUTO_RETURN.
-	 *
-	 * DISABLE_NEWLINE_AUTO_RETURN is exactly the kind of mode that
-	 * makes bare '\n' stop behaving like normal console newline output.
-	 */
 	newmode = mode;
 	newmode |= ENABLE_PROCESSED_OUTPUT;
 	newmode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
@@ -143,16 +135,11 @@ enableconsolevtoutput(void)
 		return;
 	}
 
-	/*
-	 * If VT is unavailable, at least keep processed output enabled and
-	 * keep newline auto-return behavior normal.
-	 */
 	newmode = mode;
 	newmode |= ENABLE_PROCESSED_OUTPUT;
 	newmode &= ~DISABLE_NEWLINE_AUTO_RETURN;
 	SetConsoleMode(conh, newmode);
 }
-
 
 static void
 restoreconsolecp(void)
@@ -742,12 +729,6 @@ consolewritevt(HANDLE h, const void *vbuf, uint n)
 	np = 0;
 
 	for(i = 0; i < (int)n; i++){
-		/*
-		 * Inferno and Unix-style programs normally write '\n'.
-		 * Windows console VT mode may treat bare LF as "move down,
-		 * keep current column". Make output text semantics stable by
-		 * emitting CRLF unless the LF is already preceded by CR.
-		 */
 		if(buf[i] == '\n' && (i == 0 || buf[i-1] != '\r')){
 			if(np >= (int)sizeof(out)){
 				if(!WriteFile(h, out, np, &nwritten, NULL))
@@ -868,11 +849,10 @@ consolewrite(HANDLE h, ConParser *p, const void *vbuf, uint n)
 			{
 				int row, col;
 
-				if(p->n == 0){
+				if(p->n == 0)
 					consolehome(h);
-				}else if(parse2params(p, &row, &col, 1, 1)){
+				else if(parse2params(p, &row, &col, 1, 1))
 					consolecup(h, row, col);
-				}
 				break;
 			}
 			case 'J':
@@ -1113,125 +1093,6 @@ readkbd(void)
 	return buf[0];
 }
 
-int
-readekbd(void)
-{
-	INPUT_RECORD rec;
-	KEY_EVENT_RECORD *k;
-	DWORD r;
-	WCHAR wc;
-	DWORD ctrl;
-	int ch;
-
-	for(;;){
-		if(!ReadConsoleInput(kbdh, &rec, 1, &r))
-			panic("enhanced keyboard fail");
-		if(r == 0)
-			continue;
-
-		if(rec.EventType != KEY_EVENT)
-			continue;
-
-		k = &rec.Event.KeyEvent;
-
-		if(!k->bKeyDown)
-			continue;
-
-		ctrl = k->dwControlKeyState;
-
-		switch(k->wVirtualKeyCode){
-		case VK_LEFT:
-			return Left;
-		case VK_RIGHT:
-			return Right;
-		case VK_UP:
-			return Up;
-		case VK_DOWN:
-			return Down;
-		case VK_HOME:
-			return Home;
-		case VK_END:
-			return End;
-		case VK_PRIOR:
-			return Pgup;
-		case VK_NEXT:
-			return Pgdown;
-		case VK_INSERT:
-			return Ins;
-		case VK_DELETE:
-			return Del;
-		case VK_PRINT:
-		case VK_SNAPSHOT:
-			return Print;
-		case VK_SCROLL:
-			return Scroll;
-		case VK_PAUSE:
-			return Pause;
-		case VK_CANCEL:
-			return Break;
-
-		case VK_F1:
-			return KF|1;
-		case VK_F2:
-			return KF|2;
-		case VK_F3:
-			return KF|3;
-		case VK_F4:
-			return KF|4;
-		case VK_F5:
-			return KF|5;
-		case VK_F6:
-			return KF|6;
-		case VK_F7:
-			return KF|7;
-		case VK_F8:
-			return KF|8;
-		case VK_F9:
-			return KF|9;
-		case VK_F10:
-			return KF|10;
-		case VK_F11:
-			return KF|11;
-		case VK_F12:
-			return KF|12;
-
-		case VK_CAPITAL:
-			return Caps;
-		case VK_NUMLOCK:
-			return Num;
-
-		case VK_TAB:
-			if(ctrl & SHIFT_PRESSED)
-				return BackTab;
-			return '\t';
-		case VK_RETURN:
-			return '\n';
-		case VK_ESCAPE:
-			return Esc;
-		}
-
-		wc = k->uChar.UnicodeChar;
-		if(wc != 0){
-			ch = (int)wc;
-
-			if(ch == 0x03){
-				termrestore();
-				ExitProcess(0);
-			}
-
-			if(ch == '\r')
-				ch = '\n';
-
-			if(ctrl & (LEFT_ALT_PRESSED|RIGHT_ALT_PRESSED)){
-				if((ch & ~0xFF) == 0)
-					return APP | (ch & 0xFF);
-			}
-
-			return ch;
-		}
-	}
-}
-
 static int
 mousebuttons(DWORD state, DWORD flags)
 {
@@ -1277,6 +1138,395 @@ mousemods(DWORD state)
 	return m;
 }
 
+enum
+{
+	ConsoleInputQSize = 256,
+	ConsoleMouseBufSize = 128
+};
+
+static int consoleinputinited;
+static CRITICAL_SECTION consoleinputreadlock;
+static CRITICAL_SECTION consoleinputqlock;
+
+static int consolekeyq[ConsoleInputQSize];
+static int consolekeyr;
+static int consolekeyw;
+static int consolekeyn;
+
+static char consolemouseq[ConsoleInputQSize][ConsoleMouseBufSize];
+static int consolemouser;
+static int consolemousew;
+static int consolemousen;
+
+static void
+consoleinputinit(void)
+{
+	if(consoleinputinited)
+		return;
+
+	InitializeCriticalSection(&consoleinputreadlock);
+	InitializeCriticalSection(&consoleinputqlock);
+
+	consolekeyr = 0;
+	consolekeyw = 0;
+	consolekeyn = 0;
+
+	consolemouser = 0;
+	consolemousew = 0;
+	consolemousen = 0;
+
+	consoleinputinited = 1;
+}
+
+static void
+consoleinputflush(void)
+{
+	consoleinputinit();
+
+	EnterCriticalSection(&consoleinputqlock);
+
+	consolekeyr = 0;
+	consolekeyw = 0;
+	consolekeyn = 0;
+
+	consolemouser = 0;
+	consolemousew = 0;
+	consolemousen = 0;
+
+	LeaveCriticalSection(&consoleinputqlock);
+}
+
+static void
+consoleputkey(int ch)
+{
+	consoleinputinit();
+
+	EnterCriticalSection(&consoleinputqlock);
+
+	if(consolekeyn >= ConsoleInputQSize){
+		consolekeyr++;
+		if(consolekeyr >= ConsoleInputQSize)
+			consolekeyr = 0;
+		consolekeyn--;
+	}
+
+	consolekeyq[consolekeyw] = ch;
+	consolekeyw++;
+	if(consolekeyw >= ConsoleInputQSize)
+		consolekeyw = 0;
+	consolekeyn++;
+
+	LeaveCriticalSection(&consoleinputqlock);
+}
+
+static int
+consolegetkey(int *ch)
+{
+	int ok;
+
+	consoleinputinit();
+
+	EnterCriticalSection(&consoleinputqlock);
+
+	ok = 0;
+	if(consolekeyn > 0){
+		*ch = consolekeyq[consolekeyr];
+		consolekeyr++;
+		if(consolekeyr >= ConsoleInputQSize)
+			consolekeyr = 0;
+		consolekeyn--;
+		ok = 1;
+	}
+
+	LeaveCriticalSection(&consoleinputqlock);
+	return ok;
+}
+
+static void
+consoleputmouse(char *s)
+{
+	consoleinputinit();
+
+	EnterCriticalSection(&consoleinputqlock);
+
+	if(consolemousen >= ConsoleInputQSize){
+		consolemouser++;
+		if(consolemouser >= ConsoleInputQSize)
+			consolemouser = 0;
+		consolemousen--;
+	}
+
+	strncpy(consolemouseq[consolemousew], s, ConsoleMouseBufSize-1);
+	consolemouseq[consolemousew][ConsoleMouseBufSize-1] = 0;
+
+	consolemousew++;
+	if(consolemousew >= ConsoleInputQSize)
+		consolemousew = 0;
+	consolemousen++;
+
+	LeaveCriticalSection(&consoleinputqlock);
+}
+
+static int
+consolegetmouse(char *buf, int n)
+{
+	int ok, l;
+
+	consoleinputinit();
+
+	if(buf == nil || n <= 0)
+		return 0;
+
+	EnterCriticalSection(&consoleinputqlock);
+
+	ok = 0;
+	if(consolemousen > 0){
+		l = strlen(consolemouseq[consolemouser]);
+		if(l >= n)
+			l = n - 1;
+		if(l < 0)
+			l = 0;
+
+		memmove(buf, consolemouseq[consolemouser], l);
+		buf[l] = 0;
+
+		consolemouser++;
+		if(consolemouser >= ConsoleInputQSize)
+			consolemouser = 0;
+		consolemousen--;
+
+		ok = l;
+	}
+
+	LeaveCriticalSection(&consoleinputqlock);
+	return ok;
+}
+
+static int
+keyeventkey(KEY_EVENT_RECORD *k, int *out)
+{
+	DWORD ctrl;
+	WCHAR wc;
+	int ch;
+
+	if(k == nil || out == nil)
+		return 0;
+
+	if(!k->bKeyDown)
+		return 0;
+
+	ctrl = k->dwControlKeyState;
+
+	switch(k->wVirtualKeyCode){
+	case VK_LEFT:
+		*out = Left;
+		return 1;
+	case VK_RIGHT:
+		*out = Right;
+		return 1;
+	case VK_UP:
+		*out = Up;
+		return 1;
+	case VK_DOWN:
+		*out = Down;
+		return 1;
+	case VK_HOME:
+		*out = Home;
+		return 1;
+	case VK_END:
+		*out = End;
+		return 1;
+	case VK_PRIOR:
+		*out = Pgup;
+		return 1;
+	case VK_NEXT:
+		*out = Pgdown;
+		return 1;
+	case VK_INSERT:
+		*out = Ins;
+		return 1;
+	case VK_DELETE:
+		*out = Del;
+		return 1;
+	case VK_PRINT:
+	case VK_SNAPSHOT:
+		*out = Print;
+		return 1;
+	case VK_SCROLL:
+		*out = Scroll;
+		return 1;
+	case VK_PAUSE:
+		*out = Pause;
+		return 1;
+	case VK_CANCEL:
+		*out = Break;
+		return 1;
+
+	case VK_F1:
+		*out = KF|1;
+		return 1;
+	case VK_F2:
+		*out = KF|2;
+		return 1;
+	case VK_F3:
+		*out = KF|3;
+		return 1;
+	case VK_F4:
+		*out = KF|4;
+		return 1;
+	case VK_F5:
+		*out = KF|5;
+		return 1;
+	case VK_F6:
+		*out = KF|6;
+		return 1;
+	case VK_F7:
+		*out = KF|7;
+		return 1;
+	case VK_F8:
+		*out = KF|8;
+		return 1;
+	case VK_F9:
+		*out = KF|9;
+		return 1;
+	case VK_F10:
+		*out = KF|10;
+		return 1;
+	case VK_F11:
+		*out = KF|11;
+		return 1;
+	case VK_F12:
+		*out = KF|12;
+		return 1;
+
+	case VK_CAPITAL:
+		*out = Caps;
+		return 1;
+	case VK_NUMLOCK:
+		*out = Num;
+		return 1;
+
+	case VK_TAB:
+		if(ctrl & SHIFT_PRESSED)
+			*out = BackTab;
+		else
+			*out = '\t';
+		return 1;
+	case VK_RETURN:
+		*out = '\n';
+		return 1;
+	case VK_ESCAPE:
+		*out = Esc;
+		return 1;
+	}
+
+	wc = k->uChar.UnicodeChar;
+	if(wc != 0){
+		ch = (int)wc;
+
+		if(ch == 0x03){
+			termrestore();
+			ExitProcess(0);
+		}
+
+		if(ch == '\r')
+			ch = '\n';
+
+		if(ctrl & (LEFT_ALT_PRESSED|RIGHT_ALT_PRESSED)){
+			if((ch & ~0xFF) == 0)
+				ch = APP | (ch & 0xFF);
+		}
+
+		*out = ch;
+		return 1;
+	}
+
+	return 0;
+}
+
+static void
+mouseeventline(MOUSE_EVENT_RECORD *m, char *buf, int n)
+{
+	int x, y, b, mods;
+
+	if(m == nil || buf == nil || n <= 0)
+		return;
+
+	x = m->dwMousePosition.X;
+	y = m->dwMousePosition.Y;
+	b = mousebuttons(m->dwButtonState, m->dwEventFlags);
+	mods = mousemods(m->dwControlKeyState);
+
+	snprint(buf, n, "m %d %d %d %d\n", x, y, b, mods);
+}
+
+static int
+consoleinputpump(void)
+{
+	INPUT_RECORD rec;
+	KEY_EVENT_RECORD *k;
+	MOUSE_EVENT_RECORD *m;
+	DWORD r;
+	int ch;
+	char mbuf[ConsoleMouseBufSize];
+
+	consoleinputinit();
+
+	EnterCriticalSection(&consoleinputreadlock);
+
+	if(!ReadConsoleInput(kbdh, &rec, 1, &r)){
+		LeaveCriticalSection(&consoleinputreadlock);
+		return 0;
+	}
+
+	LeaveCriticalSection(&consoleinputreadlock);
+
+	if(r == 0)
+		return 1;
+
+	if(rec.EventType == KEY_EVENT){
+		k = &rec.Event.KeyEvent;
+		if(keyeventkey(k, &ch))
+			consoleputkey(ch);
+		return 1;
+	}
+
+	if(rec.EventType == MOUSE_EVENT){
+		m = &rec.Event.MouseEvent;
+		mouseeventline(m, mbuf, sizeof(mbuf));
+		consoleputmouse(mbuf);
+		return 1;
+	}
+
+	return 1;
+}
+
+int
+readekbd(void)
+{
+	int ch;
+
+	for(;;){
+		if(consolegetkey(&ch))
+			return ch;
+
+		if(!consoleinputpump())
+			panic("enhanced keyboard fail");
+
+		SwitchToThread();
+	}
+}
+
+void
+flushconsoleinput(void)
+{
+	if(kbdh == INVALID_HANDLE_VALUE)
+		return;
+
+	FlushConsoleInputBuffer(kbdh);
+	consoleinputflush();
+}
+
 void
 enableconsolemouse(void)
 {
@@ -1315,30 +1565,20 @@ disableconsolemouse(void)
 int
 reademouse(char *buf, int n)
 {
-	INPUT_RECORD rec;
-	MOUSE_EVENT_RECORD *m;
-	DWORD r;
-	int x, y, b, mods;
+	int r;
 
 	if(buf == nil || n <= 0)
 		return -1;
 
 	for(;;){
-		if(!ReadConsoleInput(kbdh, &rec, 1, &r))
+		r = consolegetmouse(buf, n);
+		if(r > 0)
+			return r;
+
+		if(!consoleinputpump())
 			return -1;
-		if(r == 0)
-			continue;
 
-		if(rec.EventType != MOUSE_EVENT)
-			continue;
-
-		m = &rec.Event.MouseEvent;
-		x = m->dwMousePosition.X;
-		y = m->dwMousePosition.Y;
-		b = mousebuttons(m->dwButtonState, m->dwEventFlags);
-		mods = mousemods(m->dwControlKeyState);
-
-		return snprint(buf, n, "m %d %d %d %d\n", x, y, b, mods);
+		SwitchToThread();
 	}
 }
 
@@ -1434,6 +1674,8 @@ termset(void)
 	errh = GetStdHandle(STD_ERROR_HANDLE);
 	if(errh == INVALID_HANDLE_VALUE)
 		errh = conh;
+
+	consoleinputinit();
 
 	enableconsolevtoutput();
 

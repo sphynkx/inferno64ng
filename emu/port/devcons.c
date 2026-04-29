@@ -339,8 +339,6 @@ linuxreadkbdrune(int c0)
 static int
 linuxbuttonmask(int code, int release)
 {
-	int b;
-
 	if(release)
 		return 0;
 
@@ -357,20 +355,14 @@ linuxbuttonmask(int code, int release)
 
 	switch(code & 3){
 	case 0:
-		b = 1;		/* left */
-		break;
+		return 1;	/* left */
 	case 1:
-		b = 2;		/* middle */
-		break;
+		return 4;	/* middle */
 	case 2:
-		b = 4;		/* right */
-		break;
+		return 2;	/* right */
 	default:
-		b = 0;
-		break;
+		return 0;
 	}
-
-	return b;
 }
 
 static int
@@ -400,23 +392,38 @@ linuxmouseevent(int code, int x, int y, int release)
 	if(y > 0)
 		y--;
 
-	b = linuxbuttonmask(code, release);
 	mods = linuxmodmask(code);
 
-	if((code & 64) == 0){
-		if(release)
-			linuxmousebuttons = 0;
-		else
-			linuxmousebuttons = b;
-
-		if(code & 32)
-			b = linuxmousebuttons;
-	}else{
+	if(code & 64){
 		/*
 		 * Wheel events are momentary.  Do not make them the persistent
 		 * button state for later motion events.
 		 */
+		b = linuxbuttonmask(code, 0);
 		linuxmousebuttons = 0;
+	}else if(release || (code & 3) == 3){
+		/*
+		 * SGR mouse release normally arrives with final byte 'm'.
+		 * Some terminals can also encode release/no-button as button
+		 * number 3.  In both cases publish current buttons as none and
+		 * reset the saved button state.
+		 */
+		b = 0;
+		linuxmousebuttons = 0;
+	}else if(code & 32){
+		/*
+		 * Button-motion event.  Keep the currently reported physical
+		 * button as the persistent drag state.  With 1003 disabled this
+		 * should not be flooded by passive no-button motion.
+		 */
+		b = linuxbuttonmask(code, 0);
+		if(b != 0)
+			linuxmousebuttons = b;
+		else
+			b = linuxmousebuttons;
+	}else{
+		b = linuxbuttonmask(code, 0);
+		linuxmousebuttons = b;
 	}
 
 	n = snprint(buf, sizeof(buf), "m %d %d %d %d\n", x, y, b, mods);
@@ -667,7 +674,6 @@ linuxconsolemouseon(void)
 	static char seq[] =
 		"\033[?1000h"
 		"\033[?1002h"
-		"\033[?1003h"
 		"\033[?1006h";
 
 	write(1, seq, sizeof(seq)-1);
@@ -678,7 +684,6 @@ linuxconsolemouseoff(void)
 {
 	static char seq[] =
 		"\033[?1006l"
-		"\033[?1003l"
 		"\033[?1002l"
 		"\033[?1000l";
 
