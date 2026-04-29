@@ -6,6 +6,11 @@
 #include	"libsec.h"
 #include	"keyboard.h"
 
+#ifdef __linux__
+#include	<sys/select.h>
+#include	<unistd.h>
+#endif
+
 #if defined(__MINGW32__) || defined(__linux__)
 extern int osconsinfo(char*, int);
 #endif
@@ -110,6 +115,14 @@ static struct
 	int	count;
 } kbd;
 
+static void
+emouseput(char *buf, int n)
+{
+	if(emouseq == nil || n <= 0)
+		return;
+	qproduce(emouseq, buf, n);
+}
+
 void
 kbdslave(void *a)
 {
@@ -171,14 +184,6 @@ extern void enableconsolemouse(void);
 extern void disableconsolemouse(void);
 
 static int mouseprocstarted;
-
-static void
-emouseput(char *buf, int n)
-{
-	if(emouseq == nil || n <= 0)
-		return;
-	qproduce(emouseq, buf, n);
-}
 
 /*
  * MinGW/MSYS2 console keyboard reader:
@@ -269,6 +274,415 @@ winmouseslave(void *a)
 #endif
 
 #ifdef __linux__
+
+enum
+{
+	LinuxNoKey = -1000000,
+	LinuxMouseEvent = -1000001
+};
+
+static int linuxmousebuttons;
+
+static int
+linuxreadkbdchar(int *cp, int timeoutms)
+{
+	int n;
+	char ch;
+
+	if(timeoutms >= 0){
+		fd_set rd;
+		struct timeval tv;
+
+		FD_ZERO(&rd);
+		FD_SET(0, &rd);
+		tv.tv_sec = timeoutms/1000;
+		tv.tv_usec = (timeoutms%1000)*1000;
+
+		n = select(1, &rd, nil, nil, &tv);
+		if(n <= 0)
+			return 0;
+	}
+
+	n = read(0, &ch, sizeof(ch));
+	if(n <= 0)
+		return 0;
+
+	*cp = (uchar)ch;
+	return 1;
+}
+
+static int
+linuxreadkbdrune(int c0)
+{
+	int c, n;
+	char buf[UTFmax];
+	Rune r;
+
+	buf[0] = c0;
+	n = 1;
+
+	while(n < UTFmax && !fullrune(buf, n)){
+		if(!linuxreadkbdchar(&c, -1))
+			return c0;
+		buf[n++] = c;
+	}
+
+	if(chartorune(&r, buf) <= 0)
+		return c0;
+
+	return r;
+}
+
+static int
+linuxbuttonmask(int code, int release)
+{
+	int b;
+
+	if(release)
+		return 0;
+
+	if(code & 64){
+		switch(code & 3){
+		case 0:
+			return 8;	/* wheel up */
+		case 1:
+			return 16;	/* wheel down */
+		default:
+			return 0;
+		}
+	}
+
+	switch(code & 3){
+	case 0:
+		b = 1;		/* left */
+		break;
+	case 1:
+		b = 2;		/* middle */
+		break;
+	case 2:
+		b = 4;		/* right */
+		break;
+	default:
+		b = 0;
+		break;
+	}
+
+	return b;
+}
+
+static int
+linuxmodmask(int code)
+{
+	int m;
+
+	m = 0;
+	if(code & 4)
+		m |= 1;		/* shift */
+	if(code & 16)
+		m |= 2;		/* ctrl */
+	if(code & 8)
+		m |= 4;		/* alt/meta */
+
+	return m;
+}
+
+static int
+linuxmouseevent(int code, int x, int y, int release)
+{
+	char buf[128];
+	int b, mods, n;
+
+	if(x > 0)
+		x--;
+	if(y > 0)
+		y--;
+
+	b = linuxbuttonmask(code, release);
+	mods = linuxmodmask(code);
+
+	if((code & 64) == 0){
+		if(release)
+			linuxmousebuttons = 0;
+		else
+			linuxmousebuttons = b;
+
+		if(code & 32)
+			b = linuxmousebuttons;
+	}else{
+		/*
+		 * Wheel events are momentary.  Do not make them the persistent
+		 * button state for later motion events.
+		 */
+		linuxmousebuttons = 0;
+	}
+
+	n = snprint(buf, sizeof(buf), "m %d %d %d %d\n", x, y, b, mods);
+	emouseput(buf, n);
+
+	return LinuxMouseEvent;
+}
+
+static int
+linuxparsesgrmouse(void)
+{
+	int c, code, x, y, release;
+
+	code = 0;
+	x = 0;
+	y = 0;
+	release = 0;
+
+	for(;;){
+		if(!linuxreadkbdchar(&c, 25))
+			return LinuxNoKey;
+
+		if(c >= '0' && c <= '9'){
+			code = code * 10 + c - '0';
+			continue;
+		}
+
+		if(c == ';')
+			break;
+
+		return LinuxNoKey;
+	}
+
+	for(;;){
+		if(!linuxreadkbdchar(&c, 25))
+			return LinuxNoKey;
+
+		if(c >= '0' && c <= '9'){
+			x = x * 10 + c - '0';
+			continue;
+		}
+
+		if(c == ';')
+			break;
+
+		return LinuxNoKey;
+	}
+
+	for(;;){
+		if(!linuxreadkbdchar(&c, 25))
+			return LinuxNoKey;
+
+		if(c >= '0' && c <= '9'){
+			y = y * 10 + c - '0';
+			continue;
+		}
+
+		if(c == 'M'){
+			release = 0;
+			break;
+		}
+
+		if(c == 'm'){
+			release = 1;
+			break;
+		}
+
+		return LinuxNoKey;
+	}
+
+	return linuxmouseevent(code, x, y, release);
+}
+
+static int
+linuxparsecsi(int lead)
+{
+	int c, i, n, num;
+	char seq[32];
+
+	if(lead == '['){
+		if(!linuxreadkbdchar(&c, 25))
+			return LinuxNoKey;
+
+		if(c == '<')
+			return linuxparsesgrmouse();
+
+		seq[0] = lead;
+		seq[1] = c;
+		n = 2;
+	}else{
+		seq[0] = lead;
+		n = 1;
+	}
+
+	while(n < (int)sizeof(seq)-1){
+		if(n > 1 && seq[n-1] >= '@' && seq[n-1] <= '~')
+			break;
+
+		if(!linuxreadkbdchar(&c, 25))
+			break;
+
+		seq[n++] = c;
+
+		if(c >= '@' && c <= '~')
+			break;
+	}
+
+	seq[n] = 0;
+
+	if(lead == '['){
+		switch(seq[n-1]){
+		case 'A':
+			return Up;
+		case 'B':
+			return Down;
+		case 'C':
+			return Right;
+		case 'D':
+			return Left;
+		case 'F':
+			return End;
+		case 'H':
+			return Home;
+		case 'Z':
+			return BackTab;
+		case '~':
+			num = 0;
+			for(i = 1; i < n; i++){
+				if(seq[i] >= '0' && seq[i] <= '9')
+					num = num * 10 + seq[i] - '0';
+				else
+					break;
+			}
+
+			switch(num){
+			case 1:
+			case 7:
+				return Home;
+			case 2:
+				return Ins;
+			case 3:
+				return Del;
+			case 4:
+			case 8:
+				return End;
+			case 5:
+				return Pgup;
+			case 6:
+				return Pgdown;
+			case 11:
+				return KF|1;
+			case 12:
+				return KF|2;
+			case 13:
+				return KF|3;
+			case 14:
+				return KF|4;
+			case 15:
+				return KF|5;
+			case 17:
+				return KF|6;
+			case 18:
+				return KF|7;
+			case 19:
+				return KF|8;
+			case 20:
+				return KF|9;
+			case 21:
+				return KF|10;
+			case 23:
+				return KF|11;
+			case 24:
+				return KF|12;
+			}
+			break;
+		}
+	}else if(lead == 'O'){
+		switch(seq[n-1]){
+		case 'A':
+			return Up;
+		case 'B':
+			return Down;
+		case 'C':
+			return Right;
+		case 'D':
+			return Left;
+		case 'F':
+			return End;
+		case 'H':
+			return Home;
+		case 'P':
+			return KF|1;
+		case 'Q':
+			return KF|2;
+		case 'R':
+			return KF|3;
+		case 'S':
+			return KF|4;
+		}
+	}
+
+	return LinuxNoKey;
+}
+
+static int
+linuxreadenhancedkey(void)
+{
+	int c, k;
+
+	if(!linuxreadkbdchar(&c, -1))
+		return -1;
+
+	switch(c){
+	case '\r':
+		return '\n';
+	case DELETE:
+		return '\b';
+	case CTRLC:
+		cleanexit(0);
+		return -1;
+	case Esc:
+		if(!linuxreadkbdchar(&c, 25))
+			return Esc;
+
+		if(c == '[' || c == 'O'){
+			k = linuxparsecsi(c);
+			if(k != LinuxNoKey)
+				return k;
+
+			return Esc;
+		}
+
+		if((c & 0x80) != 0)
+			return linuxreadkbdrune(c);
+
+		return APP | c;
+	}
+
+	if((c & 0x80) != 0)
+		return linuxreadkbdrune(c);
+
+	return c;
+}
+
+static void
+linuxconsolemouseon(void)
+{
+	static char seq[] =
+		"\033[?1000h"
+		"\033[?1002h"
+		"\033[?1003h"
+		"\033[?1006h";
+
+	write(1, seq, sizeof(seq)-1);
+}
+
+static void
+linuxconsolemouseoff(void)
+{
+	static char seq[] =
+		"\033[?1006l"
+		"\033[?1003l"
+		"\033[?1002l"
+		"\033[?1000l";
+
+	write(1, seq, sizeof(seq)-1);
+	linuxmousebuttons = 0;
+}
+
 void
 linuxkbdslave(void *a)
 {
@@ -279,8 +693,11 @@ linuxkbdslave(void *a)
 
 	USED(a);
 	for(;;){
-		k = readekbd();
+		k = linuxreadenhancedkey();
 		if(k < 0)
+			continue;
+
+		if(k == LinuxMouseEvent)
 			continue;
 
 		if(kbd.ekbd.ref != 0)
@@ -430,6 +847,11 @@ consopen(Chan *c, int omode)
 			mouseprocstarted = 1;
 			kproc("mouse", winmouseslave, 0, 0);
 		}
+#elif defined(__linux__)
+		if(incref(&kbd.ptr) == 1){
+			qflush(emouseq);
+			linuxconsolemouseon();
+		}
 #else
 		incref(&kbd.ptr);
 #endif
@@ -461,7 +883,7 @@ consopen(Chan *c, int omode)
 	case Qscancode:
 		qlock(&kbd.gq);
 		if(gkscanq != nil || gkscanid[0] == '\0') {
-			qunlock(&kbd.q);
+			qunlock(&kbd.gq);
 			c->flag &= ~COPEN;
 			if(gkscanq)
 				error(Einuse);
@@ -510,6 +932,9 @@ consclose(Chan *c)
 		if(decref(&kbd.ptr) == 0){
 #ifdef __MINGW32__
 			disableconsolemouse();
+#elif defined(__linux__)
+			linuxconsolemouseoff();
+			qflush(emouseq);
 #endif
 		}
 		break;
