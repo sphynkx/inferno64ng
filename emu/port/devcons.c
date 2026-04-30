@@ -6,11 +6,6 @@
 #include	"libsec.h"
 #include	"keyboard.h"
 
-#ifdef __linux__
-#include	<sys/select.h>
-#include	<unistd.h>
-#endif
-
 #if defined(__MINGW32__) || defined(__linux__)
 extern int osconsinfo(char*, int);
 #endif
@@ -115,14 +110,6 @@ static struct
 	int	count;
 } kbd;
 
-static void
-emouseput(char *buf, int n)
-{
-	if(emouseq == nil || n <= 0)
-		return;
-	qproduce(emouseq, buf, n);
-}
-
 void
 kbdslave(void *a)
 {
@@ -164,14 +151,18 @@ static int
 ekbdsessionactive(void)
 {
 	/*
-	 * Enhanced keyboard ownership suppresses legacy /dev/cons only while
-	 * a raw UI session is actively owning input.
-	 *
-	 * Blocked Limbo readers can keep /dev/ekeyboard open after an app has
-	 * returned and written rawoff.  If we treated kbd.ekbd.ref alone as
-	 * ownership, shell input would remain suppressed until FD finalization.
+	 * MinGW keeps draining host console input continuously, so gating
+	 * legacy mirroring on kbd.ekbd.ref alone can keep shell input
+	 * suppressed after the visible session has ended if FD finalization
+	 * lags.  The proven leak only happens while the enhanced raw session
+	 * is actively owning input, so require both raw mode and an open
+	 * /dev/ekeyboard reference there.
 	 */
+#ifdef __MINGW32__
 	return kbd.raw != 0 && kbd.ekbd.ref != 0;
+#else
+	return kbd.ekbd.ref != 0;
+#endif
 }
 
 #ifdef __MINGW32__
@@ -181,6 +172,22 @@ extern void disableconsolemouse(void);
 
 static int mouseprocstarted;
 
+static void
+emouseput(char *buf, int n)
+{
+	if(emouseq == nil || n <= 0)
+		return;
+	qproduce(emouseq, buf, n);
+}
+
+/*
+ * MinGW/MSYS2 console keyboard reader:
+ * single source of truth for console input.
+ *
+ * All key events go to /dev/ekeyboard.
+ * Ordinary text input is also translated to the legacy console queue
+ * so /dev/cons and the shell continue to work from the same event stream.
+ */
 void
 winkbdslave(void *a)
 {
@@ -195,9 +202,23 @@ winkbdslave(void *a)
 		if(k < 0)
 			continue;
 
-		if(ekbdsessionactive())
-			ekbdputc(k);
+		/*
+		 * Full event stream for enhanced console clients.
+		 * MinGW keeps draining host console input into ekbdq and trims
+		 * stale entries on open via qflush(ekbdq), rather than waiting
+		 * for kbd.ekbd.ref before it starts collecting host events.
+		 */
+		ekbdputc(k);
 
+		/*
+		 * Legacy console path:
+		 * ordinary text should only reach /dev/cons when the enhanced
+		 * raw session does not currently own input.
+		 *
+		 * When MinGW raw + /dev/ekeyboard are both active, mirroring the
+		 * same ordinary key into kbdq leaks dialog-consumed text back to
+		 * the shell after the interactive session ends.
+		 */
 		if(ordinarykey(k) && !ekbdsessionactive()){
 			r = k;
 			if(r == '\r')
@@ -244,413 +265,10 @@ winmouseslave(void *a)
 	}
 	/* not reached */
 }
+
 #endif
 
 #ifdef __linux__
-
-enum
-{
-	LinuxNoKey = -1000000,
-	LinuxMouseEvent = -1000001,
-
-	LinuxDeleteChar = 0x7F,
-	LinuxCtrlC = 0x03
-};
-
-static int linuxmousebuttons;
-
-static int
-linuxreadkbdchar(int *cp, int timeoutms)
-{
-	int n;
-	char ch;
-
-	if(timeoutms >= 0){
-		fd_set rd;
-		struct timeval tv;
-
-		FD_ZERO(&rd);
-		FD_SET(0, &rd);
-		tv.tv_sec = timeoutms/1000;
-		tv.tv_usec = (timeoutms%1000)*1000;
-
-		n = select(1, &rd, nil, nil, &tv);
-		if(n <= 0)
-			return 0;
-	}
-
-	n = read(0, &ch, sizeof(ch));
-	if(n <= 0)
-		return 0;
-
-	*cp = (uchar)ch;
-	return 1;
-}
-
-static int
-linuxreadkbdrune(int c0)
-{
-	int c, n;
-	char buf[UTFmax];
-	Rune r;
-
-	buf[0] = c0;
-	n = 1;
-
-	while(n < UTFmax && !fullrune(buf, n)){
-		if(!linuxreadkbdchar(&c, -1))
-			return c0;
-		buf[n++] = c;
-	}
-
-	if(chartorune(&r, buf) <= 0)
-		return c0;
-
-	return r;
-}
-
-static int
-linuxbuttonmask(int code, int release)
-{
-	if(release)
-		return 0;
-
-	if(code & 64){
-		switch(code & 3){
-		case 0:
-			return 8;	/* wheel up */
-		case 1:
-			return 16;	/* wheel down */
-		default:
-			return 0;
-		}
-	}
-
-	switch(code & 3){
-	case 0:
-		return 1;	/* left */
-	case 1:
-		return 4;	/* middle */
-	case 2:
-		return 2;	/* right */
-	default:
-		return 0;
-	}
-}
-
-static int
-linuxmodmask(int code)
-{
-	int m;
-
-	m = 0;
-	if(code & 4)
-		m |= 1;		/* shift */
-	if(code & 16)
-		m |= 2;		/* ctrl */
-	if(code & 8)
-		m |= 4;		/* alt/meta */
-
-	return m;
-}
-
-static int
-linuxmouseevent(int code, int x, int y, int release)
-{
-	char buf[128];
-	int b, mods, n;
-
-	if(x > 0)
-		x--;
-	if(y > 0)
-		y--;
-
-	mods = linuxmodmask(code);
-
-	if(code & 64){
-		b = linuxbuttonmask(code, 0);
-		linuxmousebuttons = 0;
-	}else if(release || (code & 3) == 3){
-		b = 0;
-		linuxmousebuttons = 0;
-	}else if(code & 32){
-		b = linuxbuttonmask(code, 0);
-		if(b != 0)
-			linuxmousebuttons = b;
-		else
-			b = linuxmousebuttons;
-	}else{
-		b = linuxbuttonmask(code, 0);
-		linuxmousebuttons = b;
-	}
-
-	n = snprint(buf, sizeof(buf), "m %d %d %d %d\n", x, y, b, mods);
-	emouseput(buf, n);
-
-	return LinuxMouseEvent;
-}
-
-static int
-linuxparsesgrmouse(void)
-{
-	int c, code, x, y, release;
-
-	code = 0;
-	x = 0;
-	y = 0;
-	release = 0;
-
-	for(;;){
-		if(!linuxreadkbdchar(&c, 25))
-			return LinuxNoKey;
-
-		if(c >= '0' && c <= '9'){
-			code = code * 10 + c - '0';
-			continue;
-		}
-
-		if(c == ';')
-			break;
-
-		return LinuxNoKey;
-	}
-
-	for(;;){
-		if(!linuxreadkbdchar(&c, 25))
-			return LinuxNoKey;
-
-		if(c >= '0' && c <= '9'){
-			x = x * 10 + c - '0';
-			continue;
-		}
-
-		if(c == ';')
-			break;
-
-		return LinuxNoKey;
-	}
-
-	for(;;){
-		if(!linuxreadkbdchar(&c, 25))
-			return LinuxNoKey;
-
-		if(c >= '0' && c <= '9'){
-			y = y * 10 + c - '0';
-			continue;
-		}
-
-		if(c == 'M'){
-			release = 0;
-			break;
-		}
-
-		if(c == 'm'){
-			release = 1;
-			break;
-		}
-
-		return LinuxNoKey;
-	}
-
-	return linuxmouseevent(code, x, y, release);
-}
-
-static int
-linuxparsecsi(int lead)
-{
-	int c, i, n, num;
-	char seq[32];
-
-	if(lead == '['){
-		if(!linuxreadkbdchar(&c, 25))
-			return LinuxNoKey;
-
-		if(c == '<')
-			return linuxparsesgrmouse();
-
-		seq[0] = lead;
-		seq[1] = c;
-		n = 2;
-	}else{
-		seq[0] = lead;
-		n = 1;
-	}
-
-	while(n < (int)sizeof(seq)-1){
-		if(n > 1 && seq[n-1] >= '@' && seq[n-1] <= '~')
-			break;
-
-		if(!linuxreadkbdchar(&c, 25))
-			break;
-
-		seq[n++] = c;
-
-		if(c >= '@' && c <= '~')
-			break;
-	}
-
-	seq[n] = 0;
-
-	if(lead == '['){
-		switch(seq[n-1]){
-		case 'A':
-			return Up;
-		case 'B':
-			return Down;
-		case 'C':
-			return Right;
-		case 'D':
-			return Left;
-		case 'F':
-			return End;
-		case 'H':
-			return Home;
-		case 'Z':
-			return BackTab;
-		case '~':
-			num = 0;
-			for(i = 1; i < n; i++){
-				if(seq[i] >= '0' && seq[i] <= '9')
-					num = num * 10 + seq[i] - '0';
-				else
-					break;
-			}
-
-			switch(num){
-			case 1:
-			case 7:
-				return Home;
-			case 2:
-				return Ins;
-			case 3:
-				return Del;
-			case 4:
-			case 8:
-				return End;
-			case 5:
-				return Pgup;
-			case 6:
-				return Pgdown;
-			case 11:
-				return KF|1;
-			case 12:
-				return KF|2;
-			case 13:
-				return KF|3;
-			case 14:
-				return KF|4;
-			case 15:
-				return KF|5;
-			case 17:
-				return KF|6;
-			case 18:
-				return KF|7;
-			case 19:
-				return KF|8;
-			case 20:
-				return KF|9;
-			case 21:
-				return KF|10;
-			case 23:
-				return KF|11;
-			case 24:
-				return KF|12;
-			}
-			break;
-		}
-	}else if(lead == 'O'){
-		switch(seq[n-1]){
-		case 'A':
-			return Up;
-		case 'B':
-			return Down;
-		case 'C':
-			return Right;
-		case 'D':
-			return Left;
-		case 'F':
-			return End;
-		case 'H':
-			return Home;
-		case 'P':
-			return KF|1;
-		case 'Q':
-			return KF|2;
-		case 'R':
-			return KF|3;
-		case 'S':
-			return KF|4;
-		}
-	}
-
-	return LinuxNoKey;
-}
-
-static int
-linuxreadenhancedkey(void)
-{
-	int c, k;
-
-	if(!linuxreadkbdchar(&c, -1))
-		return -1;
-
-	switch(c){
-	case '\r':
-		return '\n';
-	case LinuxDeleteChar:
-		return '\b';
-	case LinuxCtrlC:
-		cleanexit(0);
-		return -1;
-	case Esc:
-		if(!linuxreadkbdchar(&c, 25))
-			return Esc;
-
-		if(c == '[' || c == 'O'){
-			k = linuxparsecsi(c);
-			if(k != LinuxNoKey)
-				return k;
-
-			return Esc;
-		}
-
-		if((c & 0x80) != 0)
-			return linuxreadkbdrune(c);
-
-		return APP | c;
-	}
-
-	if((c & 0x80) != 0)
-		return linuxreadkbdrune(c);
-
-	return c;
-}
-
-static void
-linuxconsolemouseon(void)
-{
-	static char seq[] =
-		"\033[?1000h"
-		"\033[?1002h"
-		"\033[?1003h"
-		"\033[?1006h";
-
-	write(1, seq, sizeof(seq)-1);
-}
-
-static void
-linuxconsolemouseoff(void)
-{
-	static char seq[] =
-		"\033[?1006l"
-		"\033[?1003l"
-		"\033[?1002l"
-		"\033[?1000l";
-
-	write(1, seq, sizeof(seq)-1);
-	linuxmousebuttons = 0;
-}
-
 void
 linuxkbdslave(void *a)
 {
@@ -661,17 +279,14 @@ linuxkbdslave(void *a)
 
 	USED(a);
 	for(;;){
-		k = linuxreadenhancedkey();
+		k = readekbd();
 		if(k < 0)
 			continue;
 
-		if(k == LinuxMouseEvent)
-			continue;
-
-		if(ekbdsessionactive())
+		if(kbd.ekbd.ref != 0)
 			ekbdputc(k);
 
-		if(ordinarykey(k) && !ekbdsessionactive()){
+		if(kbd.ekbd.ref == 0 && ordinarykey(k)){
 			r = k;
 			if(r == '\r')
 				r = '\n';
@@ -759,6 +374,9 @@ consinit(void)
 	randominit();
 }
 
+/*
+ *  return true if current user is eve
+ */
 int
 iseve(void)
 {
@@ -812,11 +430,6 @@ consopen(Chan *c, int omode)
 			mouseprocstarted = 1;
 			kproc("mouse", winmouseslave, 0, 0);
 		}
-#elif defined(__linux__)
-		if(incref(&kbd.ptr) == 1){
-			qflush(emouseq);
-			linuxconsolemouseon();
-		}
 #else
 		incref(&kbd.ptr);
 #endif
@@ -826,11 +439,21 @@ consopen(Chan *c, int omode)
 	{
 #ifdef __MINGW32__
 		incref(&kbd.ekbd);
+		/*
+		 * Drop stale enhanced-key events on every open.
+		 *
+		 * The MinGW reader already drains console input continuously
+		 * into ekbdq, so flushing the queue here is enough to discard
+		 * pre-open shell/build keystrokes without depending on
+		 * first-open / last-close transitions that can lag under
+		 * GC-driven FD finalization.
+		 */
 		qflush(ekbdq);
 		qflush(kbdq);
 #else
-		if(incref(&kbd.ekbd) == 1)
+		if(incref(&kbd.ekbd) == 1){
 			qflush(ekbdq);
+		}
 #endif
 		break;
 	}
@@ -838,7 +461,7 @@ consopen(Chan *c, int omode)
 	case Qscancode:
 		qlock(&kbd.gq);
 		if(gkscanq != nil || gkscanid[0] == '\0') {
-			qunlock(&kbd.gq);
+			qunlock(&kbd.q);
 			c->flag &= ~COPEN;
 			if(gkscanq)
 				error(Einuse);
@@ -878,27 +501,15 @@ consclose(Chan *c)
 
 	switch((ulong)c->qid.path) {
 	case Qconsctl:
-		if(decref(&kbd.ctl) == 0){
+		/* last close of control file turns off raw */
+		if(decref(&kbd.ctl) == 0)
 			kbd.raw = 0;
-			qflush(ekbdq);
-			qflush(emouseq);
-#ifdef __MINGW32__
-			if(kbd.ptr.ref != 0)
-				disableconsolemouse();
-#elif defined(__linux__)
-			if(kbd.ptr.ref != 0)
-				linuxconsolemouseoff();
-#endif
-		}
 		break;
 
 	case Qemouse:
 		if(decref(&kbd.ptr) == 0){
 #ifdef __MINGW32__
 			disableconsolemouse();
-#elif defined(__linux__)
-			linuxconsolemouseoff();
-			qflush(emouseq);
 #endif
 		}
 		break;
@@ -962,7 +573,7 @@ consread(Chan *c, void *va, long n, vlong offset)
 		return readstr(offset, va, n, eve);
 
 	case Qhoststdin:
-		return read(0, va, n);
+		return read(0, va, n);	/* should be pread */
 
 	case Quser:
 		return readstr(offset, va, n, up->env->user);
@@ -1032,6 +643,7 @@ consread(Chan *c, void *va, long n, vlong offset)
 				continue;
 			send = 0;
 			if(ch == 0){
+				/* flush output on rawoff -> rawon */
 				if(kbd.x > 0)
 					send = !qcanread(kbdq);
 			}else if(kbd.raw){
@@ -1133,26 +745,11 @@ conswrite(Chan *c, void *va, long n, vlong offset)
 		for(a = buf; a;){
 			if(strncmp(a, "rawon", 5) == 0){
 				kbd.raw = 1;
+				/* clumsy hack - wake up reader */
 				ch = 0;
 				qwrite(kbdq, &ch, 1);
-#ifdef __MINGW32__
-				if(kbd.ptr.ref != 0)
-					enableconsolemouse();
-#elif defined(__linux__)
-				if(kbd.ptr.ref != 0)
-					linuxconsolemouseon();
-#endif
-			} else if(strncmp(a, "rawoff", 6) == 0){
+			} else if(strncmp(buf, "rawoff", 6) == 0){
 				kbd.raw = 0;
-				qflush(ekbdq);
-				qflush(emouseq);
-#ifdef __MINGW32__
-				if(kbd.ptr.ref != 0)
-					disableconsolemouse();
-#elif defined(__linux__)
-				if(kbd.ptr.ref != 0)
-					linuxconsolemouseoff();
-#endif
 			}
 			if((a = strchr(a, ' ')) != nil)
 				a++;
@@ -1189,6 +786,8 @@ conswrite(Chan *c, void *va, long n, vlong offset)
 			buf[--n] = '\0';
 		if(n == 0)
 			error(Ebadarg);
+		/* renameuser(eve, buf); */
+		/* renameproguser(eve, buf); */
 		kstrdup(&eve, buf);
 		kstrdup(&up->env->user, buf);
 		break;
@@ -1261,7 +860,7 @@ sysconwrite(void *va, ulong count)
 			e = atoi(cb->f[1]);
 		else
 			e = 0;
-		cleanexit(e);
+		cleanexit(e);		/* XXX ignored for the time being (and should be a string anyway) */
 	}else if(strcmp(cb->f[0], "broken") == 0)
 		keepbroken = 1;
 	else if(strcmp(cb->f[0], "nobroken") == 0)

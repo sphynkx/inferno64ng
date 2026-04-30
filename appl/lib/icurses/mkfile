@@ -7,15 +7,12 @@ TARG=\
 	form.dis\
 	glyph.dis\
 	history.dis\
-	hit.dis\
 	icurses.dis\
 	input.dis\
 	keymap.dis\
 	menu.dis\
-	mouse.dis\
 	msg.dis\
 	paint.dis\
-	session.dis\
 	slider.dis\
 	text.dis\
 	theme.dis\
@@ -31,15 +28,12 @@ SYSMODULES=\
 	icurses/form.m\
 	icurses/glyph.m\
 	icurses/history.m\
-	icurses/hit.m\
 	icurses/icurses.m\
 	icurses/input.m\
 	icurses/keymap.m\
 	icurses/menu.m\
-	icurses/mouse.m\
 	icurses/msg.m\
 	icurses/paint.m\
-	icurses/session.m\
 	icurses/slider.m\
 	icurses/text.m\
 	icurses/theme.m\
