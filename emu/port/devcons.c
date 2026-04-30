@@ -66,7 +66,7 @@ Dirtab contab[] =
 	"scancode",	{Qscancode},	0,	0444,
 	"sysctl",	{Qsysctl},	0,	0644,
 	"sysname",	{Qsysname},	0,	0644,
-	"time",		{Qtime},	0,	0644,
+	"time",		{Qtime},	0,	0444,
 	"user",		{Quser},	0,	0644,
 };
 
@@ -150,14 +150,6 @@ ordinarykey(int k)
 static int
 ekbdsessionactive(void)
 {
-	/*
-	 * MinGW keeps draining host console input continuously, so gating
-	 * legacy mirroring on kbd.ekbd.ref alone can keep shell input
-	 * suppressed after the visible session has ended if FD finalization
-	 * lags.  The proven leak only happens while the enhanced raw session
-	 * is actively owning input, so require both raw mode and an open
-	 * /dev/ekeyboard reference there.
-	 */
 #ifdef __MINGW32__
 	return kbd.raw != 0 && kbd.ekbd.ref != 0;
 #else
@@ -166,11 +158,9 @@ ekbdsessionactive(void)
 }
 
 #ifdef __MINGW32__
-extern int reademouse(char *buf, int n);
+extern int readconsoleevent(int *key, char *mbuf, int mn);
 extern void enableconsolemouse(void);
 extern void disableconsolemouse(void);
-
-static int mouseprocstarted;
 
 static void
 emouseput(char *buf, int n)
@@ -180,88 +170,96 @@ emouseput(char *buf, int n)
 	qproduce(emouseq, buf, n);
 }
 
-/*
- * MinGW/MSYS2 console keyboard reader:
- * single source of truth for console input.
- *
- * All key events go to /dev/ekeyboard.
- * Ordinary text input is also translated to the legacy console queue
- * so /dev/cons and the shell continue to work from the same event stream.
- */
-void
-winkbdslave(void *a)
+static void
+processwinkey(int k)
 {
-	int k, nb;
+	int nb;
 	Rune r;
 	char b;
 	char ubuf[UTFmax];
 
-	USED(a);
-	for(;;){
-		k = readekbd();
-		if(k < 0)
-			continue;
+	if(k < 0)
+		return;
 
-		/*
-		 * Full event stream for enhanced console clients.
-		 * MinGW keeps draining host console input into ekbdq and trims
-		 * stale entries on open via qflush(ekbdq), rather than waiting
-		 * for kbd.ekbd.ref before it starts collecting host events.
-		 */
-		ekbdputc(k);
+	/*
+	 * Full enhanced keyboard stream.
+	 *
+	 * MinGW drains the host console continuously from a single dispatcher.
+	 * Stale enhanced events are trimmed on /dev/ekeyboard open/close.
+	 */
+	ekbdputc(k);
 
-		/*
-		 * Legacy console path:
-		 * ordinary text should only reach /dev/cons when the enhanced
-		 * raw session does not currently own input.
-		 *
-		 * When MinGW raw + /dev/ekeyboard are both active, mirroring the
-		 * same ordinary key into kbdq leaks dialog-consumed text back to
-		 * the shell after the interactive session ends.
-		 */
-		if(ordinarykey(k) && !ekbdsessionactive()){
-			r = k;
-			if(r == '\r')
-				r = '\n';
+	/*
+	 * Legacy console path:
+	 * ordinary text should only reach /dev/cons when the enhanced raw
+	 * session does not currently own input.
+	 */
+	if(ordinarykey(k) && !ekbdsessionactive()){
+		r = k;
+		if(r == '\r')
+			r = '\n';
 
-			if(r < 0x80){
-				b = r;
-				if(kbd.raw == 0){
-					switch(b){
-					case 0x15:
-						write(1, "^U\n", 3);
-						break;
-					default:
-						write(1, &b, 1);
-						break;
-					}
+		if(r < 0x80){
+			b = r;
+			if(kbd.raw == 0){
+				switch(b){
+				case 0x15:
+					write(1, "^U\n", 3);
+					break;
+				default:
+					write(1, &b, 1);
+					break;
 				}
-				qproduce(kbdq, &b, 1);
-			}else{
-				nb = runetochar(ubuf, &r);
-				if(nb <= 0)
-					continue;
-				if(kbd.raw == 0)
-					write(1, ubuf, nb);
-				qproduce(kbdq, ubuf, nb);
 			}
+			qproduce(kbdq, &b, 1);
+		}else{
+			nb = runetochar(ubuf, &r);
+			if(nb <= 0)
+				return;
+			if(kbd.raw == 0)
+				write(1, ubuf, nb);
+			qproduce(kbdq, ubuf, nb);
 		}
 	}
-	/* not reached */
 }
 
+/*
+ * MinGW/MSYS2 unified console input dispatcher.
+ *
+ * This is the only backend thread that reads the Windows console input
+ * stream through ReadConsoleInput().
+ *
+ * It routes:
+ *   KEY_EVENT   -> /dev/ekeyboard and legacy /dev/cons
+ *   MOUSE_EVENT -> /dev/emouse when /dev/emouse is open
+ *
+ * Keeping one reader avoids losing events between independent keyboard
+ * and mouse readers.
+ */
 void
-winmouseslave(void *a)
+winkbdslave(void *a)
 {
-	char buf[128];
-	int n;
+	int t, k;
+	char mbuf[128];
 
 	USED(a);
+
 	for(;;){
-		n = reademouse(buf, sizeof(buf));
-		if(n <= 0)
+		k = -1;
+		mbuf[0] = 0;
+
+		t = readconsoleevent(&k, mbuf, sizeof(mbuf));
+
+		if(t == 1){
+			processwinkey(k);
 			continue;
-		emouseput(buf, n);
+		}
+
+		if(t == 2){
+			if(kbd.ptr.ref != 0 && mbuf[0] != 0)
+				emouseput(mbuf, strlen(mbuf));
+			continue;
+		}
 	}
 	/* not reached */
 }
@@ -349,8 +347,7 @@ gkbdputc(Queue *q, int ch)
 	n = runetochar(buf, &r);
 	if(n == 0)
 		return;
-	/* if(!isdbgkey(r)) */ 
-		qproduce(q, buf, n);
+	qproduce(q, buf, n);
 }
 
 void
@@ -424,11 +421,9 @@ consopen(Chan *c, int omode)
 
 	case Qemouse:
 #ifdef __MINGW32__
-		if(incref(&kbd.ptr) == 1)
+		if(incref(&kbd.ptr) == 1){
+			qflush(emouseq);
 			enableconsolemouse();
-		if(mouseprocstarted == 0){
-			mouseprocstarted = 1;
-			kproc("mouse", winmouseslave, 0, 0);
 		}
 #else
 		incref(&kbd.ptr);
@@ -436,27 +431,15 @@ consopen(Chan *c, int omode)
 		break;
 
 	case Qekeyboard:
-	{
 #ifdef __MINGW32__
 		incref(&kbd.ekbd);
-		/*
-		 * Drop stale enhanced-key events on every open.
-		 *
-		 * The MinGW reader already drains console input continuously
-		 * into ekbdq, so flushing the queue here is enough to discard
-		 * pre-open shell/build keystrokes without depending on
-		 * first-open / last-close transitions that can lag under
-		 * GC-driven FD finalization.
-		 */
 		qflush(ekbdq);
 		qflush(kbdq);
 #else
-		if(incref(&kbd.ekbd) == 1){
+		if(incref(&kbd.ekbd) == 1)
 			qflush(ekbdq);
-		}
 #endif
 		break;
-	}
 
 	case Qscancode:
 		qlock(&kbd.gq);
@@ -510,15 +493,17 @@ consclose(Chan *c)
 		if(decref(&kbd.ptr) == 0){
 #ifdef __MINGW32__
 			disableconsolemouse();
+			qflush(emouseq);
 #endif
 		}
 		break;
 
 	case Qekeyboard:
-		if(decref(&kbd.ekbd) == 0)
-		{
+		if(decref(&kbd.ekbd) == 0){
 			qflush(ekbdq);
+#ifdef __MINGW32__
 			qflush(kbdq);
+#endif
 		}
 		break;
 
@@ -786,8 +771,6 @@ conswrite(Chan *c, void *va, long n, vlong offset)
 			buf[--n] = '\0';
 		if(n == 0)
 			error(Ebadarg);
-		/* renameuser(eve, buf); */
-		/* renameproguser(eve, buf); */
 		kstrdup(&eve, buf);
 		kstrdup(&up->env->user, buf);
 		break;
@@ -860,7 +843,7 @@ sysconwrite(void *va, ulong count)
 			e = atoi(cb->f[1]);
 		else
 			e = 0;
-		cleanexit(e);		/* XXX ignored for the time being (and should be a string anyway) */
+		cleanexit(e);
 	}else if(strcmp(cb->f[0], "broken") == 0)
 		keepbroken = 1;
 	else if(strcmp(cb->f[0], "nobroken") == 0)
