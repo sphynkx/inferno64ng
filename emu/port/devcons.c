@@ -290,7 +290,6 @@ winkbdslave(void *a)
 	}
 	/* not reached */
 }
-
 #endif
 
 #ifdef __linux__
@@ -299,7 +298,7 @@ extern void enableconsolemouse(void);
 extern void disableconsolemouse(void);
 
 static void
-linuxemouseput(char *buf, int n)
+emouseput(char *buf, int n)
 {
 	if(emouseq == nil || n <= 0)
 		return;
@@ -320,7 +319,7 @@ processlinuxkey(int k)
 	if(kbd.ekbd.ref != 0)
 		ekbdputc(k);
 
-	if(kbd.ekbd.ref == 0 && ordinarykey(k)){
+	if(ordinarykey(k) && !ekbdsessionactive()){
 		r = k;
 		if(r == '\r')
 			r = '\n';
@@ -350,11 +349,11 @@ processlinuxkey(int k)
 }
 
 /*
- * Linux console input dispatcher.
+ * Linux unified console input dispatcher.
  *
- * Linux uses the newer host console event reader from emu/Linux/os.c.
- * Keep all Linux-specific queue reopening/wakeup behaviour out of the
- * MinGW path.
+ * This mirrors the Linux-specific working version: one backend dispatcher
+ * reads host console events and routes keyboard/mouse events to the
+ * enhanced queues.
  */
 void
 linuxkbdslave(void *a)
@@ -377,7 +376,7 @@ linuxkbdslave(void *a)
 
 		if(t == 2){
 			if(kbd.ptr.ref != 0 && mbuf[0] != 0)
-				linuxemouseput(mbuf, strlen(mbuf));
+				emouseput(mbuf, strlen(mbuf));
 			continue;
 		}
 	}
@@ -941,6 +940,7 @@ sysconwrite(void *va, ulong count)
 {
 	Cmdbuf *cb;
 	int e;
+
 	cb = parsecmd(va, count);
 	if(waserror()){
 		free(cb);

@@ -31,8 +31,12 @@ enum
 	DELETE	= 0x7f,
 	CTRLC	= 'C'-'@',
 	NSTACKSPERALLOC = 16,
-	X11STACK=	256*1024
+	X11STACK=	256*1024,
+
+	ConEventKey = 1,
+	ConEventMouse = 2
 };
+
 char *hosttype = "Linux";
 #if defined(__x86_64__)
 char *cputype = "amd64";
@@ -57,6 +61,10 @@ extern int dflag;
 int	gidnobody = -1;
 int	uidnobody = -1;
 static struct 	termios tinit;
+static int mousemodeactive = 0;
+
+void enableconsolemouse(void);
+void disableconsolemouse(void);
 
 static void
 sysfault(char *what, void *addr)
@@ -84,11 +92,11 @@ isnilref(siginfo_t *si)
 static void
 trapmemref(int signo, siginfo_t *si, void *a)
 {
-	USED(a);	/* ucontext_t*, could fetch pc in machine-dependent way */
+	USED(a);
 	if(isnilref(si))
 		disfault(nil, exNilref);
 	else if(signo == SIGBUS)
-		sysfault("bad address addr=", si->si_addr);	/* eg, misaligned */
+		sysfault("bad address addr=", si->si_addr);
 	else
 		sysfault("segmentation violation addr=", si->si_addr);
 }
@@ -112,13 +120,13 @@ trapUSR1(int signo)
 	USED(signo);
 
 	intwait = up->intwait;
-	up->intwait = 0;	/* clear it to let proc continue in osleave */
+	up->intwait = 0;
 
-	if(up->type != Interp)		/* Used to unblock pending I/O */
+	if(up->type != Interp)
 		return;
 
-	if(intwait == 0)		/* Not posted so it's a sync error */
-		disfault(nil, Eintr);	/* Should never happen */
+	if(intwait == 0)
+		disfault(nil, Eintr);
 }
 
 void
@@ -144,6 +152,7 @@ termset(void)
 static void
 termrestore(void)
 {
+	disableconsolemouse();
 	tcsetattr(0, TCSANOW, &tinit);
 }
 
@@ -160,7 +169,6 @@ cleanexit(int x)
 	if(dflag == 0)
 		termrestore();
 
-	/*kill(0, SIGKILL);*/
 	exit(0);
 }
 
@@ -201,10 +209,6 @@ libinit(char *imod)
 	act.sa_handler = SIG_IGN;
 	sigaction(SIGCHLD, &act, nil);
 
-	/*
-	 * For the correct functioning of devcmd in the
-	 * face of exiting slaves
-	 */
 	signal(SIGPIPE, SIG_IGN);
 	if(signal(SIGTERM, SIG_IGN) != SIG_IGN)
 		signal(SIGTERM, cleanexit);
@@ -230,7 +234,7 @@ libinit(char *imod)
 	if(pw != nil)
 		kstrdup(&eve, pw->pw_name);
 	else
-		print("cannot getpwuid\n");
+		print("cannot getpwid\n");
 
 	p->env->uid = getuid();
 	p->env->gid = getgid();
@@ -291,7 +295,6 @@ readkbdchar(int *cp, int timeoutms)
 		pexit("keyboard thread", 0);
 		return 0;
 	}
-	/* stdin EOF is a normal way for the keyboard thread to terminate */
 	if(n <= 0)
 		pexit("keyboard thread", 0);
 
@@ -313,28 +316,30 @@ readkbdrune(int c0)
 			return c0;
 		buf[n++] = c;
 	}
-	/*
-	 * If UTF decoding still fails here, treat it as malformed UTF-8 and
-	 * fall back to the first byte rather than inventing a synthetic token.
-	 */
+
 	if(chartorune(&r, buf) <= 0)
 		return c0;
 	return r;
 }
 
 static int
-parsecsikey(int lead)
+parsecsikey(int lead, int first)
 {
 	int c, i, n, num;
 	char seq[32];
 
 	seq[0] = lead;
 	n = 1;
+
+	if(first >= 0)
+		seq[n++] = first;
+
 	while(n < (int)sizeof(seq)-1){
+		if(seq[n-1] >= '@' && seq[n-1] <= '~')
+			break;
 		if(!readkbdchar(&c, 25))
 			break;
 		seq[n++] = c;
-		/* ECMA-48 CSI/SS3 final byte range */
 		if(c >= '@' && c <= '~')
 			break;
 	}
@@ -422,50 +427,245 @@ parsecsikey(int lead)
 	return No;
 }
 
+static int
+mousemods(int cb)
+{
+	int m;
+
+	m = 0;
+	if(cb & 4)
+		m |= 1;
+	if(cb & 16)
+		m |= 2;
+	if(cb & 8)
+		m |= 4;
+
+	return m;
+}
+
+static int
+mousebuttons(int cb, int release)
+{
+	int b;
+
+	if(cb & 64){
+		if(cb & 1)
+			return 16;
+		return 8;
+	}
+
+	if(release)
+		return 0;
+
+	b = cb & 3;
+	if(b == 0)
+		return 1;
+	if(b == 1)
+		return 4;
+	if(b == 2)
+		return 2;
+
+	return 0;
+}
+
+static int
+parsesgrmouse(char *mbuf, int mn)
+{
+	int c, nums[3], nnum, v, have, final, x, y, b, mods;
+
+	nnum = 0;
+	v = 0;
+	have = 0;
+	final = 0;
+
+	for(;;){
+		if(!readkbdchar(&c, 25))
+			return 0;
+
+		if(c >= '0' && c <= '9'){
+			v = v*10 + c - '0';
+			have = 1;
+			continue;
+		}
+
+		if(c == ';'){
+			if(!have || nnum >= 3)
+				return 0;
+			nums[nnum++] = v;
+			v = 0;
+			have = 0;
+			continue;
+		}
+
+		if(c == 'M' || c == 'm'){
+			if(!have || nnum >= 3)
+				return 0;
+			nums[nnum++] = v;
+			final = c;
+			break;
+		}
+
+		return 0;
+	}
+
+	if(nnum != 3)
+		return 0;
+
+	x = nums[1] - 1;
+	y = nums[2] - 1;
+	if(x < 0)
+		x = 0;
+	if(y < 0)
+		y = 0;
+
+	b = mousebuttons(nums[0], final == 'm');
+	mods = mousemods(nums[0]);
+
+	snprint(mbuf, mn, "m %d %d %d %d\n", x, y, b, mods);
+	return 1;
+}
+
+int
+readconsoleevent(int *key, char *mbuf, int mn)
+{
+	int c, k, first;
+
+	for(;;){
+		if(!readkbdchar(&c, -1))
+			continue;
+
+		switch(c){
+		case '\r':
+			if(key != nil)
+				*key = '\n';
+			return ConEventKey;
+
+		case DELETE:
+			if(key != nil)
+				*key = '\b';
+			return ConEventKey;
+
+		case CTRLC:
+			cleanexit(0);
+			if(key != nil)
+				*key = -1;
+			return ConEventKey;
+
+		case Esc:
+			if(!readkbdchar(&c, 25)){
+				if(key != nil)
+					*key = Esc;
+				return ConEventKey;
+			}
+
+			if(c == '['){
+				if(!readkbdchar(&first, 25)){
+					if(key != nil)
+						*key = Esc;
+					return ConEventKey;
+				}
+
+				if(first == '<'){
+					if(mbuf != nil && mn > 0 && parsesgrmouse(mbuf, mn))
+						return ConEventMouse;
+					if(key != nil)
+						*key = Esc;
+					return ConEventKey;
+				}
+
+				k = parsecsikey('[', first);
+				if(key != nil)
+					*key = k != No ? k : Esc;
+				return ConEventKey;
+			}
+
+			if(c == 'O'){
+				if(!readkbdchar(&first, 25)){
+					if(key != nil)
+						*key = Esc;
+					return ConEventKey;
+				}
+				k = parsecsikey('O', first);
+				if(key != nil)
+					*key = k != No ? k : Esc;
+				return ConEventKey;
+			}
+
+			if((c & 0x80) != 0){
+				if(key != nil)
+					*key = readkbdrune(c);
+				return ConEventKey;
+			}
+
+			if(key != nil)
+				*key = APP | c;
+			return ConEventKey;
+		}
+
+		if((c & 0x80) != 0)
+			c = readkbdrune(c);
+
+		if(key != nil)
+			*key = c;
+		return ConEventKey;
+	}
+}
+
 int
 readekbd(void)
 {
-	int c, k;
+	int t, k;
+	char mbuf[128];
 
-	if(!readkbdchar(&c, -1))
-		return -1;
-
-	switch(c){
-	case '\r':
-		return '\n';
-	case DELETE:
-		return '\b';
-	case CTRLC:
-		cleanexit(0);
-		return -1;
-	case Esc:
-		if(!readkbdchar(&c, 25))
-			return Esc;
-		if(c == '[' || c == 'O'){
-			k = parsecsikey(c);
-			if(k != No)
-				return k;
-			/*
-			 * Treat unrecognised CSI/SS3 sequences as a bare Escape.
-			 * Non-CSI ESC-prefixed input such as Alt+key combinations
-			 * continues below into the APP|c path.
-			 */
-			return Esc;
-		}
-		if((c & 0x80) != 0)
-			return readkbdrune(c);
-		return APP | c;
+	for(;;){
+		k = -1;
+		t = readconsoleevent(&k, mbuf, sizeof(mbuf));
+		if(t == ConEventKey)
+			return k;
 	}
-
-	if((c & 0x80) != 0)
-		return readkbdrune(c);
-
-	return c;
 }
 
-/*
- * Return an arbitrary millisecond clock time
- */
+void
+enableconsolemouse(void)
+{
+	static char seq[] = "\033[?1003h\033[?1006h";
+
+	if(mousemodeactive)
+		return;
+
+	write(1, seq, strlen(seq));
+	mousemodeactive = 1;
+}
+
+void
+disableconsolemouse(void)
+{
+	static char seq[] = "\033[?1006l\033[?1003l\033[?1002l\033[?1000l";
+
+	if(!mousemodeactive)
+		return;
+
+	write(1, seq, strlen(seq));
+	mousemodeactive = 0;
+}
+
+int
+reademouse(char *buf, int n)
+{
+	int t, k;
+	char mbuf[128];
+
+	if(buf == nil || n <= 0)
+		return -1;
+
+	for(;;){
+		k = -1;
+		t = readconsoleevent(&k, mbuf, sizeof(mbuf));
+		if(t == ConEventMouse)
+			return snprint(buf, n, "%s", mbuf);
+	}
+}
+
 long
 osmillisec(void)
 {
@@ -528,33 +728,28 @@ osconsinfo(char *buf, int n)
 	if(rows <= 0)
 		rows = 24;
 
-return snprint(buf, n,
-	"%d %d\n"
-	"cols=%d\n"
-	"rows=%d\n"
-	"pixelwidth=%d\n"
-	"pixelheight=%d\n"
-	"vt=1\n"
-	"utf8=1\n"
-	"colors=%d\n"
-	"truecolor=%d\n"
-	"source=%s\n"
-	"ok=%d\n",
-	cols, rows,
-	cols, rows,
-	(int)ws.ws_xpixel,
-	(int)ws.ws_ypixel,
-	16777216,
-	1,
-	source,
-	ok);
+	return snprint(buf, n,
+		"%d %d\n"
+		"cols=%d\n"
+		"rows=%d\n"
+		"pixelwidth=%d\n"
+		"pixelheight=%d\n"
+		"vt=1\n"
+		"utf8=1\n"
+		"colors=%d\n"
+		"truecolor=%d\n"
+		"source=%s\n"
+		"ok=%d\n",
+		cols, rows,
+		cols, rows,
+		(int)ws.ws_xpixel,
+		(int)ws.ws_ypixel,
+		16777216,
+		1,
+		source,
+		ok);
 }
 
-
-/*
- * Return the time since the epoch in nanoseconds and microseconds
- * The epoch is defined at 1 Jan 1970
- */
 vlong
 osnsec(void)
 {
