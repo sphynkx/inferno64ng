@@ -42,6 +42,10 @@ hasekeyboard(): int
 	host := getenv("emuhost");
 	if(host == nil || (hd host != "Nt" && hd host != "Linux"))
 		return 0;
+	if(hd host == "Nt"){
+		(ok, nil) := sys->stat("/dev/ekeyboard");
+		return ok >= 0;
+	}
 	fd := sys->open("/dev/ekeyboard", Sys->OREAD);
 	if(fd == nil)
 		return 0;

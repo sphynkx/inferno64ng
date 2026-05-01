@@ -523,8 +523,9 @@ kopen(char *path, int mode)
 	int fd;
 	volatile struct { Chan *c; } c;
 
-	if(waserror())
+	if(waserror()){
 		return -1;
+	}
 
 	openmode(mode);                         /* error check only */
 	c.c = namec(path, Aopen, mode, 0);
@@ -533,8 +534,9 @@ kopen(char *path, int mode)
 		nexterror();
 	}
 	fd = newfd(c.c);
-	if(fd < 0)
+	if(fd < 0){
 		error(Enofd);
+	}
 	poperror();
 
 	poperror();

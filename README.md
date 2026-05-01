@@ -1,33 +1,110 @@
-Inferno® is a distributed operating system, originally developed at Bell Labs, but now developed and maintained by Vita Nuova® as Free Software.  Applications written in Inferno's concurrent programming language, Limbo, are compiled to its portable virtual machine code (Dis), to run anywhere on a network in the portable environment that Inferno provides.  Unusually, that environment looks and acts like a complete operating system.
+# Inferno64NG
 
-The use of a high-level language and virtual machine is sensible but mundane. The interesting thing is the system's representation of services and resources.  They are represented in a file-like name hiearchy.  Programs access them using only the file operations open, read/write, and close.  The 'files' may of course represent stored data, but may also be devices, network and protocol interfaces, dynamic data sources, and services.  The approach unifies and provides basic naming, structuring, and access control mechanisms for all system resources.  A single file-service protocol (the same as Plan 9's 9P) makes all those resources available for import or export throughout the network in a uniform way, independent of location. An application simply attaches the resources it needs to its own per-process name hierarchy ('name space').
+Inferno64NG is a modernized hosted Inferno build based on the 64-bit Inferno port
+([original repository](https://github.com/caerwynj/inferno64), `MinGW` branch).
+This fork is adapted for the MSYS2/MinGW environment and also supports modern
+Linux builds.
 
-The system can be used to build portable client and server applications. It makes it straightforward to build lean applications that share all manner of resources over a network, without the cruft of much of the 'Grid' software one sees.
+The current focus is the hosted `emu` runtime on `amd64` for:
 
-Inferno can run 'native' on various ARM, PowerPC, SPARC and x86 platforms but also 'hosted', under an existing operating system (including AIX, FreeBSD, Irix, Linux, MacOS X, Plan 9, and Solaris), again on various processor types.
+- Windows via MSYS2/MinGW;
+- Linux on `amd64`.
 
-This project includes source for the basic applications, Inferno itself (hosted and native), all supporting software, including the native compiler suite, essential executables and supporting files.
 
-How this fork differs: the focus is on using limbo as a programming language on 64bit hosts: amd64, arm64, risc64. Development will be on getting the JIT working well and language binding for popular libraries such as SQLite. 
+## Main changes and improvements
 
-To build the repo, install the package dependencies on Linux
+This build includes a number of system-level fixes and extensions compared to the
+original 64-bit port:
+
+- Fixed several 64-bit arithmetic and runtime correctness issues.
+- Improved hosted console support for both Windows/MSYS2 and Linux.
+- Added ANSI/VT-style terminal control support for console applications.
+- Added terminal capability reporting through `/dev/consinfo`, including geometry,
+  color, truecolor, UTF-8 and backend/source information where available.
+- Added enhanced console input devices:
+  - `/dev/ekeyboard` for Unicode-aware keyboard input and special key handling;
+  - `/dev/emouse` for console mouse input.
+- Added unified console input dispatching for keyboard and mouse events, with
+  platform-specific backends for Windows/MSYS2 and Linux.
+- Improved raw console input lifecycle handling, including clean shutdown of
+  blocked keyboard and mouse readers.
+- Added support for building console TUI applications through the
+  [`icurses`](https://github.com/sphynkx/icurses) framework.
+- Added an extended shell, `esh`.
+- Added various build, packaging and usability improvements, including optional
+  binary size reduction/compression work.
+
+
+## icurses TUI framework
+
+The `icurses` framework provides a higher-level API for building terminal UI
+applications on top of the enhanced console support. It includes:
+
+- terminal capability detection via `/dev/consinfo`;
+- keyboard input handling through `/dev/ekeyboard`;
+- mouse input handling through `/dev/emouse`;
+- ANSI/VT terminal rendering helpers;
+- canvas-based drawing;
+- windows, frames, shadows and labels;
+- buttons, lists, forms, sliders, progress bars, spinners and task dialogs;
+- focus handling, key bindings and command/message dispatch;
+- example applications, including a Matrix-style terminal animation demo.
+
+The framework is intended to make it practical to write real console applications
+for Inferno while keeping them portable between the supported Windows/MSYS2 and
+Linux hosted environments.
+
+
+## Install and run
+
+### Windows 
+
+Install [MSYS2](https://www.msys2.org/), run its shell and:
+```bash
+pacman -S mingw-w64-x86_64-gcc
+pacman -S upx
+pacman -S git
+cd /opt
+git clone https://github.com/sphynkx/inferno64ng
+cd inferno64ng
+export MKSH=`which bash`.exe
+export PATH=$PATH:/opt/inferno64/MinGW/amd64/bin/
+export ROOT=$(pwd)
+./makemk.sh
+mk mkdirs
+mk install
 ```
-$ apt install libx11-dev libxext-dev linux-libc-dev
+Run:
+```bash
+emu.exe -r. -g1200x600
 ```
 
-Then in the root folder of the repo,
-```
-$ export ROOT=<path to inferno>
-$ export objtype=amd64
-$ export PATH=$PATH:$ROOT/Linux/$objtype/bin
-$ ./makemk.sh
-$ mk mkdirs
-$ mk install
-```
-That will bind all the binaries for mk, iyacc, limbo, and emu in Linux/amd64/bin and also build all the dis object code. Inferno can then be launched by just typing `emu`.
 
+### Linux
+
+```bash
+dnf install upx libX11-devel libXext-devel pulseaudio-libs-devel
+cd /opt
+git clone https://github.com/sphynkx/inferno64ng
+cd inferno64ng
 ```
-$ emu
-; wm/wm&
+Modify `mkconfig`: set `SYSHOST` and `SYSTARG` to "Linux". Next:
+```bash
+export PATH=$PATH:/opt/inferno64/Linux/amd64/bin/
+export ROOT=$(pwd)
+./makemk.sh
+mk mkdirs
+mk install
+```
+Run:
+```bash
+emu -r. -g1200x600
 ```
 
+
+## Bugs
+Present.
+
+
+## TODO
+Much of..

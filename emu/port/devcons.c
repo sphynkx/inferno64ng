@@ -6,6 +6,10 @@
 #include	"libsec.h"
 #include	"keyboard.h"
 
+#if defined(__MINGW32__) || defined(__linux__)
+extern int osconsinfo(char*, int);
+#endif
+
 extern int cflag;
 extern int exdebug;
 extern int keepbroken;
@@ -15,6 +19,7 @@ enum
 	Qdir,
 	Qcons,
 	Qconsctl,
+	Qconsinfo,
 	Qdrivers,
 	Qhostowner,
 	Qhoststdin,
@@ -39,10 +44,11 @@ enum
 
 Dirtab contab[] =
 {
-	".",	{Qdir, 0, QTDIR},	0,		DMDIR|0555,
-	"cons",		{Qcons},	0,	0666,
-	"consctl",	{Qconsctl},	0,	0222,
-	"drivers",	{Qdrivers},	0,	0444,
+	".",		{Qdir, 0, QTDIR},	0,	DMDIR|0555,
+	"cons",		{Qcons},		0,	0666,
+	"consctl",	{Qconsctl},		0,	0222,
+	"consinfo",	{Qconsinfo},		0,	0444,
+	"drivers",	{Qdrivers},		0,	0444,
 	"ekeyboard",	{Qekeyboard},	0,	0666,
 	"emouse",	{Qemouse},	0,	0666,
 	"hostowner",	{Qhostowner},	0,	0644,
@@ -60,7 +66,7 @@ Dirtab contab[] =
 	"scancode",	{Qscancode},	0,	0444,
 	"sysctl",	{Qsysctl},	0,	0644,
 	"sysname",	{Qsysname},	0,	0644,
-	"time",		{Qtime},	0,	0644,
+	"time",		{Qtime},	0,	0444,
 	"user",		{Quser},	0,	0644,
 };
 
@@ -141,13 +147,47 @@ ordinarykey(int k)
 	return k >= 0 && k < Spec;
 }
 
+static int
+ekbdsessionactive(void)
+{
 #ifdef __MINGW32__
-extern int reademouse(char *buf, int n);
+	return kbd.raw != 0 && kbd.ekbd.ref != 0;
+#else
+	return kbd.ekbd.ref != 0;
+#endif
+}
+
+#ifdef __linux__
+static void
+wakeekbdreaders(void)
+{
+	char z;
+
+	if(ekbdq == nil)
+		return;
+
+	z = 0;
+	qreopen(ekbdq);
+	qproduce(ekbdq, &z, 1);
+}
+
+static void
+wakeemousereaders(void)
+{
+	char msg[] = "m 0 0 0 0\n";
+
+	if(emouseq == nil)
+		return;
+
+	qreopen(emouseq);
+	qproduce(emouseq, msg, strlen(msg));
+}
+#endif
+
+#ifdef __MINGW32__
+extern int readconsoleevent(int *key, char *mbuf, int mn);
 extern void enableconsolemouse(void);
 extern void disableconsolemouse(void);
-extern void flushconsoleinput(void);
-
-static int mouseprocstarted;
 
 static void
 emouseput(char *buf, int n)
@@ -157,137 +197,187 @@ emouseput(char *buf, int n)
 	qproduce(emouseq, buf, n);
 }
 
+static void
+processwinkey(int k)
+{
+	int nb;
+	Rune r;
+	char b;
+	char ubuf[UTFmax];
+
+	if(k < 0)
+		return;
+
+	/*
+	 * Full enhanced keyboard stream.
+	 *
+	 * MinGW drains the host console continuously from a single dispatcher.
+	 * Stale enhanced events are trimmed on /dev/ekeyboard open/close.
+	 */
+	ekbdputc(k);
+
+	/*
+	 * Legacy console path:
+	 * ordinary text should only reach /dev/cons when the enhanced raw
+	 * session does not currently own input.
+	 */
+	if(ordinarykey(k) && !ekbdsessionactive()){
+		r = k;
+		if(r == '\r')
+			r = '\n';
+
+		if(r < 0x80){
+			b = r;
+			if(kbd.raw == 0){
+				switch(b){
+				case 0x15:
+					write(1, "^U\n", 3);
+					break;
+				default:
+					write(1, &b, 1);
+					break;
+				}
+			}
+			qproduce(kbdq, &b, 1);
+		}else{
+			nb = runetochar(ubuf, &r);
+			if(nb <= 0)
+				return;
+			if(kbd.raw == 0)
+				write(1, ubuf, nb);
+			qproduce(kbdq, ubuf, nb);
+		}
+	}
+}
+
 /*
- * MinGW/MSYS2 console keyboard reader:
- * single source of truth for console input.
+ * MinGW/MSYS2 unified console input dispatcher.
  *
- * All key events go to /dev/ekeyboard.
- * Ordinary text input is also translated to the legacy console queue
- * so /dev/cons and the shell continue to work from the same event stream.
+ * This is the only backend thread that reads the Windows console input
+ * stream through ReadConsoleInput().
+ *
+ * It routes:
+ *   KEY_EVENT   -> /dev/ekeyboard and legacy /dev/cons
+ *   MOUSE_EVENT -> /dev/emouse when /dev/emouse is open
+ *
+ * Keeping one reader avoids losing events between independent keyboard
+ * and mouse readers.
  */
 void
 winkbdslave(void *a)
 {
-	int k, nb;
-	Rune r;
-	char b;
-	char ubuf[UTFmax];
+	int t, k;
+	char mbuf[128];
 
 	USED(a);
+
 	for(;;){
-		k = readekbd();
-		if(k < 0)
+		k = -1;
+		mbuf[0] = 0;
+
+		t = readconsoleevent(&k, mbuf, sizeof(mbuf));
+
+		if(t == 1){
+			processwinkey(k);
 			continue;
+		}
 
-		/*
-		 * Full event stream for enhanced console clients.
-		 *
-		 * Only queue enhanced keyboard events while a consumer is
-		 * actively reading /dev/ekeyboard.  Otherwise startup
-		 * command characters accumulate here and are consumed by the
-		 * next interactive client as phantom keys.
-		 */
-		if(kbd.ekbd.ref != 0)
-			ekbdputc(k);
-
-		/*
-		 * Legacy console path:
-		 * mirror ordinary text into /dev/cons only while there is
-		 * no active enhanced keyboard consumer.
-		 */
-		if(kbd.ekbd.ref == 0 && ordinarykey(k)){
-			r = k;
-			if(r == '\r')
-				r = '\n';
-
-			if(r < 0x80){
-				b = r;
-				if(kbd.raw == 0){
-					switch(b){
-					case 0x15:
-						write(1, "^U\n", 3);
-						break;
-					default:
-						write(1, &b, 1);
-						break;
-					}
-				}
-				qproduce(kbdq, &b, 1);
-			}else{
-				nb = runetochar(ubuf, &r);
-				if(nb <= 0)
-					continue;
-				if(kbd.raw == 0)
-					write(1, ubuf, nb);
-				qproduce(kbdq, ubuf, nb);
-			}
+		if(t == 2){
+			if(kbd.ptr.ref != 0 && mbuf[0] != 0)
+				emouseput(mbuf, strlen(mbuf));
+			continue;
 		}
 	}
 	/* not reached */
 }
-
-void
-winmouseslave(void *a)
-{
-	char buf[128];
-	int n;
-
-	USED(a);
-	for(;;){
-		n = reademouse(buf, sizeof(buf));
-		if(n <= 0)
-			continue;
-		emouseput(buf, n);
-	}
-	/* not reached */
-}
-
 #endif
 
 #ifdef __linux__
-void
-linuxkbdslave(void *a)
+extern int readconsoleevent(int *key, char *mbuf, int mn);
+extern void enableconsolemouse(void);
+extern void disableconsolemouse(void);
+
+static void
+emouseput(char *buf, int n)
 {
-	int k, nb;
+	if(emouseq == nil || n <= 0)
+		return;
+	qproduce(emouseq, buf, n);
+}
+
+static void
+processlinuxkey(int k)
+{
+	int nb;
 	Rune r;
 	char b;
 	char ubuf[UTFmax];
 
-	USED(a);
-	for(;;){
-		k = readekbd();
-		if(k < 0)
-			continue;
+	if(k < 0)
+		return;
 
-		if(kbd.ekbd.ref != 0)
-			ekbdputc(k);
+	if(kbd.ekbd.ref != 0)
+		ekbdputc(k);
 
-		if(kbd.ekbd.ref == 0 && ordinarykey(k)){
-			r = k;
-			if(r == '\r')
-				r = '\n';
+	if(ordinarykey(k) && !ekbdsessionactive()){
+		r = k;
+		if(r == '\r')
+			r = '\n';
 
-			if(r < 0x80){
-				b = r;
-				if(kbd.raw == 0){
-					switch(b){
-					case 0x15:
-						write(1, "^U\n", 3);
-						break;
-					default:
-						write(1, &b, 1);
-						break;
-					}
+		if(r < 0x80){
+			b = r;
+			if(kbd.raw == 0){
+				switch(b){
+				case 0x15:
+					write(1, "^U\n", 3);
+					break;
+				default:
+					write(1, &b, 1);
+					break;
 				}
-				qproduce(kbdq, &b, 1);
-			}else{
-				nb = runetochar(ubuf, &r);
-				if(nb <= 0)
-					continue;
-				if(kbd.raw == 0)
-					write(1, ubuf, nb);
-				qproduce(kbdq, ubuf, nb);
 			}
+			qproduce(kbdq, &b, 1);
+		}else{
+			nb = runetochar(ubuf, &r);
+			if(nb <= 0)
+				return;
+			if(kbd.raw == 0)
+				write(1, ubuf, nb);
+			qproduce(kbdq, ubuf, nb);
+		}
+	}
+}
+
+/*
+ * Linux unified console input dispatcher.
+ *
+ * This mirrors the Linux-specific working version: one backend dispatcher
+ * reads host console events and routes keyboard/mouse events to the
+ * enhanced queues.
+ */
+void
+linuxkbdslave(void *a)
+{
+	int t, k;
+	char mbuf[128];
+
+	USED(a);
+
+	for(;;){
+		k = -1;
+		mbuf[0] = 0;
+
+		t = readconsoleevent(&k, mbuf, sizeof(mbuf));
+
+		if(t == 1){
+			processlinuxkey(k);
+			continue;
+		}
+
+		if(t == 2){
+			if(kbd.ptr.ref != 0 && mbuf[0] != 0)
+				emouseput(mbuf, strlen(mbuf));
+			continue;
 		}
 	}
 	/* not reached */
@@ -325,8 +415,7 @@ gkbdputc(Queue *q, int ch)
 	n = runetochar(buf, &r);
 	if(n == 0)
 		return;
-	/* if(!isdbgkey(r)) */ 
-		qproduce(q, buf, n);
+	qproduce(q, buf, n);
 }
 
 void
@@ -392,6 +481,8 @@ consstat(Chan *c, uchar *db, int n)
 static Chan*
 consopen(Chan *c, int omode)
 {
+	int r;
+
 	c = devopen(c, omode, contab, nelem(contab), devgen);
 	switch((ulong)c->qid.path) {
 	case Qconsctl:
@@ -400,11 +491,16 @@ consopen(Chan *c, int omode)
 
 	case Qemouse:
 #ifdef __MINGW32__
-		if(incref(&kbd.ptr) == 1)
+		if(incref(&kbd.ptr) == 1){
+			qflush(emouseq);
 			enableconsolemouse();
-		if(mouseprocstarted == 0){
-			mouseprocstarted = 1;
-			kproc("mouse", winmouseslave, 0, 0);
+		}
+#elif defined(__linux__)
+		r = incref(&kbd.ptr);
+		if(r == 1){
+			qreopen(emouseq);
+			qflush(emouseq);
+			enableconsolemouse();
 		}
 #else
 		incref(&kbd.ptr);
@@ -412,12 +508,19 @@ consopen(Chan *c, int omode)
 		break;
 
 	case Qekeyboard:
-		if(incref(&kbd.ekbd) == 1){
 #ifdef __MINGW32__
-			flushconsoleinput();
-#endif
+		incref(&kbd.ekbd);
+		qflush(ekbdq);
+		qflush(kbdq);
+#elif defined(__linux__)
+		r = incref(&kbd.ekbd);
+		if(r == 1)
+			qreopen(ekbdq);
+		qflush(ekbdq);
+#else
+		if(incref(&kbd.ekbd) == 1)
 			qflush(ekbdq);
-		}
+#endif
 		break;
 
 	case Qscancode:
@@ -464,21 +567,43 @@ consclose(Chan *c)
 	switch((ulong)c->qid.path) {
 	case Qconsctl:
 		/* last close of control file turns off raw */
-		if(decref(&kbd.ctl) == 0)
+		if(decref(&kbd.ctl) == 0){
 			kbd.raw = 0;
+#ifdef __linux__
+			qflush(ekbdq);
+			wakeekbdreaders();
+
+			if(kbd.ptr.ref == 0){
+				qflush(emouseq);
+				wakeemousereaders();
+			}
+#endif
+		}
 		break;
 
 	case Qemouse:
 		if(decref(&kbd.ptr) == 0){
 #ifdef __MINGW32__
 			disableconsolemouse();
+			qflush(emouseq);
+#elif defined(__linux__)
+			disableconsolemouse();
+			qflush(emouseq);
+			wakeemousereaders();
 #endif
 		}
 		break;
 
 	case Qekeyboard:
-		if(decref(&kbd.ekbd) == 0)
+		if(decref(&kbd.ekbd) == 0){
 			qflush(ekbdq);
+#ifdef __linux__
+			wakeekbdreaders();
+#endif
+#ifdef __MINGW32__
+			qflush(kbdq);
+#endif
+		}
 		break;
 
 	case Qscancode:
@@ -503,7 +628,8 @@ static long
 consread(Chan *c, void *va, long n, vlong offset)
 {
 	int send;
-	char buf[64], ch;
+	long r;
+	char buf[64], ch, *s;
 
 	if(c->qid.type & QTDIR)
 		return devdirread(c, va, n, contab, nelem(contab), devgen);
@@ -543,6 +669,36 @@ consread(Chan *c, void *va, long n, vlong offset)
 	case Qtime:
 		snprint(buf, sizeof(buf), "%.lld", timeoffset + osusectime());
 		return readstr(offset, va, n, buf);
+
+	case Qconsinfo:
+		s = malloc(READSTR);
+		if(s == nil)
+			error(Enomem);
+
+		if(waserror()){
+			free(s);
+			nexterror();
+		}
+
+#if defined(__MINGW32__) || defined(__linux__)
+		if(osconsinfo(s, READSTR) < 0)
+			snprint(s, READSTR,
+				"80 24\n"
+				"cols=80\n"
+				"rows=24\n"
+				"source=fallback-osconsinfo\n");
+#else
+		snprint(s, READSTR,
+			"80 24\n"
+			"cols=80\n"
+			"rows=24\n"
+			"source=fallback-generic\n");
+#endif
+
+		r = readstr(offset, va, n, s);
+		free(s);
+		poperror();
+		return r;
 
 	case Qdrivers:
 		return devtabread(c, va, n, offset);
@@ -673,11 +829,24 @@ conswrite(Chan *c, void *va, long n, vlong offset)
 		for(a = buf; a;){
 			if(strncmp(a, "rawon", 5) == 0){
 				kbd.raw = 1;
+#ifdef __linux__
+				qreopen(ekbdq);
+				qreopen(emouseq);
+#endif
 				/* clumsy hack - wake up reader */
 				ch = 0;
 				qwrite(kbdq, &ch, 1);
 			} else if(strncmp(buf, "rawoff", 6) == 0){
 				kbd.raw = 0;
+#ifdef __linux__
+				qflush(ekbdq);
+				wakeekbdreaders();
+
+				if(kbd.ptr.ref == 0){
+					qflush(emouseq);
+					wakeemousereaders();
+				}
+#endif
 			}
 			if((a = strchr(a, ' ')) != nil)
 				a++;
@@ -714,8 +883,6 @@ conswrite(Chan *c, void *va, long n, vlong offset)
 			buf[--n] = '\0';
 		if(n == 0)
 			error(Ebadarg);
-		/* renameuser(eve, buf); */
-		/* renameproguser(eve, buf); */
 		kstrdup(&eve, buf);
 		kstrdup(&up->env->user, buf);
 		break;
@@ -773,6 +940,7 @@ sysconwrite(void *va, ulong count)
 {
 	Cmdbuf *cb;
 	int e;
+
 	cb = parsecmd(va, count);
 	if(waserror()){
 		free(cb);
@@ -788,7 +956,7 @@ sysconwrite(void *va, ulong count)
 			e = atoi(cb->f[1]);
 		else
 			e = 0;
-		cleanexit(e);		/* XXX ignored for the time being (and should be a string anyway) */
+		cleanexit(e);
 	}else if(strcmp(cb->f[0], "broken") == 0)
 		keepbroken = 1;
 	else if(strcmp(cb->f[0], "nobroken") == 0)

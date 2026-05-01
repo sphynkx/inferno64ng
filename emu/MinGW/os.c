@@ -12,6 +12,14 @@
 
 #include	"r16.h"
 
+#ifndef ENABLE_VIRTUAL_TERMINAL_PROCESSING
+#define ENABLE_VIRTUAL_TERMINAL_PROCESSING 0x0004
+#endif
+
+#ifndef DISABLE_NEWLINE_AUTO_RETURN
+#define DISABLE_NEWLINE_AUTO_RETURN 0x0008
+#endif
+
 int	SYS_SLEEP = 2;
 int SOCK_SELECT = 3;
 #define	MAXSLEEPERS	1500
@@ -25,6 +33,7 @@ static HANDLE conh = INVALID_HANDLE_VALUE;
 static HANDLE kbdh = INVALID_HANDLE_VALUE;
 static HANDLE errh = INVALID_HANDLE_VALUE;
 
+static int vtoutputactive = 0;
 static UINT hostinputcp = 0;
 static UINT hostoutputcp = 0;
 static int consolecpsaved = 0;
@@ -34,10 +43,18 @@ static DWORD mouseconsolestate = 0;
 static int mousemodesaved = 0;
 static int mousemodeactive = 0;
 
+static DWORD consoleoutstate = 0;
+static int consoleoutstatesaved = 0;
+
 enum {
 	ConNorm,
 	ConEsc,
 	ConCsi
+};
+
+enum {
+	ConEventKey = 1,
+	ConEventMouse = 2
 };
 
 typedef struct ConParser ConParser;
@@ -93,6 +110,40 @@ setutf8consolecp(void)
 			SetConsoleOutputCP(hostoutputcp);
 		consolecpchanged = 0;
 	}
+}
+
+static void
+enableconsolevtoutput(void)
+{
+	DWORD mode, newmode;
+
+	vtoutputactive = 0;
+
+	if(conh == INVALID_HANDLE_VALUE || conh == NULL)
+		return;
+
+	if(!GetConsoleMode(conh, &mode))
+		return;
+
+	if(!consoleoutstatesaved){
+		consoleoutstate = mode;
+		consoleoutstatesaved = 1;
+	}
+
+	newmode = mode;
+	newmode |= ENABLE_PROCESSED_OUTPUT;
+	newmode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
+	newmode &= ~DISABLE_NEWLINE_AUTO_RETURN;
+
+	if(SetConsoleMode(conh, newmode)){
+		vtoutputactive = 1;
+		return;
+	}
+
+	newmode = mode;
+	newmode |= ENABLE_PROCESSED_OUTPUT;
+	newmode &= ~DISABLE_NEWLINE_AUTO_RETURN;
+	SetConsoleMode(conh, newmode);
 }
 
 static void
@@ -669,6 +720,46 @@ flushplain(HANDLE h, char *buf, int n, int *total)
 }
 
 static int
+consolewritevt(HANDLE h, const void *vbuf, uint n)
+{
+	char *buf;
+	char out[512];
+	int i, np;
+	DWORD nwritten;
+
+	if(h == INVALID_HANDLE_VALUE || h == NULL)
+		return -1;
+
+	buf = (char*)vbuf;
+	np = 0;
+
+	for(i = 0; i < (int)n; i++){
+		if(buf[i] == '\n' && (i == 0 || buf[i-1] != '\r')){
+			if(np >= (int)sizeof(out)){
+				if(!WriteFile(h, out, np, &nwritten, NULL))
+					return -1;
+				np = 0;
+			}
+			out[np++] = '\r';
+		}
+
+		if(np >= (int)sizeof(out)){
+			if(!WriteFile(h, out, np, &nwritten, NULL))
+				return -1;
+			np = 0;
+		}
+		out[np++] = buf[i];
+	}
+
+	if(np > 0){
+		if(!WriteFile(h, out, np, &nwritten, NULL))
+			return -1;
+	}
+
+	return (int)n;
+}
+
+static int
 consolewrite(HANDLE h, ConParser *p, const void *vbuf, uint n)
 {
 	char *buf;
@@ -682,6 +773,9 @@ consolewrite(HANDLE h, ConParser *p, const void *vbuf, uint n)
 			return -1;
 		return (int)nwritten;
 	}
+
+	if(vtoutputactive)
+		return consolewritevt(h, vbuf, n);
 
 	buf = (char*)vbuf;
 	np = 0;
@@ -1005,131 +1099,148 @@ readkbd(void)
 	return buf[0];
 }
 
-int
-readekbd(void)
+static int
+keyeventcode(KEY_EVENT_RECORD *k, int *out)
 {
-	INPUT_RECORD rec;
-	KEY_EVENT_RECORD *k;
-	DWORD r;
 	WCHAR wc;
 	DWORD ctrl;
 	int ch;
 
-	for(;;){
-		if(!ReadConsoleInput(kbdh, &rec, 1, &r))
-			panic("enhanced keyboard fail");
-		if(r == 0)
-			continue;
+	if(k == nil || out == nil)
+		return 0;
 
-		if(rec.EventType != KEY_EVENT)
-			continue;
+	if(!k->bKeyDown)
+		return 0;
 
-		k = &rec.Event.KeyEvent;
+	ctrl = k->dwControlKeyState;
 
-		if(!k->bKeyDown)
-			continue;
+	switch(k->wVirtualKeyCode){
+	case VK_LEFT:
+		*out = Left;
+		return 1;
+	case VK_RIGHT:
+		*out = Right;
+		return 1;
+	case VK_UP:
+		*out = Up;
+		return 1;
+	case VK_DOWN:
+		*out = Down;
+		return 1;
+	case VK_HOME:
+		*out = Home;
+		return 1;
+	case VK_END:
+		*out = End;
+		return 1;
+	case VK_PRIOR:
+		*out = Pgup;
+		return 1;
+	case VK_NEXT:
+		*out = Pgdown;
+		return 1;
+	case VK_INSERT:
+		*out = Ins;
+		return 1;
+	case VK_DELETE:
+		*out = Del;
+		return 1;
+	case VK_PRINT:
+	case VK_SNAPSHOT:
+		*out = Print;
+		return 1;
+	case VK_SCROLL:
+		*out = Scroll;
+		return 1;
+	case VK_PAUSE:
+		*out = Pause;
+		return 1;
+	case VK_CANCEL:
+		*out = Break;
+		return 1;
 
-		ctrl = k->dwControlKeyState;
+	case VK_F1:
+		*out = KF|1;
+		return 1;
+	case VK_F2:
+		*out = KF|2;
+		return 1;
+	case VK_F3:
+		*out = KF|3;
+		return 1;
+	case VK_F4:
+		*out = KF|4;
+		return 1;
+	case VK_F5:
+		*out = KF|5;
+		return 1;
+	case VK_F6:
+		*out = KF|6;
+		return 1;
+	case VK_F7:
+		*out = KF|7;
+		return 1;
+	case VK_F8:
+		*out = KF|8;
+		return 1;
+	case VK_F9:
+		*out = KF|9;
+		return 1;
+	case VK_F10:
+		*out = KF|10;
+		return 1;
+	case VK_F11:
+		*out = KF|11;
+		return 1;
+	case VK_F12:
+		*out = KF|12;
+		return 1;
 
-		switch(k->wVirtualKeyCode){
-		case VK_LEFT:
-			return Left;
-		case VK_RIGHT:
-			return Right;
-		case VK_UP:
-			return Up;
-		case VK_DOWN:
-			return Down;
-		case VK_HOME:
-			return Home;
-		case VK_END:
-			return End;
-		case VK_PRIOR:
-			return Pgup;
-		case VK_NEXT:
-			return Pgdown;
-		case VK_INSERT:
-			return Ins;
-		case VK_DELETE:
-			return Del;
-		case VK_PRINT:
-		case VK_SNAPSHOT:
-			return Print;
-		case VK_SCROLL:
-			return Scroll;
-		case VK_PAUSE:
-			return Pause;
-		case VK_CANCEL:
-			return Break;
+	case VK_CAPITAL:
+		*out = Caps;
+		return 1;
+	case VK_NUMLOCK:
+		*out = Num;
+		return 1;
 
-		case VK_F1:
-			return KF|1;
-		case VK_F2:
-			return KF|2;
-		case VK_F3:
-			return KF|3;
-		case VK_F4:
-			return KF|4;
-		case VK_F5:
-			return KF|5;
-		case VK_F6:
-			return KF|6;
-		case VK_F7:
-			return KF|7;
-		case VK_F8:
-			return KF|8;
-		case VK_F9:
-			return KF|9;
-		case VK_F10:
-			return KF|10;
-		case VK_F11:
-			return KF|11;
-		case VK_F12:
-			return KF|12;
-
-		case VK_CAPITAL:
-			return Caps;
-		case VK_NUMLOCK:
-			return Num;
-
-		case VK_TAB:
-			if(ctrl & SHIFT_PRESSED)
-				return BackTab;
-			return '\t';
-		case VK_RETURN:
-			return '\n';
-		case VK_ESCAPE:
-			return Esc;
-		}
-
-		wc = k->uChar.UnicodeChar;
-		if(wc != 0){
-			ch = (int)wc;
-
-			if(ch == 0x03){
-				termrestore();
-				ExitProcess(0);
-			}
-
-			if(ch == '\r')
-				ch = '\n';
-
-			if(ctrl & (LEFT_ALT_PRESSED|RIGHT_ALT_PRESSED)){
-				if((ch & ~0xFF) == 0)
-					return APP | (ch & 0xFF);
-			}
-
-			return ch;
-		}
+	case VK_TAB:
+		if(ctrl & SHIFT_PRESSED)
+			*out = BackTab;
+		else
+			*out = '\t';
+		return 1;
+	case VK_RETURN:
+		*out = '\n';
+		return 1;
+	case VK_ESCAPE:
+		*out = Esc;
+		return 1;
 	}
-}
 
-void
-flushconsoleinput(void)
-{
-	if(kbdh == INVALID_HANDLE_VALUE)
-		return;
-	FlushConsoleInputBuffer(kbdh);
+	wc = k->uChar.UnicodeChar;
+	if(wc != 0){
+		ch = (int)wc;
+
+		if(ch == 0x03){
+			termrestore();
+			ExitProcess(0);
+		}
+
+		if(ch == '\r')
+			ch = '\n';
+
+		if(ctrl & (LEFT_ALT_PRESSED|RIGHT_ALT_PRESSED)){
+			if((ch & ~0xFF) == 0){
+				*out = APP | (ch & 0xFF);
+				return 1;
+			}
+		}
+
+		*out = ch;
+		return 1;
+	}
+
+	return 0;
 }
 
 static int
@@ -1177,6 +1288,72 @@ mousemods(DWORD state)
 	return m;
 }
 
+static int
+mouseeventtext(MOUSE_EVENT_RECORD *m, char *buf, int n)
+{
+	int x, y, b, mods;
+
+	if(m == nil || buf == nil || n <= 0)
+		return -1;
+
+	x = m->dwMousePosition.X;
+	y = m->dwMousePosition.Y;
+	b = mousebuttons(m->dwButtonState, m->dwEventFlags);
+	mods = mousemods(m->dwControlKeyState);
+
+	return snprint(buf, n, "m %d %d %d %d\n", x, y, b, mods);
+}
+
+int
+readconsoleevent(int *key, char *mbuf, int mn)
+{
+	INPUT_RECORD rec;
+	DWORD r;
+	int k;
+
+	for(;;){
+		if(!ReadConsoleInput(kbdh, &rec, 1, &r))
+			return -1;
+
+		if(r == 0)
+			continue;
+
+		if(rec.EventType == KEY_EVENT){
+			k = -1;
+			if(keyeventcode(&rec.Event.KeyEvent, &k)){
+				if(key != nil)
+					*key = k;
+				return ConEventKey;
+			}
+			continue;
+		}
+
+		if(rec.EventType == MOUSE_EVENT){
+			if(mbuf != nil && mn > 0){
+				if(mouseeventtext(&rec.Event.MouseEvent, mbuf, mn) >= 0)
+					return ConEventMouse;
+			}
+			continue;
+		}
+	}
+}
+
+int
+readekbd(void)
+{
+	int t, k;
+	char mbuf[128];
+
+	for(;;){
+		k = -1;
+		t = readconsoleevent(&k, mbuf, sizeof(mbuf));
+		if(t == ConEventKey)
+			return k;
+		if(t < 0)
+			panic("enhanced keyboard fail");
+	}
+}
+
 void
 enableconsolemouse(void)
 {
@@ -1215,30 +1392,19 @@ disableconsolemouse(void)
 int
 reademouse(char *buf, int n)
 {
-	INPUT_RECORD rec;
-	MOUSE_EVENT_RECORD *m;
-	DWORD r;
-	int x, y, b, mods;
+	int t, k;
+	char mbuf[128];
 
 	if(buf == nil || n <= 0)
 		return -1;
 
 	for(;;){
-		if(!ReadConsoleInput(kbdh, &rec, 1, &r))
+		k = -1;
+		t = readconsoleevent(&k, mbuf, sizeof(mbuf));
+		if(t == ConEventMouse)
+			return snprint(buf, n, "%s", mbuf);
+		if(t < 0)
 			return -1;
-		if(r == 0)
-			continue;
-
-		if(rec.EventType != MOUSE_EVENT)
-			continue;
-
-		m = &rec.Event.MouseEvent;
-		x = m->dwMousePosition.X;
-		y = m->dwMousePosition.Y;
-		b = mousebuttons(m->dwButtonState, m->dwEventFlags);
-		mods = mousemods(m->dwControlKeyState);
-
-		return snprint(buf, n, "m %d %d %d %d\n", x, y, b, mods);
 	}
 }
 
@@ -1335,6 +1501,8 @@ termset(void)
 	if(errh == INVALID_HANDLE_VALUE)
 		errh = conh;
 
+	enableconsolevtoutput();
+
 	if(GetConsoleMode(kbdh, &consolestate)){
 		flag = consolestate;
 		flag &= ~(ENABLE_PROCESSED_INPUT|ENABLE_LINE_INPUT|ENABLE_ECHO_INPUT);
@@ -1355,9 +1523,90 @@ termrestore(void)
 	if(kbdh != INVALID_HANDLE_VALUE)
 		SetConsoleMode(kbdh, consolestate);
 
+	if(conh != INVALID_HANDLE_VALUE && consoleoutstatesaved)
+		SetConsoleMode(conh, consoleoutstate);
+
 	if(consolecpsaved)
 		restoreconsolecp();
 
+}
+
+int
+osconsinfo(char *buf, int n)
+{
+	CONSOLE_SCREEN_BUFFER_INFO info;
+	HANDLE h;
+	int cols, rows;
+	int buffercols, bufferrows;
+	int left, top, right, bottom;
+	int cursorx, cursory;
+
+	if(buf == nil || n <= 0)
+		return -1;
+
+	h = conh;
+	if(h == INVALID_HANDLE_VALUE || h == NULL)
+		h = GetStdHandle(STD_OUTPUT_HANDLE);
+
+	if(h == INVALID_HANDLE_VALUE || h == NULL)
+		return snprint(buf, n,
+			"80 24\n"
+			"cols=80\n"
+			"rows=24\n"
+			"source=fallback-no-console\n");
+
+	if(!GetConsoleScreenBufferInfo(h, &info))
+		return snprint(buf, n,
+			"80 24\n"
+			"cols=80\n"
+			"rows=24\n"
+			"source=fallback-consolegetinfo\n");
+
+	left = info.srWindow.Left;
+	top = info.srWindow.Top;
+	right = info.srWindow.Right;
+	bottom = info.srWindow.Bottom;
+
+	cols = right - left + 1;
+	rows = bottom - top + 1;
+
+	buffercols = info.dwSize.X;
+	bufferrows = info.dwSize.Y;
+
+	cursorx = info.dwCursorPosition.X;
+	cursory = info.dwCursorPosition.Y;
+
+	if(cols <= 0)
+		cols = 80;
+	if(rows <= 0)
+		rows = 24;
+
+	return snprint(buf, n,
+		"%d %d\n"
+		"cols=%d\n"
+		"rows=%d\n"
+		"buffercols=%d\n"
+		"bufferrows=%d\n"
+		"left=%d\n"
+		"top=%d\n"
+		"right=%d\n"
+		"bottom=%d\n"
+		"cursorx=%d\n"
+		"cursory=%d\n"
+		"vt=%d\n"
+		"utf8=%d\n"
+		"colors=%d\n"
+		"truecolor=%d\n"
+		"source=mingw-console\n",
+		cols, rows,
+		cols, rows,
+		buffercols, bufferrows,
+		left, top, right, bottom,
+		cursorx, cursory,
+		vtoutputactive,
+		consolecpchanged ? 1 : 0,
+		vtoutputactive ? 16777216 : 16,
+		vtoutputactive ? 1 : 0);
 }
 
 static	int	rebootok = 0;

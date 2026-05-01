@@ -17,6 +17,7 @@ String	snil;			/* String known to be zero length */
 #define B(r)	*((BYTE*)(R.r))
 #define W(r)	*((vlong*)(R.r))
 #define UW(r)	*((uvlong*)(R.r))
+#define W32(r)	*((s32*)(R.r))
 #define DW(r)	*((LONG*)(R.r))
 #define F(r)	*((REAL*)(R.r))
 #define V(r)	*((LONG*)(R.r))	
@@ -90,12 +91,12 @@ OP(bltb) { if(B(s) <  B(m)) JMP(d); }
 OP(bleb) { if(B(s) <= B(m)) JMP(d); }
 OP(bgtb) { if(B(s) >  B(m)) JMP(d); }
 OP(bgeb) { if(B(s) >= B(m)) JMP(d); }
-OP(beqw) { if(W(s) == W(m)) JMP(d); }
-OP(bnew) { if(W(s) != W(m)) JMP(d); }
-OP(bltw) { if(W(s) <  W(m)) JMP(d); }
-OP(blew) { if(W(s) <= W(m)) JMP(d); }
-OP(bgtw) { if(W(s) >  W(m)) JMP(d); }
-OP(bgew) { if(W(s) >= W(m)) JMP(d); }
+OP(beqw) { if(W32(s) == W32(m)) JMP(d); }
+OP(bnew) { if(W32(s) != W32(m)) JMP(d); }
+OP(bltw) { if(W32(s) <  W32(m)) JMP(d); }
+OP(blew) { if(W32(s) <= W32(m)) JMP(d); }
+OP(bgtw) { if(W32(s) >  W32(m)) JMP(d); }
+OP(bgew) { if(W32(s) >= W32(m)) JMP(d); }
 OP(beql) { if(V(s) == V(m)) JMP(d); }
 OP(bnel) { if(V(s) != V(m)) JMP(d); }
 OP(bltl) { if(V(s) <  V(m)) JMP(d); }
