@@ -157,6 +157,33 @@ ekbdsessionactive(void)
 #endif
 }
 
+#ifdef __linux__
+static void
+wakeekbdreaders(void)
+{
+	char z;
+
+	if(ekbdq == nil)
+		return;
+
+	z = 0;
+	qreopen(ekbdq);
+	qproduce(ekbdq, &z, 1);
+}
+
+static void
+wakeemousereaders(void)
+{
+	char msg[] = "m 0 0 0 0\n";
+
+	if(emouseq == nil)
+		return;
+
+	qreopen(emouseq);
+	qproduce(emouseq, msg, strlen(msg));
+}
+#endif
+
 #ifdef __MINGW32__
 extern int readconsoleevent(int *key, char *mbuf, int mn);
 extern void enableconsolemouse(void);
@@ -267,49 +294,91 @@ winkbdslave(void *a)
 #endif
 
 #ifdef __linux__
-void
-linuxkbdslave(void *a)
+extern int readconsoleevent(int *key, char *mbuf, int mn);
+extern void enableconsolemouse(void);
+extern void disableconsolemouse(void);
+
+static void
+linuxemouseput(char *buf, int n)
 {
-	int k, nb;
+	if(emouseq == nil || n <= 0)
+		return;
+	qproduce(emouseq, buf, n);
+}
+
+static void
+processlinuxkey(int k)
+{
+	int nb;
 	Rune r;
 	char b;
 	char ubuf[UTFmax];
 
-	USED(a);
-	for(;;){
-		k = readekbd();
-		if(k < 0)
-			continue;
+	if(k < 0)
+		return;
 
-		if(kbd.ekbd.ref != 0)
-			ekbdputc(k);
+	if(kbd.ekbd.ref != 0)
+		ekbdputc(k);
 
-		if(kbd.ekbd.ref == 0 && ordinarykey(k)){
-			r = k;
-			if(r == '\r')
-				r = '\n';
+	if(kbd.ekbd.ref == 0 && ordinarykey(k)){
+		r = k;
+		if(r == '\r')
+			r = '\n';
 
-			if(r < 0x80){
-				b = r;
-				if(kbd.raw == 0){
-					switch(b){
-					case 0x15:
-						write(1, "^U\n", 3);
-						break;
-					default:
-						write(1, &b, 1);
-						break;
-					}
+		if(r < 0x80){
+			b = r;
+			if(kbd.raw == 0){
+				switch(b){
+				case 0x15:
+					write(1, "^U\n", 3);
+					break;
+				default:
+					write(1, &b, 1);
+					break;
 				}
-				qproduce(kbdq, &b, 1);
-			}else{
-				nb = runetochar(ubuf, &r);
-				if(nb <= 0)
-					continue;
-				if(kbd.raw == 0)
-					write(1, ubuf, nb);
-				qproduce(kbdq, ubuf, nb);
 			}
+			qproduce(kbdq, &b, 1);
+		}else{
+			nb = runetochar(ubuf, &r);
+			if(nb <= 0)
+				return;
+			if(kbd.raw == 0)
+				write(1, ubuf, nb);
+			qproduce(kbdq, ubuf, nb);
+		}
+	}
+}
+
+/*
+ * Linux console input dispatcher.
+ *
+ * Linux uses the newer host console event reader from emu/Linux/os.c.
+ * Keep all Linux-specific queue reopening/wakeup behaviour out of the
+ * MinGW path.
+ */
+void
+linuxkbdslave(void *a)
+{
+	int t, k;
+	char mbuf[128];
+
+	USED(a);
+
+	for(;;){
+		k = -1;
+		mbuf[0] = 0;
+
+		t = readconsoleevent(&k, mbuf, sizeof(mbuf));
+
+		if(t == 1){
+			processlinuxkey(k);
+			continue;
+		}
+
+		if(t == 2){
+			if(kbd.ptr.ref != 0 && mbuf[0] != 0)
+				linuxemouseput(mbuf, strlen(mbuf));
+			continue;
 		}
 	}
 	/* not reached */
@@ -413,6 +482,8 @@ consstat(Chan *c, uchar *db, int n)
 static Chan*
 consopen(Chan *c, int omode)
 {
+	int r;
+
 	c = devopen(c, omode, contab, nelem(contab), devgen);
 	switch((ulong)c->qid.path) {
 	case Qconsctl:
@@ -422,6 +493,13 @@ consopen(Chan *c, int omode)
 	case Qemouse:
 #ifdef __MINGW32__
 		if(incref(&kbd.ptr) == 1){
+			qflush(emouseq);
+			enableconsolemouse();
+		}
+#elif defined(__linux__)
+		r = incref(&kbd.ptr);
+		if(r == 1){
+			qreopen(emouseq);
 			qflush(emouseq);
 			enableconsolemouse();
 		}
@@ -435,6 +513,11 @@ consopen(Chan *c, int omode)
 		incref(&kbd.ekbd);
 		qflush(ekbdq);
 		qflush(kbdq);
+#elif defined(__linux__)
+		r = incref(&kbd.ekbd);
+		if(r == 1)
+			qreopen(ekbdq);
+		qflush(ekbdq);
 #else
 		if(incref(&kbd.ekbd) == 1)
 			qflush(ekbdq);
@@ -485,8 +568,18 @@ consclose(Chan *c)
 	switch((ulong)c->qid.path) {
 	case Qconsctl:
 		/* last close of control file turns off raw */
-		if(decref(&kbd.ctl) == 0)
+		if(decref(&kbd.ctl) == 0){
 			kbd.raw = 0;
+#ifdef __linux__
+			qflush(ekbdq);
+			wakeekbdreaders();
+
+			if(kbd.ptr.ref == 0){
+				qflush(emouseq);
+				wakeemousereaders();
+			}
+#endif
+		}
 		break;
 
 	case Qemouse:
@@ -494,6 +587,10 @@ consclose(Chan *c)
 #ifdef __MINGW32__
 			disableconsolemouse();
 			qflush(emouseq);
+#elif defined(__linux__)
+			disableconsolemouse();
+			qflush(emouseq);
+			wakeemousereaders();
 #endif
 		}
 		break;
@@ -501,6 +598,9 @@ consclose(Chan *c)
 	case Qekeyboard:
 		if(decref(&kbd.ekbd) == 0){
 			qflush(ekbdq);
+#ifdef __linux__
+			wakeekbdreaders();
+#endif
 #ifdef __MINGW32__
 			qflush(kbdq);
 #endif
@@ -730,11 +830,24 @@ conswrite(Chan *c, void *va, long n, vlong offset)
 		for(a = buf; a;){
 			if(strncmp(a, "rawon", 5) == 0){
 				kbd.raw = 1;
+#ifdef __linux__
+				qreopen(ekbdq);
+				qreopen(emouseq);
+#endif
 				/* clumsy hack - wake up reader */
 				ch = 0;
 				qwrite(kbdq, &ch, 1);
 			} else if(strncmp(buf, "rawoff", 6) == 0){
 				kbd.raw = 0;
+#ifdef __linux__
+				qflush(ekbdq);
+				wakeekbdreaders();
+
+				if(kbd.ptr.ref == 0){
+					qflush(emouseq);
+					wakeemousereaders();
+				}
+#endif
 			}
 			if((a = strchr(a, ' ')) != nil)
 				a++;
