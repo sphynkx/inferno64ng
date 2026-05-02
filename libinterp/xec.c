@@ -548,33 +548,35 @@ OP(newcmp)
 }
 OP(icase)
 {
-	WORD v, *t, *l, d, n, n2;
+	s32 selector;
+	WORD *t, *l, target, n, n2;
 
-	v = W(s);
+	selector = W32(s);
 	t = (WORD*)((WORD)R.d + IBY2WD);
 	n = t[-1];
-	d = t[n*3];
+	target = t[n*3];
 
 	while(n > 0) {
 		n2 = n >> 1;
 		l = t + n2*3;
-		if(v < l[0]) {
+		/* Integer case tables store 32-bit selectors in WORD-sized slots. */
+		if(selector < (s32)l[0]) {
 			n = n2;
 			continue;
 		}
-		if(v >= l[1]) {
+		if(selector >= (s32)l[1]) {
 			t = l+3;
 			n -= n2 + 1;
 			continue;
 		}
-		d = l[2];
+		target = l[2];
 		break;
 	}
 	if(R.M->compiled) {
-		R.PC = (Inst*)d;
+		R.PC = (Inst*)target;
 		return;
 	}
-	R.PC = R.M->prog + d;
+	R.PC = R.M->prog + target;
 }
 OP(casel)
 {
@@ -670,7 +672,7 @@ OP(igoto)
 {
 	WORD *t;
 
-	t = (WORD*)((WORD)R.d + (W(s) * IBY2WD));
+	t = (WORD*)((WORD)R.d + (W32(s) * IBY2WD));
 	if(R.M->compiled) {
 		R.PC = (Inst*)t[0];
 		return;
