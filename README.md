@@ -50,9 +50,7 @@ applications on top of the enhanced console support. It includes:
 - focus handling, key bindings and command/message dispatch;
 - example applications, including a Matrix-style terminal animation demo.
 
-The framework is intended to make it practical to write real console applications
-for Inferno while keeping them portable between the supported Windows/MSYS2 and
-Linux hosted environments.
+The framework is intended to make it practical to write real console applications for Inferno while keeping them portable between the supported Windows/MSYS2 and Linux hosted environments.
 
 
 ## Install and run
