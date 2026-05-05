@@ -578,7 +578,7 @@ arith(Inst *i, int op2, int rm)
 {
 	if(UXSRC(i->add) != SRC(AIMM)) {
 		if(i->add&ARM) {
-			mid(i, Oldw, RAX);
+			midw(i, Oldw, RAX);
 			opwldw(i, op2|2, 0);
 			opwstw(i, Ostw, 0);
 			return;
@@ -588,7 +588,7 @@ arith(Inst *i, int op2, int rm)
 		return;
 	}
 	if(i->add&ARM) {
-		mid(i, Oldw, RAX);
+		midw(i, Oldw, RAX);
 		if(bc(i->s.imm)) {
 			gen2(0x83, (3<<6)|(rm<<3)|RAX);
 			genb(i->s.imm);
@@ -1336,7 +1336,7 @@ comp(Inst *i)
 	case IMOVW:
 	case ICVTLW:			// Little endian
 		if(UXSRC(i->add) == SRC(AIMM)) {
-			opwstw(i, Omov, RAX);
+			opwst(i, Omov, RAX);
 			genw(i->s.imm);
 			break;
 		}
@@ -1396,19 +1396,25 @@ comp(Inst *i)
 		arithf(i, 7);
 		break;
 	case IMODW:
+		midw(i, Oldw, RAX);
+		opwld(i, Oldw, RTMP);
+		genb(Ocdq);
+		gen2(0xf7, (3<<6)|(7<<3)|RTMP);	// IDIV AX, RTMP
+		genb(0x90+RDX);		// XCHG	AX, DX
+		opwst(i, Ostw, RAX);
+		break;
 	case IDIVW:
+		midw(i, Oldw, RAX);
+		opwld(i, Oldw, RTMP);
+		genb(Ocdq);
+		gen2(0xf7, (3<<6)|(7<<3)|RTMP);	// IDIV AX, RTMP
+		opwst(i, Ostw, RAX);
+		break;
 	case IMULW:
 		midw(i, Oldw, RAX);
-		opwldw(i, Oldw, RTMP);
-		if(i->op == IMULW)
-			gen2(0xf7, (3<<6)|(4<<3)|RTMP);
-		else {
-			genb(Ocdq);
-			gen2(0xf7, (3<<6)|(7<<3)|RTMP);	// IDIV AX, RTMP
-			if(i->op == IMODW)
-				genb(0x90+RDX);		// XCHG	AX, DX
-		}
-		opwstw(i, Ostw, RAX);
+		opwld(i, Oldw, RTMP);
+		gen2(0xf7, (3<<6)|(4<<3)|RTMP);
+		opwst(i, Ostw, RAX);
 		break;
 	case IMODB:
 	case IDIVB:
@@ -1462,7 +1468,7 @@ comp(Inst *i)
 		goto idx;
 	case IINDW:
 		r = 3;  /* TODO was 2; should be 3 if WORD size is 8 */
-	idx:
+idx:
 		opwld(i, Oldw, RAX);
 		opwstw(i, Oldw, RTMP);
 		if(bflag){
@@ -1765,7 +1771,7 @@ maccolr(void)
 {
 	modrm(Oincrm, O(Heap, ref)-sizeof(Heap), RBX, 0);  // INCL	ref(BX)
 	con((uintptr)&mutator, RAX);
-	modrm(Oldw, 0, RAX, RAX);
+	modrmw(Oldw, 0, RAX, RAX);
 	//gen2(Oldw, (3<<6)|(RAX<<3)|RAX);
 	//gen2(Oldw, (0<<6)|(RAX<<3)|5);		
 	//gen4(code - (uintptr)&mutator);			// MOVL	mutator, RAX
@@ -1777,7 +1783,7 @@ maccolr(void)
 	//gen2(Ostw, (0<<6)|(RAX<<3)|5);		// can be any !0 value
 	//gen8((uintptr)&nprop);			// MOVL	RBX, nprop
 	con((uintptr)&nprop, RAX);
-	modrm(Ostw, 0, RAX, RBX);
+	modrmw(Ostw, 0, RAX, RBX);
 	
 	genb(Oret);
 }
@@ -2081,4 +2087,3 @@ bad:
 	free(base);
 	return 0;
 }
-
