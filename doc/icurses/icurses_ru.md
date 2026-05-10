@@ -372,6 +372,8 @@ front/back-буферы используются для оптимизации �
 - `OK` — закрывает приложение;
 - `Help` — показывает окно помощи.
 
+![03_00_hello](img/03_00_hello.png)
+
 Окно помощи содержит текст `Welcome to Icurses!!` и собственную кнопку `OK`, которая закрывает только окно помощи и возвращает фокус в главное окно.
 
 Пример также выводит небольшой фоновый текстовый блок через `canvas`. Это нужно для демонстрации слоистой отрисовки: окна и тени рисуются поверх содержимого, которое известно renderer-у. Тень в `icurses` является compositing-эффектом внутри собственного буфера renderer-а: символ ячейки сохраняется, а стиль ячейки заменяется на shadow-атрибут.
@@ -2621,6 +2623,8 @@ ui->canvasputs(u, BackgroundId, 1, 1, "text", BgCode);
 
 Более крупный canvas-heavy пример см. в `doc/icurses/examples/07_05_matrix.b`: он показывает анимацию, renderer-managed canvas, terminal capabilities и resize/rebuild в полноценном демо.
 
+![07_05_matrix](img/07_05_matrix.png)
+
 
 
 ### <a id="7-6">7.6</a>. Прямой вывод в терминал [&uarr;](#0)
@@ -3986,6 +3990,8 @@ Menu обычно нужно для:
 
 См. пример `doc/icurses/examples/11_08_menu_demo.b`: он показывает menu-like интерфейс с navbar, popup menu, actionbar, выбранным пунктом, disabled item, checked item и выполнением команды выбранного пункта.
 
+![11_08_menu_demo](img/11_08_menu_demo.png)
+
 
 
 ### <a id="11-9">11.9</a>. Task/progress [&uarr;](#0)
@@ -4023,6 +4029,8 @@ Menu обычно нужно для:
 Также `IcTask` имеет `tick()` and `render()` semantics, что хорошо сочетается с event loop and timer events из раздела 8. То есть task/progress naturally вписывается в модель "state changes on tick + redraw".
 
 См. пример `doc/icurses/examples/11_09_task_progress.b`: он показывает task dialog, фазу задачи, item progress, total progress, spinner и управление задачей через Start/Pause/Reset.
+
+![11_09_task_progress](img/11_09_task_progress.png)
 
 
 
@@ -4108,6 +4116,8 @@ Canvas-операции `canvasclear`, `canvasfill`, `canvasputc` и `canvasputs
 Именно поэтому canvas особенно хорошо подходит для background content. В quick-start примере он используется именно так: сначала рисуется фоновый текстовый слой, а затем поверх него — окна и тени.
 
 См. пример `doc/icurses/examples/11_10_history_popup.b`: он показывает связку input + history popup, сохранение введенных значений в историю, навигацию по истории и применение выбранного значения обратно в поле ввода.
+
+![11_11_canvas_playground](img/11_11_canvas_playground.png)
 
 
 
@@ -4447,6 +4457,8 @@ if(ui->start(u) < 0){
 Практически это значит, что внешний вид приложения в `icurses` — не жестко прошитый набор символов и SGR-кодов, а результат политики, зависящей от терминала.
 
 Практический пример тем, цветов и glyph policy см. в `doc/icurses/examples/13_01_theme_color_glyphs.b`.
+
+![13_01_theme_color_glyphs](img/13_01_theme_color_glyphs.png)
 
 Пример читает `/dev/consinfo`, показывает размер терминала, количество цветов, truecolor/UTF-8/VT flags, выбранную палитру, semantic theme attributes, frame glyphs, scrollbar/block glyphs и предупреждение о double-width символах в fixed-cell layout.
 
