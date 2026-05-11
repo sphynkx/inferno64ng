@@ -2254,6 +2254,8 @@ if(ui->canvas(u, AppLayerId, BackgroundId, 0, 0, appw, apph) < 0)
 
 Resize в терминальном приложении означает, что геометрия экрана изменилась и старый layout больше не гарантированно корректен.
 
+![06_04_resize_polling](img/06_04_resize_polling.png)
+
 Приложение должно уметь:
 
 - обнаружить изменение размера;
@@ -3702,11 +3704,14 @@ if(ui->label(u, MainWinId, MainTextId, 4, 2, 34, "Welcome to Inferno!!") < 0)
 
 См. пример `doc/icurses/examples/11_01_label_gallery.b`: он показывает статические и динамические label-элементы, их место в дереве элементов и обновление текста через `ui->settext()`.
 
+![11_01_label_gallery](img/11_01_label_gallery.png)
 
 
 ### <a id="11-2">11.2</a>. Window [&uarr;](#0)
 
 `Window` или panel — это видимый контейнер, который задает рамку, заголовок и локальную область для дочерних элементов.
+
+![10_04_activation_flow](img/10_04_activation_flow.png)
 
 Базовое окно создается так:
 
@@ -3755,6 +3760,8 @@ if(ui->shadowwindow(u, parentid, ShadowId, WinId, x, y, w, h, " Title ", 1, 1) <
 ### <a id="11-3">11.3</a>. Button [&uarr;](#0)
 
 `Button` — один из основных interactive elements в `icurses`.
+
+![11_03_buttons](img/11_03_buttons.png)
 
 Базовое создание кнопки:
 
@@ -3806,6 +3813,8 @@ if(ui->button(u, MainButtonsId, BtnOkId, 0, 0, 10, 1, "OK", "", AppTarget, "app.
 
 `Input` — это поле ввода текста. Оно используется там, где пользователь должен вводить строковые значения: имя, путь, команду, фильтр, search query и т.п.
 
+![11_04_input_field](img/11_04_input_field.png)
+
 В отличие от `label`, input:
 
 - участвует в focus navigation;
@@ -3838,6 +3847,8 @@ if(ui->button(u, MainButtonsId, BtnOkId, 0, 0, 10, 1, "OK", "", AppTarget, "app.
 ### <a id="11-5">11.5</a>. Checkbox, radio, switch [&uarr;](#0)
 
 Эти элементы относятся к группе boolean/choice controls и реализуются через helper-модуль `IcControl`.
+
+![11_05_controls_check_radio_switch](img/11_05_controls_check_radio_switch.png)
 
 Он задает несколько стилей control-ов:
 
@@ -3897,6 +3908,8 @@ if(ui->button(u, MainButtonsId, BtnOkId, 0, 0, 10, 1, "OK", "", AppTarget, "app.
 
 `Slider` — control для выбора числового значения в ограниченном диапазоне.
 
+![11_06_slider_mixer](img/11_06_slider_mixer.png)
+
 Для него существует отдельный helper-модуль `IcSlider`, что показывает: slider имеет собственную internal behavior model, а не является просто "строкой с числом".
 
 Slider полезен, когда нужно:
@@ -3929,6 +3942,8 @@ Slider полезен, когда нужно:
 ### <a id="11-7">11.7</a>. List [&uarr;](#0)
 
 `List` — это элемент для отображения и навигации по набору строк или записей.
+
+![11_07_list_browser](img/11_07_list_browser.png)
 
 Для него существует отдельный helper-модуль `IcList`, а это значит, что список имеет собственную внутреннюю модель поведения:
 
@@ -4786,6 +4801,8 @@ Windows console может отличаться по поддержке VT, UTF-
 - общего `AppTarget`;
 - цикла обработки команд.
 
+![14_01_simple_menu](img/14_01_simple_menu.png)
+
 Именно такой подход удобен для:
 
 - launch screens;
@@ -4952,6 +4969,8 @@ root
 
 Confirm dialog — один из лучших примеров того, зачем в `icurses` полезны отдельные контейнеры верхнего уровня.
 
+![14_04_confirm_dialog](img/14_04_confirm_dialog.png)
+
 Типичный confirm dialog должен:
 
 - появляться поверх основного экрана;
@@ -5039,11 +5058,15 @@ root
 
 См. пример `doc/icurses/examples/14_05_canvas_app.b`: он показывает canvas-backed application, где основное содержимое рисуется на canvas, а обычные элементы интерфейса используются для управления состоянием приложения.
 
+Также см. демо "Матрица": `doc/icurses/examples/07_05_matrix.b`ю
+
 
 
 ### <a id="14-6">14.6</a>. Анимация [&uarr;](#0)
 
 Анимация в `icurses` строится вокруг timer/tick model и регулярного redraw.
+
+![07_05_canvas_wave](img/07_05_canvas_wave.png)
 
 Типичный animation pattern:
 
@@ -5062,7 +5085,7 @@ IcUi->StepTick =>
 }
 ```
 
-Практически animation в `icurses` чаще всего хорошо сочетается с canvas, потому что canvas удобен для произвольного и частого обновления visual state.
+Практически анимация в `icurses` чаще всего хорошо сочетается с canvas, потому что canvas удобен для произвольного и частого обновления visual state.
 
 Но и обычные UI animations возможны:
 
