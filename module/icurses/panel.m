@@ -7,9 +7,9 @@ IcPanel: module
 	#
 	# View modes.
 	#
-	ModeBrief2Col:   con 0;
-	ModeWide1Col:    con 1;
-	ModeTree:        con 2;
+	ModeBrief2Col:    con 0;
+	ModeWide1Col:     con 1;
+	ModeTree:         con 2;
 	ModeCustomFields: con 3;
 
 	#
@@ -35,15 +35,10 @@ IcPanel: module
 
 	#
 	# Item flags.
-	# Keep this generic. Applications may use bits for selection/marking
-	# or any other item state.
 	#
 	FlagMarked: con 1;
 	FlagHidden: con 2;
 
-	#
-	# Rendered line metadata.
-	#
 	Line: adt
 	{
 		itemid:   int;
@@ -54,10 +49,6 @@ IcPanel: module
 		flags:    int;
 	};
 
-	#
-	# One model item. The panel does not hardcode item kinds.
-	# "kind" is an opaque application-defined string.
-	#
 	Item: adt
 	{
 		id:       int;
@@ -81,18 +72,12 @@ IcPanel: module
 		targetid: int;
 	};
 
-	#
-	# Input model for the panel.
-	#
 	Model: adt
 	{
 		rootid: int;
 		items:  array of Item;
 	};
 
-	#
-	# Display/sort/navigation options.
-	#
 	Options: adt
 	{
 		mode:             int;
@@ -131,9 +116,6 @@ IcPanel: module
 		pagestep:         int;
 	};
 
-	#
-	# Panel runtime state.
-	#
 	Panel: adt
 	{
 		id:             int;

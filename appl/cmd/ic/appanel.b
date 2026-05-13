@@ -36,6 +36,7 @@ IcConfigData: module
 	getbool: fn(c: ref IcState->ConfigState, section, key: string, def: int): int;
 };
 
+sys: Sys;
 ui: IcUiMod;
 panelui: IcPanel;
 fsmodel: IcFsModelMod;
@@ -61,10 +62,20 @@ modevalue: fn(s: string, def: int): int;
 cursorvalue: fn(s: string, def: int): int;
 sortvalue: fn(s: string, def: int): int;
 namefitvalue: fn(s: string, def: int): int;
+joinpath: fn(base, name: string): string;
+parentpath: fn(path: string): string;
+normalizepath: fn(path: string): string;
+trimdirsuffix: fn(name: string): string;
 buildmodel: fn(d: ref IcState->PanelDir): ref IcPanel->Model;
+itempath: fn(p: ref IcState->PanelState): string;
+navigate: fn(state: ref IcState->AppState, p: ref IcState->PanelState): int;
 
 init()
 {
+	sys = load Sys Sys->PATH;
+	if(sys == nil)
+		raise "fail:load sys";
+
 	ui = load IcUiMod IcUiMod->PATH;
 	if(ui == nil)
 		raise "fail:load icurses/ui";
@@ -218,7 +229,7 @@ makeopts(state: ref IcState->AppState, p: ref IcState->PanelState): IcPanel->Opt
 		s = cfgdata->get(state.cfg, PanelSection, "mode", "brief2col");
 		o.mode = modevalue(s, o.mode);
 
-		s = cfgdata->get(state.cfg, PanelSection, "cursorstyle", "background");
+		s = cfgdata->get(state.cfg, PanelSection, "cursorstyle", "arrow");
 		o.cursorstyle = cursorvalue(s, o.cursorstyle);
 
 		o.showframe = cfgdata->getbool(state.cfg, PanelSection, "showframe", 1);
@@ -258,6 +269,68 @@ makeopts(state: ref IcState->AppState, p: ref IcState->PanelState): IcPanel->Opt
 	p = p;
 
 	return o;
+}
+
+normalizepath(path: string): string
+{
+	if(path == "")
+		return ".";
+
+	if(path == "./")
+		return ".";
+
+	if(len path > 1 && path[len path - 1] == '/')
+		return path[0:len path - 1];
+
+	return path;
+}
+
+trimdirsuffix(name: string): string
+{
+	if(len name > 1 && name[len name - 1] == '/')
+		return name[0:len name - 1];
+
+	return name;
+}
+
+joinpath(base, name: string): string
+{
+	base = normalizepath(base);
+	name = trimdirsuffix(name);
+
+	if(name == "" || name == ".")
+		return base;
+
+	if(name == "..")
+		return parentpath(base);
+
+	if(base == ".")
+		return name;
+
+	if(base == "/")
+		return "/" + name;
+
+	return base + "/" + name;
+}
+
+parentpath(path: string): string
+{
+	i: int;
+
+	path = normalizepath(path);
+
+	if(path == "." || path == "/")
+		return path;
+
+	for(i = len path - 1; i >= 0; i--){
+		if(path[i] == '/'){
+			if(i == 0)
+				return "/";
+			return path[0:i];
+		}
+	}
+
+	return ".";
 }
 
 buildmodel(d: ref IcState->PanelDir): ref IcPanel->Model
@@ -318,6 +391,47 @@ newpanel(side: int): ref IcState->PanelState
 	p.model = nil;
 
 	return p;
+}
+
+itempath(p: ref IcState->PanelState): string
+{
+	name, kind: string;
+
+	if(p == nil || p.panel == nil)
+		return p.path;
+
+	name = panelui->currentname(p.panel);
+	kind = panelui->currentkind(p.panel);
+
+	if(kind == "parent" || name == "..")
+		return parentpath(p.path);
+
+	if(kind == "dir")
+		return joinpath(p.path, name);
+
+	return p.path;
+}
+
+navigate(state: ref IcState->AppState, p: ref IcState->PanelState): int
+{
+	next: string;
+	kind: string;
+
+	if(state == nil || p == nil || p.panel == nil)
+		return -1;
+
+	kind = panelui->currentkind(p.panel);
+	if(kind != "dir" && kind != "parent")
+		return 0;
+
+	next = itempath(p);
+	next = normalizepath(next);
+
+	if(next == "")
+		next = ".";
+
+	p.path = next;
+	return refresh(state, p);
 }
 
 build(state: ref IcState->AppState, p: ref IcState->PanelState, rect: IcLayout->Rect): int
@@ -390,10 +504,15 @@ setactive(state: ref IcState->AppState, p: ref IcState->PanelState, active: int)
 
 handlekey(state: ref IcState->AppState, p: ref IcState->PanelState, k: int): int
 {
+	m: IcMsg->Msg;
+
 	if(state == nil || state.ui == nil || p == nil || p.panel == nil)
 		return -1;
 
-	panelui->handlekey(state.ui, p.panel, k);
+	m = panelui->handlekey(state.ui, p.panel, k);
+
+	if(m.cmd == "panel.activate")
+		return navigate(state, p);
 
 	return panelui->render(state.ui, p.panel);
 }

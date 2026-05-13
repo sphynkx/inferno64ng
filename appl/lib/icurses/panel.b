@@ -7,6 +7,7 @@ msg: IcMsg;
 ui: IcUi;
 view: IcView;
 ic: Icurses;
+glyph: IcGlyph;
 
 DefaultTitle: con "Panel";
 DefaultStatus: con "";
@@ -25,7 +26,6 @@ sameparent: fn(it: IcPanel->Item, parentid: int): int;
 itemhidden: fn(it: IcPanel->Item): int;
 itemdisplaykinddir: fn(it: IcPanel->Item): int;
 sortvalue: fn(it: IcPanel->Item, key: string): string;
-lesstext: fn(a, b: string): int;
 lessitem: fn(a, b: IcPanel->Item, opts: IcPanel->Options): int;
 sortitems: fn(a: array of IcPanel->Item, opts: IcPanel->Options): array of IcPanel->Item;
 childitems: fn(m: ref IcPanel->Model, rootid: int, opts: IcPanel->Options): array of IcPanel->Item;
@@ -45,10 +45,8 @@ fixcurrent: fn(p: ref IcPanel->Panel);
 fixtop: fn(p: ref IcPanel->Panel);
 currentindex: fn(p: ref IcPanel->Panel): int;
 linewidths: fn(p: ref IcPanel->Panel): (int, int, int);
-briefindexmove: fn(p: ref IcPanel->Panel, delta: int): int;
 briefcolstep: fn(p: ref IcPanel->Panel): int;
 briefpagestep: fn(p: ref IcPanel->Panel): int;
-briefrowcount: fn(p: ref IcPanel->Panel): int;
 appendrowid: fn(a: array of int, id: int): array of int;
 setlineids: fn(u: ref IcUi->Ui, p: ref IcPanel->Panel, parentid, count: int): int;
 makemsg: fn(p: ref IcPanel->Panel, cmd: string): IcMsg->Msg;
@@ -58,9 +56,14 @@ clickselect: fn(u: ref IcUi->Ui, p: ref IcPanel->Panel, row: int): IcMsg->Msg;
 spaces: fn(n: int): string;
 fittext: fn(s: string, w, mode: int): string;
 padtext: fn(s: string, w: int): string;
+rowseparator: fn(p: ref IcPanel->Panel): string;
+rowprefix: fn(p: ref IcPanel->Panel, l: IcPanel->Line): string;
+hideunusedrows: fn(u: ref IcUi->Ui, p: ref IcPanel->Panel, from: int);
 
 init()
 {
+	ci: Icurses->ConsInfo;
+
 	sys = load Sys Sys->PATH;
 	if(sys == nil)
 		raise "fail:load sys";
@@ -81,10 +84,17 @@ init()
 	if(ic == nil)
 		raise "fail:load icurses";
 
+	glyph = load IcGlyph IcGlyph->PATH;
+	if(glyph == nil)
+		raise "fail:load icglyph";
+
 	msg->init();
 	ui->init();
 	view->init();
 	ic->init();
+
+	ci = ic->consinfo();
+	glyph->init(ci);
 }
 
 spaces(n: int): string
@@ -124,12 +134,57 @@ fittext(s: string, w, mode: int): string
 
 padtext(s: string, w: int): string
 {
-	s = fittext(s, w, IcPanel->NameFitClip);
+	if(len s > w)
+		s = s[0:w];
 
 	if(len s < w)
 		s += spaces(w - len s);
 
 	return s;
+}
+
+rowseparator(p: ref IcPanel->Panel): string
+{
+	f: IcGlyph->Frame;
+
+	if(glyph == nil)
+		return "|";
+
+	if(p != nil && p.opts.showframe && p.opts.framestyle == IcPaint->FrameDouble){
+		f = glyph->frame(IcGlyph->StyleDouble);
+		if(f.v != "")
+			return f.v;
+	}
+
+	f = glyph->frame(IcGlyph->StyleSingle);
+	if(f.v != "")
+		return f.v;
+
+	return "|";
+}
+
+rowprefix(p: ref IcPanel->Panel, l: IcPanel->Line): string
+{
+	if(p == nil || l.itemid < 0)
+		return "  ";
+
+	if(p.currentid != l.itemid)
+		return "  ";
+
+	case p.opts.cursorstyle {
+	IcPanel->CursorArrow =>
+		return "> ";
+	IcPanel->CursorUnderline =>
+		return "_ ";
+	IcPanel->CursorFrame =>
+		return "# ";
+	IcPanel->CursorInverse =>
+		return "* ";
+	IcPanel->CursorBackground =>
+		return "* ";
+	}
+
+	return "  ";
 }
 
 defaultopts(): IcPanel->Options
@@ -160,6 +215,7 @@ defaultopts(): IcPanel->Options
 
 	o.columncount = 2;
 	o.customfields = array[0] of string;
+
 	o.namefit = IcPanel->NameFitMiddle;
 
 	o.mouseenabled = 0;
@@ -427,11 +483,6 @@ sortvalue(it: IcPanel->Item, key: string): string
 	return "";
 }
 
-lesstext(a, b: string): int
-{
-	return a < b;
-}
-
 lessitem(a, b: IcPanel->Item, opts: IcPanel->Options): int
 {
 	va, vb, sa, sb: string;
@@ -675,11 +726,6 @@ flattenwide(p: ref IcPanel->Panel): array of IcPanel->Line
 
 flattentree(p: ref IcPanel->Panel): array of IcPanel->Line
 {
-	#
-	# First working implementation:
-	# use one-level flattening from current root.
-	# Tree expansion state can be added later without changing the panel API.
-	#
 	return flattenbrief(p);
 }
 
@@ -826,21 +872,10 @@ linewidths(p: ref IcPanel->Panel): (int, int, int)
 	if(p.opts.mode == IcPanel->ModeBrief2Col && p.opts.columncount >= 2)
 		colw = (bodyw - 1) / 2;
 
-	if(colw < 1)
-		colw = 1;
+	if(colw < 3)
+		colw = 3;
 
 	return (bodyw, colw, auxw);
-}
-
-briefrowcount(p: ref IcPanel->Panel): int
-{
-	rows: int;
-
-	rows = visiblebodyrows(p);
-	if(rows < 1)
-		rows = 1;
-
-	return rows;
 }
 
 briefcolstep(p: ref IcPanel->Panel): int
@@ -850,7 +885,7 @@ briefcolstep(p: ref IcPanel->Panel): int
 	if(p.opts.colstep > 0)
 		return p.opts.colstep;
 
-	step = briefrowcount(p);
+	step = visiblebodyrows(p);
 	if(step < 1)
 		step = 1;
 
@@ -869,24 +904,6 @@ briefpagestep(p: ref IcPanel->Panel): int
 		step = 1;
 
 	return step;
-}
-
-briefindexmove(p: ref IcPanel->Panel, delta: int): int
-{
-	idx: int;
-
-	idx = currentindex(p);
-	if(idx < 0)
-		return 0;
-
-	idx += delta;
-
-	if(idx < 0)
-		idx = 0;
-	if(idx >= len p.lines)
-		idx = len p.lines - 1;
-
-	return idx;
 }
 
 appendrowid(a: array of int, id: int): array of int
@@ -937,6 +954,23 @@ setlineids(u: ref IcUi->Ui, p: ref IcPanel->Panel, parentid, count: int): int
 	}
 
 	return 0;
+}
+
+hideunusedrows(u: ref IcUi->Ui, p: ref IcPanel->Panel, from: int)
+{
+	i: int;
+	n: ref IcView->Node;
+
+	u = u;
+
+	if(p == nil || p.rowids == nil)
+		return;
+
+	for(i = from; i < len p.rowids; i++){
+		n = view->find(u.tree, p.rowids[i]);
+		if(n != nil)
+			view->hide(n);
+	}
 }
 
 build(u: ref IcUi->Ui, parentid: int, p: ref IcPanel->Panel): int
@@ -1009,8 +1043,8 @@ render(u: ref IcUi->Ui, p: ref IcPanel->Panel): int
 	n, rown: ref IcView->Node;
 	bodyw, colw, auxw: int;
 	cmdrows, inforows, bodyrows: int;
-	start, idx, i, rowcount, colstep: int;
-	line, text: string;
+	start, i, colstep: int;
+	line, lefttext, righttext, sep: string;
 	leftidx, rightidx: int;
 	leftline, rightline: IcPanel->Line;
 
@@ -1054,11 +1088,11 @@ render(u: ref IcUi->Ui, p: ref IcPanel->Panel): int
 		view->settext(n, p.info);
 	}
 
+	sep = rowseparator(p);
+
 	if(p.opts.mode == IcPanel->ModeBrief2Col && p.opts.columncount >= 2){
-		rowcount = briefrowcount(p);
 		colstep = briefcolstep(p);
 		start = p.top;
-		rowcount = rowcount;
 
 		for(i = 0; i < bodyrows; i++){
 			rown = view->find(u.tree, p.rowids[i]);
@@ -1078,20 +1112,19 @@ render(u: ref IcUi->Ui, p: ref IcPanel->Panel): int
 			if(rightidx >= 0 && rightidx < len p.lines)
 				rightline = p.lines[rightidx];
 
-			line = "";
+			lefttext = "";
 			if(leftline.itemid >= 0)
-				line = fittext(leftline.text, colw, p.opts.namefit);
-			line = padtext(line, colw);
+				lefttext = rowprefix(p, leftline) + fittext(leftline.text, colw - 2, p.opts.namefit);
+			lefttext = padtext(lefttext, colw);
 
-			line += "|";
-
-			text = "";
+			righttext = "";
 			if(rightline.itemid >= 0)
-				text = fittext(rightline.text, colw, p.opts.namefit);
-			text = padtext(text, colw);
+				righttext = rowprefix(p, rightline) + fittext(rightline.text, colw - 2, p.opts.namefit);
+			righttext = padtext(righttext, colw);
 
-			line += text;
+			line = lefttext + sep + righttext;
 			line = fittext(line, bodyw, IcPanel->NameFitClip);
+			line = padtext(line, bodyw);
 
 			view->setbounds(rown, 0, i, bodyw, 1);
 			view->settext(rown, line);
@@ -1105,11 +1138,16 @@ render(u: ref IcUi->Ui, p: ref IcPanel->Panel): int
 			if(rown == nil)
 				continue;
 
-			idx = start + i;
-			if(idx >= 0 && idx < len p.lines)
-				line = fittext(p.lines[idx].text, bodyw, p.opts.namefit);
-			else
-				line = "";
+			leftidx = start + i;
+			leftline.itemid = -1;
+			leftline.text = "";
+
+			if(leftidx >= 0 && leftidx < len p.lines)
+				leftline = p.lines[leftidx];
+
+			line = "";
+			if(leftline.itemid >= 0)
+				line = rowprefix(p, leftline) + fittext(leftline.text, bodyw - 2, p.opts.namefit);
 
 			line = padtext(line, bodyw);
 
@@ -1118,6 +1156,8 @@ render(u: ref IcUi->Ui, p: ref IcPanel->Panel): int
 			view->show(rown);
 		}
 	}
+
+	hideunusedrows(u, p, bodyrows);
 
 	return 0;
 }
@@ -1343,6 +1383,7 @@ activate(u: ref IcUi->Ui, p: ref IcPanel->Panel): IcMsg->Msg
 			m.dst = it.targetid;
 		if(it.name != "")
 			m.sarg = it.name;
+		m.iarg0 = it.id;
 	}
 
 	return m;
@@ -1428,9 +1469,5 @@ handlemouse(u: ref IcUi->Ui, p: ref IcPanel->Panel, mouse: string): IcMsg->Msg
 	p = p;
 	mouse = mouse;
 
-	#
-	# Mouse support is intentionally left minimal in the first implementation.
-	# The module API already reserves a dedicated entry point.
-	#
 	return msg->none();
 }
