@@ -1,0 +1,14 @@
+include "ic/state.m";
+
+IcCommands: module
+{
+	PATH: con "/dis/ic/commands.dis";
+
+	CmdNone: con 0;
+	CmdExit: con 1;
+	CmdSwitchPanel: con 2;
+	CmdTogglePanels: con 3;
+
+	init: fn();
+	exec: fn(state: ref IcState->AppState, cmd: int): int;
+};

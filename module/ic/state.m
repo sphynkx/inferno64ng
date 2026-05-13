@@ -1,0 +1,98 @@
+include "icurses/list.m";
+include "icurses/config.m";
+
+IcState: module
+{
+	PanelLeft: con 1;
+	PanelRight: con 2;
+
+	SideLeft: con 1;
+	SideRight: con 2;
+
+	ConfigState: adt
+	{
+		cfg: ref IcConfig->Config;
+
+		themefile: string;
+		keysfile: string;
+		layoutfile: string;
+		menusfile: string;
+
+		userthemefile: string;
+		userkeysfile: string;
+		userlayoutfile: string;
+		usermenusfile: string;
+	};
+
+	ThemeState: adt
+	{
+		frame: int;
+		panelshadow: int;
+	};
+
+	FsEntry: adt
+	{
+		name: string;
+		isdir: int;
+	};
+
+	PanelDir: adt
+	{
+		path: string;
+		items: array of FsEntry;
+	};
+
+	PanelState: adt
+	{
+		id: int;
+		titleid: int;
+		listboxid: int;
+
+		liststate: ref IcList->List;
+
+		side: int;
+		active: int;
+
+		path: string;
+		dir: ref PanelDir;
+	};
+
+	TopBarState: adt
+	{
+		id: int;
+	};
+
+	BottomBarState: adt
+	{
+		id: int;
+	};
+
+	AppState: adt
+	{
+		running: int;
+
+		width: int;
+		height: int;
+
+		out: ref Sys->FD;
+		ui: ref IcUi->Ui;
+
+		rootid: int;
+		screensaverid: int;
+		toolid: int;
+		mainid: int;
+		modalid: int;
+
+		activepanel: int;
+		panelshidden: int;
+
+		cfg: ref ConfigState;
+		theme: ref ThemeState;
+
+		left: ref PanelState;
+		right: ref PanelState;
+
+		topbar: ref TopBarState;
+		bottombar: ref BottomBarState;
+	};
+};

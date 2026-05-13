@@ -1,0 +1,48 @@
+<../../../mkconfig
+
+TARG=\
+	ic.dis\
+	app.dis\
+	runtime.dis\
+	screen.dis\
+	layout.dis\
+	input.dis\
+	commands.dis\
+	config.dis\
+	theme.dis\
+	fsmodel.dis\
+	panel.dis\
+	topbar.dis\
+	bottombar.dis\
+
+MODULES=\
+
+SYSMODULES=\
+	ic/state.m\
+	ic/app.m\
+	ic/runtime.m\
+	ic/screen.m\
+	ic/layout.m\
+	ic/input.m\
+	ic/commands.m\
+	ic/config.m\
+	ic/theme.m\
+	ic/fsmodel.m\
+	ic/panel.m\
+	ic/topbar.m\
+	ic/bottombar.m\
+
+DISBIN=$ROOT/dis/ic
+
+<$ROOT/mkfiles/mkdis
+
+LIMBOFLAGS= -I$ROOT/module -I$ROOT/module/icurses -I$ROOT/module/ic $LIMBOFLAGS
+
+install:V: all
+	rm -f $ROOT/dis/ic/*.dis
+	cp *.dis $ROOT/dis/ic
+	rm -f $ROOT/dis/ic.dis
+	mv $ROOT/dis/ic/ic.dis $ROOT/dis/ic.dis
+
+nuke:V: nuke-std
+	rm -f $ROOT/dis/ic.dis
