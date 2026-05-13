@@ -55,6 +55,10 @@ makemsg: fn(p: ref IcPanel->Panel, cmd: string): IcMsg->Msg;
 lineindexat: fn(p: ref IcPanel->Panel, row: int): int;
 clickselect: fn(u: ref IcUi->Ui, p: ref IcPanel->Panel, row: int): IcMsg->Msg;
 
+spaces: fn(n: int): string;
+fittext: fn(s: string, w, mode: int): string;
+padtext: fn(s: string, w: int): string;
+
 init()
 {
 	sys = load Sys Sys->PATH;
@@ -81,6 +85,51 @@ init()
 	ui->init();
 	view->init();
 	ic->init();
+}
+
+spaces(n: int): string
+{
+	s: string;
+	i: int;
+
+	s = "";
+	for(i = 0; i < n; i++)
+		s += " ";
+
+	return s;
+}
+
+fittext(s: string, w, mode: int): string
+{
+	left, right, remain: int;
+
+	if(w <= 0)
+		return "";
+
+	if(len s <= w)
+		return s;
+
+	if(mode == IcPanel->NameFitClip)
+		return s[0:w];
+
+	if(w <= 3)
+		return s[0:w];
+
+	remain = w - 3;
+	left = remain / 2;
+	right = remain - left;
+
+	return s[0:left] + "..." + s[len s - right:];
+}
+
+padtext(s: string, w: int): string
+{
+	s = fittext(s, w, IcPanel->NameFitClip);
+
+	if(len s < w)
+		s += spaces(w - len s);
+
+	return s;
 }
 
 defaultopts(): IcPanel->Options
@@ -111,6 +160,7 @@ defaultopts(): IcPanel->Options
 
 	o.columncount = 2;
 	o.customfields = array[0] of string;
+	o.namefit = IcPanel->NameFitMiddle;
 
 	o.mouseenabled = 0;
 	o.wrapnav = 0;
@@ -137,8 +187,8 @@ new(id: int, title: string, opts: IcPanel->Options): ref IcPanel->Panel
 	   opts.hideparentatroot != 0 || opts.directoriesfirst != 0 || opts.showhidden != 0 ||
 	   opts.sortdirection != 0 || opts.mouseenabled != 0 || opts.wrapnav != 0 ||
 	   opts.vimnav != 0 || opts.rowstep != 0 || opts.colstep != 0 ||
-	   opts.pagestep != 0 || opts.sortfield != "" || opts.sortsecondary != "" ||
-	   opts.customfields != nil)
+	   opts.pagestep != 0 || opts.namefit != 0 || opts.sortfield != "" ||
+	   opts.sortsecondary != "" || opts.customfields != nil)
 		d = opts;
 
 	p.id = id;
@@ -366,15 +416,13 @@ sortvalue(it: IcPanel->Item, key: string): string
 	if(key == "kind")
 		return it.kind;
 
-	for(i = 0; i + 1 < len it.sortby; i += 2){
+	for(i = 0; i + 1 < len it.sortby; i += 2)
 		if(it.sortby[i] == key)
 			return it.sortby[i + 1];
-	}
 
-	for(i = 0; i + 1 < len it.fields; i += 2){
+	for(i = 0; i + 1 < len it.fields; i += 2)
 		if(it.fields[i] == key)
 			return it.fields[i + 1];
-	}
 
 	return "";
 }
@@ -1010,6 +1058,7 @@ render(u: ref IcUi->Ui, p: ref IcPanel->Panel): int
 		rowcount = briefrowcount(p);
 		colstep = briefcolstep(p);
 		start = p.top;
+		rowcount = rowcount;
 
 		for(i = 0; i < bodyrows; i++){
 			rown = view->find(u.tree, p.rowids[i]);
@@ -1031,20 +1080,18 @@ render(u: ref IcUi->Ui, p: ref IcPanel->Panel): int
 
 			line = "";
 			if(leftline.itemid >= 0)
-				line += leftline.text;
-			while(len line < colw)
-				line += " ";
+				line = fittext(leftline.text, colw, p.opts.namefit);
+			line = padtext(line, colw);
 
 			line += "|";
 
 			text = "";
 			if(rightline.itemid >= 0)
-				text = rightline.text;
-
-			while(len text < colw)
-				text += " ";
+				text = fittext(rightline.text, colw, p.opts.namefit);
+			text = padtext(text, colw);
 
 			line += text;
+			line = fittext(line, bodyw, IcPanel->NameFitClip);
 
 			view->setbounds(rown, 0, i, bodyw, 1);
 			view->settext(rown, line);
@@ -1060,15 +1107,11 @@ render(u: ref IcUi->Ui, p: ref IcPanel->Panel): int
 
 			idx = start + i;
 			if(idx >= 0 && idx < len p.lines)
-				line = p.lines[idx].text;
+				line = fittext(p.lines[idx].text, bodyw, p.opts.namefit);
 			else
 				line = "";
 
-			while(len line < bodyw)
-				line += " ";
-
-			if(len line > bodyw)
-				line = line[0:bodyw];
+			line = padtext(line, bodyw);
 
 			view->setbounds(rown, 0, i, bodyw, 1);
 			view->settext(rown, line);

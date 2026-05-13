@@ -3,7 +3,7 @@
 TARG=\
 	ic.dis\
 	app.dis\
-	runtime.dis\
+#	runtime.dis\
 	screen.dis\
 	layout.dis\
 	input.dis\
@@ -20,7 +20,7 @@ MODULES=\
 SYSMODULES=\
 	ic/state.m\
 	ic/app.m\
-	ic/runtime.m\
+#	ic/runtime.m\
 	ic/screen.m\
 	ic/layout.m\
 	ic/input.m\

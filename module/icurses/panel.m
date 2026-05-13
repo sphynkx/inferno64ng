@@ -28,6 +28,12 @@ IcPanel: module
 	SortDesc: con 1;
 
 	#
+	# Long item name fitting policies.
+	#
+	NameFitMiddle: con 0;
+	NameFitClip:   con 1;
+
+	#
 	# Item flags.
 	# Keep this generic. Applications may use bits for selection/marking
 	# or any other item state.
@@ -113,6 +119,8 @@ IcPanel: module
 
 		columncount:      int;
 		customfields:     array of string;
+
+		namefit:          int;
 
 		mouseenabled:     int;
 		wrapnav:          int;

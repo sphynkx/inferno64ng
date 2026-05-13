@@ -2,15 +2,51 @@ implement IcApp;
 
 include "ic/app.m";
 
-IcRuntime: module
+IcursesApp: module
 {
-	PATH: con "/dis/ic/runtime.dis";
+	PATH: con "/dis/lib/icurses/app.dis";
 
-	init: fn();
-	enter: fn(out: ref Sys->FD): int;
-	leave: fn(out: ref Sys->FD);
-	size: fn(): (int, int);
-	pollresize: fn(oldw, oldh: int): (int, int, int);
+	ScreenNormal: con 0;
+	ScreenAlternate: con 1;
+
+	Options: adt
+	{
+		screenmode: int;
+		mouse: int;
+		tickms: int;
+	};
+
+	Context: adt
+	{
+		out: ref Sys->FD;
+		ui: ref IcUi->Ui;
+
+		w: int;
+		h: int;
+
+		screenmode: int;
+		mouse: int;
+		tickms: int;
+
+		appscreen: int;
+		opened: int;
+		started: int;
+	};
+
+	init: fn(name: string);
+	defaultopts: fn(): Options;
+	newctx: fn(out: ref Sys->FD, opts: Options): ref Context;
+
+	open: fn(c: ref Context): int;
+	close: fn(c: ref Context);
+
+	ui: fn(c: ref Context): ref IcUi->Ui;
+	width: fn(c: ref Context): int;
+	height: fn(c: ref Context): int;
+
+	step: fn(c: ref Context): IcUi->Step;
+	draw: fn(c: ref Context): int;
+	pollresize: fn(c: ref Context, oldw, oldh: int): (int, int, int);
 };
 
 IcScreen: module
@@ -72,7 +108,7 @@ IcBottomBar: module
 };
 
 sys: Sys;
-runtime: IcRuntime;
+appfw: IcursesApp;
 screen: IcScreen;
 input: IcInputData;
 cfgdata: IcConfigData;
@@ -80,7 +116,6 @@ themedata: IcThemeData;
 appanel: IcAppPanel;
 topbar: IcTopBar;
 bottombar: IcBottomBar;
-ui: IcUi;
 
 init()
 {
@@ -88,9 +123,9 @@ init()
 	if(sys == nil)
 		raise "fail:load sys";
 
-	runtime = load IcRuntime IcRuntime->PATH;
-	if(runtime == nil)
-		raise "fail:load ic/runtime";
+	appfw = load IcursesApp IcursesApp->PATH;
+	if(appfw == nil)
+		raise "fail:load icurses/app";
 
 	screen = load IcScreen IcScreen->PATH;
 	if(screen == nil)
@@ -120,11 +155,7 @@ init()
 	if(bottombar == nil)
 		raise "fail:load ic/bottombar";
 
-	ui = load IcUi IcUi->PATH;
-	if(ui == nil)
-		raise "fail:load icurses/ui";
-
-	runtime->init();
+	appfw->init("ic");
 	screen->init();
 	input->init();
 	cfgdata->init();
@@ -132,7 +163,6 @@ init()
 	appanel->init();
 	topbar->init();
 	bottombar->init();
-	ui->init();
 }
 
 newstate(): ref IcState->AppState
@@ -159,6 +189,8 @@ newstate(): ref IcState->AppState
 
 run(state: ref IcState->AppState): int
 {
+	ctx: ref IcursesApp->Context;
+	opts: IcursesApp->Options;
 	step: IcUi->Step;
 	nw, nh, resized: int;
 
@@ -169,35 +201,36 @@ run(state: ref IcState->AppState): int
 	if(state.out == nil)
 		return -1;
 
-	(state.width, state.height) = runtime->size();
+	opts = appfw->defaultopts();
+	opts.screenmode = IcursesApp->ScreenAlternate;
+	opts.mouse = 0;
+	opts.tickms = 100;
 
-	if(runtime->enter(state.out) < 0)
+	ctx = appfw->newctx(state.out, opts);
+	if(ctx == nil)
 		return -1;
 
-	state.ui = ui->new(state.out, state.width, state.height);
+	if(appfw->open(ctx) < 0)
+		return -1;
+
+	state.ui = appfw->ui(ctx);
 	if(state.ui == nil){
-		runtime->leave(state.out);
+		appfw->close(ctx);
 		return -1;
 	}
 
-	ui->enablemouse(state.ui, 0);
+	state.width = appfw->width(ctx);
+	state.height = appfw->height(ctx);
 
 	if(screen->build(state) < 0){
-		ui->close(state.ui);
-		runtime->leave(state.out);
+		appfw->close(ctx);
 		return -1;
 	}
 
 	screen->redraw(state);
 
-	if(ui->start(state.ui) < 0){
-		ui->close(state.ui);
-		runtime->leave(state.out);
-		return -1;
-	}
-
 	while(state.running){
-		step = ui->step(state.ui);
+		step = appfw->step(ctx);
 
 		if(step.done)
 			break;
@@ -210,7 +243,7 @@ run(state: ref IcState->AppState): int
 		}
 
 		if(step.kind == IcUi->StepTick){
-			(nw, nh, resized) = runtime->pollresize(state.width, state.height);
+			(nw, nh, resized) = appfw->pollresize(ctx, state.width, state.height);
 			if(resized){
 				state.width = nw;
 				state.height = nh;
@@ -220,9 +253,7 @@ run(state: ref IcState->AppState): int
 		}
 	}
 
-	ui->stop(state.ui);
-	ui->close(state.ui);
-	runtime->leave(state.out);
+	appfw->close(ctx);
 
 	return 0;
 }

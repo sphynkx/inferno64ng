@@ -26,19 +26,41 @@ IcViewMod: module
 	allocid: fn(t: ref IcView->Tree): int;
 };
 
+IcConfigData: module
+{
+	PATH: con "/dis/ic/config.dis";
+
+	init: fn();
+	get: fn(c: ref IcState->ConfigState, section, key, def: string): string;
+	getint: fn(c: ref IcState->ConfigState, section, key: string, def: int): int;
+	getbool: fn(c: ref IcState->ConfigState, section, key: string, def: int): int;
+};
+
 ui: IcUiMod;
 panelui: IcPanel;
 fsmodel: IcFsModelMod;
 view: IcViewMod;
+cfgdata: IcConfigData;
 
 DefaultPath: con ".";
 DefaultCommandBarText: con "";
 DefaultInfoText: con "";
 
+PanelSection: con "panel";
+
+RootItemId: con 0;
+ParentItemId: con 1;
+FirstEntryId: con 2;
+
 appenditem: fn(a: array of IcPanel->Item, e: IcPanel->Item): array of IcPanel->Item;
+emptyitem: fn(): IcPanel->Item;
 maketitle: fn(p: ref IcState->PanelState): string;
 makeinfo: fn(p: ref IcState->PanelState): string;
-makeopts: fn(p: ref IcState->PanelState): IcPanel->Options;
+makeopts: fn(state: ref IcState->AppState, p: ref IcState->PanelState): IcPanel->Options;
+modevalue: fn(s: string, def: int): int;
+cursorvalue: fn(s: string, def: int): int;
+sortvalue: fn(s: string, def: int): int;
+namefitvalue: fn(s: string, def: int): int;
 buildmodel: fn(d: ref IcState->PanelDir): ref IcPanel->Model;
 
 init()
@@ -59,10 +81,15 @@ init()
 	if(view == nil)
 		raise "fail:load icurses/view";
 
+	cfgdata = load IcConfigData IcConfigData->PATH;
+	if(cfgdata == nil)
+		raise "fail:load ic/config";
+
 	ui->init();
 	panelui->init();
 	fsmodel->init();
 	view->init();
+	cfgdata->init();
 }
 
 appenditem(a: array of IcPanel->Item, e: IcPanel->Item): array of IcPanel->Item
@@ -84,6 +111,28 @@ appenditem(a: array of IcPanel->Item, e: IcPanel->Item): array of IcPanel->Item
 
 	r[n] = e;
 	return r;
+}
+
+emptyitem(): IcPanel->Item
+{
+	it: IcPanel->Item;
+
+	it.id = -1;
+	it.parentid = -1;
+	it.name = "";
+	it.kind = "";
+	it.flags = 0;
+	it.sarg = "";
+	it.iarg0 = 0;
+	it.iarg1 = 0;
+	it.iarg2 = 0;
+	it.fields = array[0] of string;
+	it.sortby = array[0] of string;
+	it.hotkey = "";
+	it.command = "";
+	it.targetid = -1;
+
+	return it;
 }
 
 maketitle(p: ref IcState->PanelState): string
@@ -108,32 +157,103 @@ makeinfo(p: ref IcState->PanelState): string
 	return "Items: " + string n;
 }
 
-makeopts(p: ref IcState->PanelState): IcPanel->Options
+modevalue(s: string, def: int): int
+{
+	if(s == "brief2col")
+		return IcPanel->ModeBrief2Col;
+	if(s == "wide1col")
+		return IcPanel->ModeWide1Col;
+	if(s == "tree")
+		return IcPanel->ModeTree;
+	if(s == "customfields")
+		return IcPanel->ModeCustomFields;
+
+	return def;
+}
+
+cursorvalue(s: string, def: int): int
+{
+	if(s == "arrow")
+		return IcPanel->CursorArrow;
+	if(s == "background")
+		return IcPanel->CursorBackground;
+	if(s == "inverse")
+		return IcPanel->CursorInverse;
+	if(s == "frame")
+		return IcPanel->CursorFrame;
+	if(s == "underline")
+		return IcPanel->CursorUnderline;
+
+	return def;
+}
+
+sortvalue(s: string, def: int): int
+{
+	if(s == "asc")
+		return IcPanel->SortAsc;
+	if(s == "desc")
+		return IcPanel->SortDesc;
+
+	return def;
+}
+
+namefitvalue(s: string, def: int): int
+{
+	if(s == "middle")
+		return IcPanel->NameFitMiddle;
+	if(s == "clip")
+		return IcPanel->NameFitClip;
+
+	return def;
+}
+
+makeopts(state: ref IcState->AppState, p: ref IcState->PanelState): IcPanel->Options
 {
 	o: IcPanel->Options;
+	s: string;
 
 	o = panelui->defaultopts();
-	o.mode = IcPanel->ModeBrief2Col;
-	o.cursorstyle = IcPanel->CursorBackground;
-	o.showframe = 1;
-	o.showcommandbar = 0;
-	o.commandbarrows = 1;
-	o.showinfobar = 1;
-	o.infobarrows = 1;
-	o.showparentitem = 0;
-	o.hideparentatroot = 1;
-	o.directoriesfirst = 1;
-	o.showhidden = 1;
-	o.sortfield = "name";
-	o.sortdirection = IcPanel->SortAsc;
-	o.sortsecondary = "";
-	o.columncount = 2;
-	o.mouseenabled = 0;
-	o.wrapnav = 0;
-	o.vimnav = 0;
-	o.rowstep = 1;
-	o.colstep = 0;
-	o.pagestep = 0;
+
+	if(state != nil){
+		s = cfgdata->get(state.cfg, PanelSection, "mode", "brief2col");
+		o.mode = modevalue(s, o.mode);
+
+		s = cfgdata->get(state.cfg, PanelSection, "cursorstyle", "background");
+		o.cursorstyle = cursorvalue(s, o.cursorstyle);
+
+		o.showframe = cfgdata->getbool(state.cfg, PanelSection, "showframe", 1);
+		o.showcommandbar = cfgdata->getbool(state.cfg, PanelSection, "showcommandbar", 0);
+		o.commandbarrows = cfgdata->getint(state.cfg, PanelSection, "commandbarrows", 1);
+
+		o.showinfobar = cfgdata->getbool(state.cfg, PanelSection, "showinfobar", 1);
+		o.infobarrows = cfgdata->getint(state.cfg, PanelSection, "infobarrows", 1);
+
+		o.showparentitem = cfgdata->getbool(state.cfg, PanelSection, "showparentitem", 1);
+		o.hideparentatroot = cfgdata->getbool(state.cfg, PanelSection, "hideparentatroot", 0);
+
+		o.directoriesfirst = cfgdata->getbool(state.cfg, PanelSection, "directoriesfirst", 1);
+		o.showhidden = cfgdata->getbool(state.cfg, PanelSection, "showhidden", 1);
+
+		o.sortfield = cfgdata->get(state.cfg, PanelSection, "sortfield", "name");
+
+		s = cfgdata->get(state.cfg, PanelSection, "sortdirection", "asc");
+		o.sortdirection = sortvalue(s, IcPanel->SortAsc);
+
+		o.sortsecondary = cfgdata->get(state.cfg, PanelSection, "sortsecondary", "");
+
+		o.columncount = cfgdata->getint(state.cfg, PanelSection, "columncount", 2);
+
+		s = cfgdata->get(state.cfg, PanelSection, "namefit", "middle");
+		o.namefit = namefitvalue(s, IcPanel->NameFitMiddle);
+
+		o.mouseenabled = cfgdata->getbool(state.cfg, PanelSection, "mouseenabled", 0);
+		o.wrapnav = cfgdata->getbool(state.cfg, PanelSection, "wrapnav", 0);
+		o.vimnav = cfgdata->getbool(state.cfg, PanelSection, "vimnav", 0);
+
+		o.rowstep = cfgdata->getint(state.cfg, PanelSection, "rowstep", 1);
+		o.colstep = cfgdata->getint(state.cfg, PanelSection, "colstep", 0);
+		o.pagestep = cfgdata->getint(state.cfg, PanelSection, "pagestep", 0);
+	}
 
 	p = p;
 
@@ -147,32 +267,36 @@ buildmodel(d: ref IcState->PanelDir): ref IcPanel->Model
 	i: int;
 
 	m = ref IcPanel->Model;
-	m.rootid = 0;
+	m.rootid = RootItemId;
 	m.items = array[0] of IcPanel->Item;
+
+	it = emptyitem();
+	it.id = RootItemId;
+	it.parentid = ParentItemId;
+	it.name = "";
+	it.kind = "root";
+	m.items = appenditem(m.items, it);
+
+	it = emptyitem();
+	it.id = ParentItemId;
+	it.parentid = -1;
+	it.name = "..";
+	it.kind = "parent";
+	m.items = appenditem(m.items, it);
 
 	if(d == nil || d.items == nil)
 		return m;
 
 	for(i = 0; i < len d.items; i++){
-		it.id = i + 1;
-		it.parentid = 0;
+		it = emptyitem();
+		it.id = FirstEntryId + i;
+		it.parentid = RootItemId;
 		it.name = d.items[i].name;
 
 		if(d.items[i].isdir)
 			it.kind = "dir";
 		else
 			it.kind = "file";
-
-		it.flags = 0;
-		it.sarg = "";
-		it.iarg0 = 0;
-		it.iarg1 = 0;
-		it.iarg2 = 0;
-		it.fields = array[0] of string;
-		it.sortby = array[0] of string;
-		it.hotkey = "";
-		it.command = "";
-		it.targetid = -1;
 
 		m.items = appenditem(m.items, it);
 	}
@@ -210,10 +334,13 @@ build(state: ref IcState->AppState, p: ref IcState->PanelState, rect: IcLayout->
 		p.id = view->allocid(state.ui.tree);
 
 	if(p.panel == nil){
-		opts = makeopts(p);
+		opts = makeopts(state, p);
 		p.panel = panelui->new(p.id, maketitle(p), opts);
 		if(p.panel == nil)
 			return -1;
+	}else{
+		opts = makeopts(state, p);
+		panelui->setopts(p.panel, opts);
 	}
 
 	panelui->setbounds(p.panel, rect.x, rect.y, rect.w, rect.h);
@@ -234,8 +361,13 @@ build(state: ref IcState->AppState, p: ref IcState->PanelState, rect: IcLayout->
 
 refresh(state: ref IcState->AppState, p: ref IcState->PanelState): int
 {
+	opts: IcPanel->Options;
+
 	if(state == nil || state.ui == nil || p == nil || p.panel == nil)
 		return -1;
+
+	opts = makeopts(state, p);
+	panelui->setopts(p.panel, opts);
 
 	p.dir = fsmodel->readdir(p.path);
 	p.model = buildmodel(p.dir);
