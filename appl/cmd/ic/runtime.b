@@ -17,8 +17,7 @@ Icurses: module
 sys: Sys;
 ic: Icurses;
 
-EnterAltSeq: con "\033[?1049h";
-LeaveAltSeq: con "\033[?1049l";
+appscreen: int;
 
 init()
 {
@@ -31,6 +30,7 @@ init()
 		raise "fail:load icurses";
 
 	ic->init();
+	appscreen = 0;
 }
 
 enter(out: ref Sys->FD): int
@@ -38,9 +38,15 @@ enter(out: ref Sys->FD): int
 	if(out == nil)
 		return -1;
 
-	sys->fprint(out, "%s", EnterAltSeq);
+	if(appscreen)
+		return 0;
+
+	sys->fprint(out, "%c[?1049h", 27);
+	ic->resettty(out);
 	ic->hidecursor(out);
 	ic->cleartty(out);
+
+	appscreen = 1;
 
 	return 0;
 }
@@ -53,7 +59,14 @@ leave(out: ref Sys->FD)
 	ic->resettty(out);
 	ic->showcursor(out);
 	ic->cleartty(out);
-	sys->fprint(out, "%s", LeaveAltSeq);
+
+	if(appscreen){
+		sys->fprint(out, "%c[?1049l", 27);
+		appscreen = 0;
+	}
+
+	ic->resettty(out);
+	ic->showcursor(out);
 }
 
 size(): (int, int)

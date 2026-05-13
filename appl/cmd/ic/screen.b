@@ -65,6 +65,8 @@ topbar: IcTopBarMod;
 bottombar: IcBottomBarMod;
 
 ensurelayer: fn(state: ref IcState->AppState, id: int): int;
+showpanelnode: fn(state: ref IcState->AppState, p: ref IcState->PanelState);
+hidepanelnode: fn(state: ref IcState->AppState, p: ref IcState->PanelState);
 
 init()
 {
@@ -108,6 +110,36 @@ ensurelayer(state: ref IcState->AppState, id: int): int
 	return ui->group(state.ui, state.rootid, id, 0, 0, state.width, state.height);
 }
 
+showpanelnode(state: ref IcState->AppState, p: ref IcState->PanelState)
+{
+	n: ref IcView->Node;
+
+	if(state == nil || state.ui == nil || state.ui.tree == nil || p == nil)
+		return;
+
+	if(p.id <= 0)
+		return;
+
+	n = view->find(state.ui.tree, p.id);
+	if(n != nil)
+		view->show(n);
+}
+
+hidepanelnode(state: ref IcState->AppState, p: ref IcState->PanelState)
+{
+	n: ref IcView->Node;
+
+	if(state == nil || state.ui == nil || state.ui.tree == nil || p == nil)
+		return;
+
+	if(p.id <= 0)
+		return;
+
+	n = view->find(state.ui.tree, p.id);
+	if(n != nil)
+		view->hide(n);
+}
+
 build(state: ref IcState->AppState): int
 {
 	root: ref IcView->Node;
@@ -147,10 +179,16 @@ build(state: ref IcState->AppState): int
 	bottombar->build(state, state.bottombar, ls.bottombar);
 
 	if(!state.panelshidden){
+		showpanelnode(state, state.left);
+		showpanelnode(state, state.right);
+
 		appanel->build(state, state.left, ls.leftpanel);
 		appanel->build(state, state.right, ls.rightpanel);
 		appanel->setactive(state, state.left, state.activepanel == IcState->PanelLeft);
 		appanel->setactive(state, state.right, state.activepanel == IcState->PanelRight);
+	}else{
+		hidepanelnode(state, state.left);
+		hidepanelnode(state, state.right);
 	}
 
 	return 0;

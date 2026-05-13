@@ -27,7 +27,7 @@ appanel: IcAppPanel;
 
 CtrlO: con 15;
 TabKey: con 9;
-F10Key: con 57419;
+F10Key: con 57418;
 
 init()
 {

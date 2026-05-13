@@ -10,7 +10,16 @@ IcAppPanel: module
 	setactive: fn(state: ref IcState->AppState, p: ref IcState->PanelState, active: int): int;
 };
 
+IcScreenMod: module
+{
+	PATH: con "/dis/ic/screen.dis";
+
+	init: fn();
+	rebuild: fn(state: ref IcState->AppState): int;
+};
+
 appanel: IcAppPanel;
+screen: IcScreenMod;
 
 init()
 {
@@ -18,7 +27,12 @@ init()
 	if(appanel == nil)
 		raise "fail:load ic/appanel";
 
+	screen = load IcScreenMod IcScreenMod->PATH;
+	if(screen == nil)
+		raise "fail:load ic/screen";
+
 	appanel->init();
+	screen->init();
 }
 
 exec(state: ref IcState->AppState, cmd: int): int
@@ -46,7 +60,8 @@ exec(state: ref IcState->AppState, cmd: int): int
 			state.panelshidden = 0;
 		else
 			state.panelshidden = 1;
-		return 0;
+
+		return screen->rebuild(state);
 	}
 
 	return 0;
