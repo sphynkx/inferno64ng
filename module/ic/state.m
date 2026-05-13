@@ -1,4 +1,4 @@
-include "icurses/list.m";
+include "icurses/panel.m";
 include "icurses/config.m";
 
 IcState: module
@@ -45,16 +45,15 @@ IcState: module
 	PanelState: adt
 	{
 		id: int;
-		titleid: int;
-		listboxid: int;
-
-		liststate: ref IcList->List;
 
 		side: int;
 		active: int;
 
 		path: string;
 		dir: ref PanelDir;
+
+		panel: ref IcPanel->Panel;
+		model: ref IcPanel->Model;
 	};
 
 	TopBarState: adt

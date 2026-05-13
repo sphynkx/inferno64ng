@@ -2,23 +2,23 @@ implement IcCommands;
 
 include "ic/commands.m";
 
-IcPanel: module
+IcAppPanel: module
 {
-	PATH: con "/dis/ic/panel.dis";
+	PATH: con "/dis/ic/appanel.dis";
 
 	init: fn();
 	setactive: fn(state: ref IcState->AppState, p: ref IcState->PanelState, active: int): int;
 };
 
-panel: IcPanel;
+appanel: IcAppPanel;
 
 init()
 {
-	panel = load IcPanel IcPanel->PATH;
-	if(panel == nil)
-		raise "fail:load ic/panel";
+	appanel = load IcAppPanel IcAppPanel->PATH;
+	if(appanel == nil)
+		raise "fail:load ic/appanel";
 
-	panel->init();
+	appanel->init();
 }
 
 exec(state: ref IcState->AppState, cmd: int): int
@@ -37,8 +37,8 @@ exec(state: ref IcState->AppState, cmd: int): int
 		else
 			state.activepanel = IcState->PanelLeft;
 
-		panel->setactive(state, state.left, state.activepanel == IcState->PanelLeft);
-		panel->setactive(state, state.right, state.activepanel == IcState->PanelRight);
+		appanel->setactive(state, state.left, state.activepanel == IcState->PanelLeft);
+		appanel->setactive(state, state.right, state.activepanel == IcState->PanelRight);
 		return 0;
 
 	IcCommands->CmdTogglePanels =>

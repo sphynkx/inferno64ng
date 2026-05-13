@@ -1,9 +1,9 @@
 include "ic/state.m";
 include "ic/layout.m";
 
-IcPanel: module
+IcAppPanel: module
 {
-	PATH: con "/dis/ic/panel.dis";
+	PATH: con "/dis/ic/appanel.dis";
 
 	init: fn();
 	newpanel: fn(side: int): ref IcState->PanelState;

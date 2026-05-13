@@ -47,9 +47,9 @@ IcThemeData: module
 	loadstate: fn(cfg: ref IcState->ConfigState): ref IcState->ThemeState;
 };
 
-IcPanel: module
+IcAppPanel: module
 {
-	PATH: con "/dis/ic/panel.dis";
+	PATH: con "/dis/ic/appanel.dis";
 
 	init: fn();
 	newpanel: fn(side: int): ref IcState->PanelState;
@@ -77,7 +77,7 @@ screen: IcScreen;
 input: IcInputData;
 cfgdata: IcConfigData;
 themedata: IcThemeData;
-panel: IcPanel;
+appanel: IcAppPanel;
 topbar: IcTopBar;
 bottombar: IcBottomBar;
 ui: IcUi;
@@ -108,9 +108,9 @@ init()
 	if(themedata == nil)
 		raise "fail:load ic/theme";
 
-	panel = load IcPanel IcPanel->PATH;
-	if(panel == nil)
-		raise "fail:load ic/panel";
+	appanel = load IcAppPanel IcAppPanel->PATH;
+	if(appanel == nil)
+		raise "fail:load ic/appanel";
 
 	topbar = load IcTopBar IcTopBar->PATH;
 	if(topbar == nil)
@@ -129,7 +129,7 @@ init()
 	input->init();
 	cfgdata->init();
 	themedata->init();
-	panel->init();
+	appanel->init();
 	topbar->init();
 	bottombar->init();
 	ui->init();
@@ -149,8 +149,8 @@ newstate(): ref IcState->AppState
 	s.cfg = cfgdata->loadstate();
 	s.theme = themedata->loadstate(s.cfg);
 
-	s.left = panel->newpanel(IcState->SideLeft);
-	s.right = panel->newpanel(IcState->SideRight);
+	s.left = appanel->newpanel(IcState->SideLeft);
+	s.right = appanel->newpanel(IcState->SideRight);
 	s.topbar = topbar->newbar();
 	s.bottombar = bottombar->newbar();
 

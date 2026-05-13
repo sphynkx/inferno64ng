@@ -32,9 +32,9 @@ IcLayoutMod: module
 	compute: fn(w, h, panelshidden: int): IcLayout->LayoutState;
 };
 
-IcPanelMod: module
+IcAppPanel: module
 {
-	PATH: con "/dis/ic/panel.dis";
+	PATH: con "/dis/ic/appanel.dis";
 
 	init: fn();
 	build: fn(state: ref IcState->AppState, p: ref IcState->PanelState, rect: IcLayout->Rect): int;
@@ -60,7 +60,7 @@ IcBottomBarMod: module
 ui: IcUiMod;
 view: IcViewMod;
 layout: IcLayoutMod;
-panel: IcPanelMod;
+appanel: IcAppPanel;
 topbar: IcTopBarMod;
 bottombar: IcBottomBarMod;
 
@@ -80,9 +80,9 @@ init()
 	if(layout == nil)
 		raise "fail:load ic/layout";
 
-	panel = load IcPanelMod IcPanelMod->PATH;
-	if(panel == nil)
-		raise "fail:load ic/panel";
+	appanel = load IcAppPanel IcAppPanel->PATH;
+	if(appanel == nil)
+		raise "fail:load ic/appanel";
 
 	topbar = load IcTopBarMod IcTopBarMod->PATH;
 	if(topbar == nil)
@@ -95,7 +95,7 @@ init()
 	ui->init();
 	view->init();
 	layout->init();
-	panel->init();
+	appanel->init();
 	topbar->init();
 	bottombar->init();
 }
@@ -147,10 +147,10 @@ build(state: ref IcState->AppState): int
 	bottombar->build(state, state.bottombar, ls.bottombar);
 
 	if(!state.panelshidden){
-		panel->build(state, state.left, ls.leftpanel);
-		panel->build(state, state.right, ls.rightpanel);
-		panel->setactive(state, state.left, state.activepanel == IcState->PanelLeft);
-		panel->setactive(state, state.right, state.activepanel == IcState->PanelRight);
+		appanel->build(state, state.left, ls.leftpanel);
+		appanel->build(state, state.right, ls.rightpanel);
+		appanel->setactive(state, state.left, state.activepanel == IcState->PanelLeft);
+		appanel->setactive(state, state.right, state.activepanel == IcState->PanelRight);
 	}
 
 	return 0;

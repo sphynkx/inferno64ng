@@ -20,6 +20,7 @@ TARG=\
 	mouse.dis\
 	msg.dis\
 	paint.dis\
+	panel.dis\
 	slider.dis\
 	task.dis\
 	text.dis\
@@ -49,6 +50,7 @@ SYSMODULES=\
 	icurses/mouse.m\
 	icurses/msg.m\
 	icurses/paint.m\
+	icurses/panel.m\
 	icurses/slider.m\
 	icurses/task.m\
 	icurses/text.m\

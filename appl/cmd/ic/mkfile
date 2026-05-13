@@ -11,7 +11,7 @@ TARG=\
 	config.dis\
 	theme.dis\
 	fsmodel.dis\
-	panel.dis\
+	appanel.dis\
 	topbar.dis\
 	bottombar.dis\
 
@@ -28,7 +28,7 @@ SYSMODULES=\
 	ic/config.m\
 	ic/theme.m\
 	ic/fsmodel.m\
-	ic/panel.m\
+	ic/appanel.m\
 	ic/topbar.m\
 	ic/bottombar.m\
 

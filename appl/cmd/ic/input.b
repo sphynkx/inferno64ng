@@ -14,16 +14,16 @@ IcCommands: module
 	exec: fn(state: ref IcState->AppState, cmd: int): int;
 };
 
-IcPanel: module
+IcAppPanel: module
 {
-	PATH: con "/dis/ic/panel.dis";
+	PATH: con "/dis/ic/appanel.dis";
 
 	init: fn();
 	handlekey: fn(state: ref IcState->AppState, p: ref IcState->PanelState, k: int): int;
 };
 
 commands: IcCommands;
-panel: IcPanel;
+appanel: IcAppPanel;
 
 CtrlO: con 15;
 TabKey: con 9;
@@ -35,12 +35,12 @@ init()
 	if(commands == nil)
 		raise "fail:load ic/commands";
 
-	panel = load IcPanel IcPanel->PATH;
-	if(panel == nil)
-		raise "fail:load ic/panel";
+	appanel = load IcAppPanel IcAppPanel->PATH;
+	if(appanel == nil)
+		raise "fail:load ic/appanel";
 
 	commands->init();
-	panel->init();
+	appanel->init();
 }
 
 handlekey(state: ref IcState->AppState, k: int): int
@@ -58,7 +58,7 @@ handlekey(state: ref IcState->AppState, k: int): int
 		return commands->exec(state, IcCommands->CmdExit);
 
 	if(state.activepanel == IcState->PanelLeft)
-		return panel->handlekey(state, state.left, k);
+		return appanel->handlekey(state, state.left, k);
 
-	return panel->handlekey(state, state.right, k);
+	return appanel->handlekey(state, state.right, k);
 }
