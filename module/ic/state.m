@@ -52,6 +52,8 @@ IcState: module
 		path: string;
 		dir: ref PanelDir;
 
+		lastchildname: string;
+
 		panel: ref IcPanel->Panel;
 		model: ref IcPanel->Model;
 	};

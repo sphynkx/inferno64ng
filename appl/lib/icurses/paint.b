@@ -872,7 +872,7 @@ drawbutton(r: ref IcPaint->Renderer, t: ref IcView->Tree, n: ref IcView->Node)
 drawlabel(r: ref IcPaint->Renderer, t: ref IcView->Tree, n: ref IcView->Node)
 {
 	x, y, w: int;
-	text: string;
+	text, code: string;
 
 	if(r == nil || t == nil || n == nil)
 		return;
@@ -887,9 +887,12 @@ drawlabel(r: ref IcPaint->Renderer, t: ref IcView->Tree, n: ref IcView->Node)
 		return;
 
 	text = view->gettext(n);
+	code = view->getcode(n);
+	if(code == "")
+		code = CodeWindow;
 
-	fillrect(r, x, y, w, 1, " ", CodeWindow);
-	putslimit(r, x, y, w, text, CodeWindow);
+	fillrect(r, x, y, w, 1, " ", code);
+	putslimit(r, x, y, w, text, code);
 }
 
 drawhbar(r: ref IcPaint->Renderer, t: ref IcView->Tree, n: ref IcView->Node)

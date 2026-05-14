@@ -4,38 +4,23 @@ IcPanel: module
 {
 	PATH: con "/dis/lib/icurses/panel.dis";
 
-	#
-	# View modes.
-	#
 	ModeBrief2Col:    con 0;
 	ModeWide1Col:     con 1;
 	ModeTree:         con 2;
 	ModeCustomFields: con 3;
 
-	#
-	# Cursor styles.
-	#
 	CursorArrow:      con 0;
 	CursorBackground: con 1;
 	CursorInverse:    con 2;
 	CursorFrame:      con 3;
 	CursorUnderline:  con 4;
 
-	#
-	# Sort directions.
-	#
 	SortAsc:  con 0;
 	SortDesc: con 1;
 
-	#
-	# Long item name fitting policies.
-	#
 	NameFitMiddle: con 0;
 	NameFitClip:   con 1;
 
-	#
-	# Item flags.
-	#
 	FlagMarked: con 1;
 	FlagHidden: con 2;
 
@@ -125,6 +110,9 @@ IcPanel: module
 		infobarid:      int;
 
 		rowids:         array of int;
+		leftids:        array of int;
+		separators:     array of int;
+		rightids:       array of int;
 
 		x:              int;
 		y:              int;
@@ -139,6 +127,7 @@ IcPanel: module
 		model:          ref Model;
 		opts:           Options;
 
+		active:         int;
 		rootid:         int;
 		currentid:      int;
 		top:            int;
@@ -157,6 +146,7 @@ IcPanel: module
 	setstatus: fn(p: ref Panel, status: string): int;
 	setcommandbar: fn(p: ref Panel, text: string): int;
 	setinfo: fn(p: ref Panel, text: string): int;
+	setactive: fn(p: ref Panel, active: int): int;
 
 	setmodel: fn(p: ref Panel, model: ref Model): int;
 	setopts: fn(p: ref Panel, opts: Options): int;

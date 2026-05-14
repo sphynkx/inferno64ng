@@ -8,6 +8,7 @@ ui: IcUi;
 view: IcView;
 ic: Icurses;
 glyph: IcGlyph;
+theme: IcTheme;
 
 DefaultTitle: con "Panel";
 DefaultStatus: con "";
@@ -20,6 +21,7 @@ ParentKind: con "parent";
 PanelCmdSelect: con "panel.select";
 PanelCmdActivate: con "panel.activate";
 
+setlabel: fn(u: ref IcUi->Ui, id, x, y, w: int, text, code: string);
 finditem: fn(m: ref IcPanel->Model, itemid: int): int;
 getitem: fn(m: ref IcPanel->Model, itemid: int): IcPanel->Item;
 sameparent: fn(it: IcPanel->Item, parentid: int): int;
@@ -38,9 +40,14 @@ flattenbrief: fn(p: ref IcPanel->Panel): array of IcPanel->Line;
 flattenwide: fn(p: ref IcPanel->Panel): array of IcPanel->Line;
 flattentree: fn(p: ref IcPanel->Panel): array of IcPanel->Line;
 flatten: fn(p: ref IcPanel->Panel): array of IcPanel->Line;
+
 visiblebodyrows: fn(p: ref IcPanel->Panel): int;
 visiblecommandrows: fn(p: ref IcPanel->Panel): int;
 visibleinforows: fn(p: ref IcPanel->Panel): int;
+visiblecols: fn(p: ref IcPanel->Panel): int;
+visiblecapacity: fn(p: ref IcPanel->Panel): int;
+maxtop: fn(p: ref IcPanel->Panel): int;
+
 fixcurrent: fn(p: ref IcPanel->Panel);
 fixtop: fn(p: ref IcPanel->Panel);
 currentindex: fn(p: ref IcPanel->Panel): int;
@@ -54,11 +61,17 @@ lineindexat: fn(p: ref IcPanel->Panel, row: int): int;
 clickselect: fn(u: ref IcUi->Ui, p: ref IcPanel->Panel, row: int): IcMsg->Msg;
 
 spaces: fn(n: int): string;
+ellipsis: fn(): string;
 fittext: fn(s: string, w, mode: int): string;
 padtext: fn(s: string, w: int): string;
 rowseparator: fn(p: ref IcPanel->Panel): string;
-rowprefix: fn(p: ref IcPanel->Panel, l: IcPanel->Line): string;
+linecode: fn(p: ref IcPanel->Panel, l: IcPanel->Line, leftidx, rightidx, row: int): string;
 hideunusedrows: fn(u: ref IcUi->Ui, p: ref IcPanel->Panel, from: int);
+
+CodeWindow: string;
+CodeFocus: string;
+CodeTitle: string;
+CodeFrame: string;
 
 init()
 {
@@ -88,13 +101,24 @@ init()
 	if(glyph == nil)
 		raise "fail:load icglyph";
 
+	theme = load IcTheme IcTheme->PATH;
+	if(theme == nil)
+		raise "fail:load ictheme";
+
 	msg->init();
 	ui->init();
 	view->init();
 	ic->init();
 
 	ci = ic->consinfo();
+
 	glyph->init(ci);
+	theme->init(ci);
+
+	CodeWindow = theme->sgr(IcTheme->AttrWindow);
+	CodeFocus = theme->sgr(IcTheme->AttrFocus);
+	CodeTitle = theme->sgr(IcTheme->AttrTitle);
+	CodeFrame = theme->sgr(IcTheme->AttrFrame);
 }
 
 spaces(n: int): string
@@ -109,9 +133,18 @@ spaces(n: int): string
 	return s;
 }
 
+ellipsis(): string
+{
+	if(glyph != nil && glyph->profile() == IcGlyph->ProfileUnicode)
+		return "…";
+
+	return "...";
+}
+
 fittext(s: string, w, mode: int): string
 {
-	left, right, remain: int;
+	left, right, remain, markw: int;
+	mark: string;
 
 	if(w <= 0)
 		return "";
@@ -122,14 +155,17 @@ fittext(s: string, w, mode: int): string
 	if(mode == IcPanel->NameFitClip)
 		return s[0:w];
 
-	if(w <= 3)
+	mark = ellipsis();
+	markw = len mark;
+
+	if(w <= markw)
 		return s[0:w];
 
-	remain = w - 3;
+	remain = w - markw;
 	left = remain / 2;
 	right = remain - left;
 
-	return s[0:left] + "..." + s[len s - right:];
+	return s[0:left] + mark + s[len s - right:];
 }
 
 padtext(s: string, w: int): string
@@ -163,28 +199,50 @@ rowseparator(p: ref IcPanel->Panel): string
 	return "|";
 }
 
-rowprefix(p: ref IcPanel->Panel, l: IcPanel->Line): string
+linecode(p: ref IcPanel->Panel, l: IcPanel->Line, leftidx, rightidx, row: int): string
 {
+	cols, rows, cur: int;
+
+	leftidx = leftidx;
+	rightidx = rightidx;
+
 	if(p == nil || l.itemid < 0)
-		return "  ";
+		return CodeWindow;
 
 	if(p.currentid != l.itemid)
-		return "  ";
+		return CodeWindow;
 
-	case p.opts.cursorstyle {
-	IcPanel->CursorArrow =>
-		return "> ";
-	IcPanel->CursorUnderline =>
-		return "_ ";
-	IcPanel->CursorFrame =>
-		return "# ";
-	IcPanel->CursorInverse =>
-		return "* ";
-	IcPanel->CursorBackground =>
-		return "* ";
+	if(p.opts.mode != IcPanel->ModeBrief2Col || p.opts.columncount < 2){
+		if(p.active)
+			return CodeFocus;
+		return CodeTitle;
 	}
 
-	return "  ";
+	rows = visiblebodyrows(p);
+	cols = visiblecols(p);
+	cur = currentindex(p);
+
+	if(cur < 0 || rows <= 0 || cols < 2){
+		if(p.active)
+			return CodeFocus;
+		return CodeTitle;
+	}
+
+	if(cur < p.top || cur >= p.top + visiblecapacity(p))
+		return CodeWindow;
+
+	if(cur < p.top + rows){
+		if(cur - p.top != row)
+			return CodeWindow;
+	}else{
+		if(cur - (p.top + rows) != row)
+			return CodeWindow;
+	}
+
+	if(p.active)
+		return CodeFocus;
+
+	return CodeTitle;
 }
 
 defaultopts(): IcPanel->Options
@@ -253,6 +311,9 @@ new(id: int, title: string, opts: IcPanel->Options): ref IcPanel->Panel
 	p.commandbarid = -1;
 	p.infobarid = -1;
 	p.rowids = array[0] of int;
+	p.leftids = array[0] of int;
+	p.separators = array[0] of int;
+	p.rightids = array[0] of int;
 
 	p.x = 0;
 	p.y = 0;
@@ -270,6 +331,7 @@ new(id: int, title: string, opts: IcPanel->Options): ref IcPanel->Panel
 	p.model = nil;
 	p.opts = d;
 
+	p.active = 0;
 	p.rootid = -1;
 	p.currentid = -1;
 	p.top = 0;
@@ -330,6 +392,15 @@ setinfo(p: ref IcPanel->Panel, text: string): int
 		return -1;
 
 	p.info = text;
+	return 0;
+}
+
+setactive(p: ref IcPanel->Panel, active: int): int
+{
+	if(p == nil)
+		return -1;
+
+	p.active = active != 0;
 	return 0;
 }
 
@@ -791,6 +862,39 @@ visiblebodyrows(p: ref IcPanel->Panel): int
 	return rows;
 }
 
+visiblecols(p: ref IcPanel->Panel): int
+{
+	if(p != nil && p.opts.mode == IcPanel->ModeBrief2Col && p.opts.columncount >= 2)
+		return 2;
+
+	return 1;
+}
+
+visiblecapacity(p: ref IcPanel->Panel): int
+{
+	rows: int;
+
+	rows = visiblebodyrows(p);
+	if(rows < 1)
+		rows = 1;
+
+	return rows * visiblecols(p);
+}
+
+maxtop(p: ref IcPanel->Panel): int
+{
+	m: int;
+
+	if(p == nil || p.lines == nil)
+		return 0;
+
+	m = len p.lines - visiblecapacity(p);
+	if(m < 0)
+		m = 0;
+
+	return m;
+}
+
 currentindex(p: ref IcPanel->Panel): int
 {
 	i: int;
@@ -824,7 +928,7 @@ fixcurrent(p: ref IcPanel->Panel)
 
 fixtop(p: ref IcPanel->Panel)
 {
-	rows, idx, maxtop: int;
+	rows, idx, cap, mt: int;
 
 	if(p == nil)
 		return;
@@ -833,26 +937,36 @@ fixtop(p: ref IcPanel->Panel)
 	if(rows <= 0)
 		rows = 1;
 
+	cap = visiblecapacity(p);
+	if(cap <= 0)
+		cap = rows;
+
 	idx = currentindex(p);
 	if(idx < 0){
 		p.top = 0;
 		return;
 	}
 
-	if(idx < p.top)
-		p.top = idx;
+	if(idx < p.top){
+		if(visiblecols(p) >= 2)
+			p.top = idx - rows + 1;
+		else
+			p.top = idx;
+	}
 
-	if(idx >= p.top + rows)
-		p.top = idx - rows + 1;
+	if(idx >= p.top + cap){
+		if(visiblecols(p) >= 2)
+			p.top = idx - rows;
+		else
+			p.top = idx - cap + 1;
+	}
 
-	maxtop = len p.lines - rows;
-	if(maxtop < 0)
-		maxtop = 0;
+	mt = maxtop(p);
 
 	if(p.top < 0)
 		p.top = 0;
-	if(p.top > maxtop)
-		p.top = maxtop;
+	if(p.top > mt)
+		p.top = mt;
 }
 
 linewidths(p: ref IcPanel->Panel): (int, int, int)
@@ -899,7 +1013,7 @@ briefpagestep(p: ref IcPanel->Panel): int
 	if(p.opts.pagestep > 0)
 		return p.opts.pagestep;
 
-	step = briefcolstep(p) * 2;
+	step = visiblecapacity(p);
 	if(step < 1)
 		step = 1;
 
@@ -937,21 +1051,47 @@ setlineids(u: ref IcUi->Ui, p: ref IcPanel->Panel, parentid, count: int): int
 	if(count < 0)
 		count = 0;
 
-	if(p.rowids == nil)
-		p.rowids = array[0] of int;
+	if(p.leftids == nil)
+		p.leftids = array[0] of int;
+	if(p.separators == nil)
+		p.separators = array[0] of int;
+	if(p.rightids == nil)
+		p.rightids = array[0] of int;
 
-	if(len p.rowids >= count)
+	if(len p.leftids >= count && len p.separators >= count && len p.rightids >= count)
 		return 0;
 
-	for(i = len p.rowids; i < count; i++){
-		p.rowids = appendrowid(p.rowids, view->allocid(u.tree));
-		if(ui->label(u, parentid, p.rowids[i], 0, 0, 1, "") < 0)
+	for(i = len p.leftids; i < count; i++){
+		p.leftids = appendrowid(p.leftids, view->allocid(u.tree));
+		if(ui->label(u, parentid, p.leftids[i], 0, 0, 1, "") < 0)
 			return -1;
 
-		n = view->find(u.tree, p.rowids[i]);
+		n = view->find(u.tree, p.leftids[i]);
 		if(n != nil)
 			view->setfocusable(n, 0);
 	}
+
+	for(i = len p.separators; i < count; i++){
+		p.separators = appendrowid(p.separators, view->allocid(u.tree));
+		if(ui->label(u, parentid, p.separators[i], 0, 0, 1, "") < 0)
+			return -1;
+
+		n = view->find(u.tree, p.separators[i]);
+		if(n != nil)
+			view->setfocusable(n, 0);
+	}
+
+	for(i = len p.rightids; i < count; i++){
+		p.rightids = appendrowid(p.rightids, view->allocid(u.tree));
+		if(ui->label(u, parentid, p.rightids[i], 0, 0, 1, "") < 0)
+			return -1;
+
+		n = view->find(u.tree, p.rightids[i]);
+		if(n != nil)
+			view->setfocusable(n, 0);
+	}
+
+	p.rowids = p.leftids;
 
 	return 0;
 }
@@ -961,13 +1101,23 @@ hideunusedrows(u: ref IcUi->Ui, p: ref IcPanel->Panel, from: int)
 	i: int;
 	n: ref IcView->Node;
 
-	u = u;
-
-	if(p == nil || p.rowids == nil)
+	if(u == nil || u.tree == nil || p == nil)
 		return;
 
-	for(i = from; i < len p.rowids; i++){
-		n = view->find(u.tree, p.rowids[i]);
+	for(i = from; i < len p.leftids; i++){
+		n = view->find(u.tree, p.leftids[i]);
+		if(n != nil)
+			view->hide(n);
+	}
+
+	for(i = from; i < len p.separators; i++){
+		n = view->find(u.tree, p.separators[i]);
+		if(n != nil)
+			view->hide(n);
+	}
+
+	for(i = from; i < len p.rightids; i++){
+		n = view->find(u.tree, p.rightids[i]);
 		if(n != nil)
 			view->hide(n);
 	}
@@ -1038,13 +1188,33 @@ build(u: ref IcUi->Ui, parentid: int, p: ref IcPanel->Panel): int
 	return render(u, p);
 }
 
+
+setlabel(u: ref IcUi->Ui, id, x, y, w: int, text, code: string)
+{
+	n: ref IcView->Node;
+
+	if(u == nil || u.tree == nil || id < 0)
+		return;
+
+	n = view->find(u.tree, id);
+	if(n == nil)
+		return;
+
+	view->setbounds(n, x, y, w, 1);
+	view->settext(n, padtext(text, w));
+	view->setcode(n, code);
+	view->show(n);
+}
+
+
 render(u: ref IcUi->Ui, p: ref IcPanel->Panel): int
 {
-	n, rown: ref IcView->Node;
+	n: ref IcView->Node;
 	bodyw, colw, auxw: int;
 	cmdrows, inforows, bodyrows: int;
 	start, i, colstep: int;
-	line, lefttext, righttext, sep: string;
+	lefttext, righttext, sep: string;
+	leftcode, rightcode: string;
 	leftidx, rightidx: int;
 	leftline, rightline: IcPanel->Line;
 
@@ -1077,6 +1247,7 @@ render(u: ref IcUi->Ui, p: ref IcPanel->Panel): int
 		else
 			view->hide(n);
 		view->settext(n, p.commandbar);
+		view->setcode(n, CodeWindow);
 	}
 
 	n = view->find(u.tree, p.infobarid);
@@ -1086,6 +1257,7 @@ render(u: ref IcUi->Ui, p: ref IcPanel->Panel): int
 		else
 			view->hide(n);
 		view->settext(n, p.info);
+		view->setcode(n, CodeWindow);
 	}
 
 	sep = rowseparator(p);
@@ -1095,10 +1267,6 @@ render(u: ref IcUi->Ui, p: ref IcPanel->Panel): int
 		start = p.top;
 
 		for(i = 0; i < bodyrows; i++){
-			rown = view->find(u.tree, p.rowids[i]);
-			if(rown == nil)
-				continue;
-
 			leftidx = start + i;
 			rightidx = start + colstep + i;
 
@@ -1114,30 +1282,28 @@ render(u: ref IcUi->Ui, p: ref IcPanel->Panel): int
 
 			lefttext = "";
 			if(leftline.itemid >= 0)
-				lefttext = rowprefix(p, leftline) + fittext(leftline.text, colw - 2, p.opts.namefit);
-			lefttext = padtext(lefttext, colw);
+				lefttext = fittext(leftline.text, colw, p.opts.namefit);
 
 			righttext = "";
 			if(rightline.itemid >= 0)
-				righttext = rowprefix(p, rightline) + fittext(rightline.text, colw - 2, p.opts.namefit);
-			righttext = padtext(righttext, colw);
+				righttext = fittext(rightline.text, colw, p.opts.namefit);
 
-			line = lefttext + sep + righttext;
-			line = fittext(line, bodyw, IcPanel->NameFitClip);
-			line = padtext(line, bodyw);
+			leftcode = CodeWindow;
+			if(leftline.itemid == p.currentid)
+				leftcode = linecode(p, leftline, leftidx, rightidx, i);
 
-			view->setbounds(rown, 0, i, bodyw, 1);
-			view->settext(rown, line);
-			view->show(rown);
+			rightcode = CodeWindow;
+			if(rightline.itemid == p.currentid)
+				rightcode = linecode(p, rightline, leftidx, rightidx, i);
+
+			setlabel(u, p.leftids[i], 0, i, colw, lefttext, leftcode);
+			setlabel(u, p.separators[i], colw, i, 1, sep, CodeFrame);
+			setlabel(u, p.rightids[i], colw + 1, i, colw, righttext, rightcode);
 		}
 	}else{
 		start = p.top;
 
 		for(i = 0; i < bodyrows; i++){
-			rown = view->find(u.tree, p.rowids[i]);
-			if(rown == nil)
-				continue;
-
 			leftidx = start + i;
 			leftline.itemid = -1;
 			leftline.text = "";
@@ -1145,15 +1311,23 @@ render(u: ref IcUi->Ui, p: ref IcPanel->Panel): int
 			if(leftidx >= 0 && leftidx < len p.lines)
 				leftline = p.lines[leftidx];
 
-			line = "";
+			lefttext = "";
 			if(leftline.itemid >= 0)
-				line = rowprefix(p, leftline) + fittext(leftline.text, bodyw - 2, p.opts.namefit);
+				lefttext = fittext(leftline.text, bodyw, p.opts.namefit);
 
-			line = padtext(line, bodyw);
+			leftcode = CodeWindow;
+			if(leftline.itemid == p.currentid)
+				leftcode = linecode(p, leftline, leftidx, -1, i);
 
-			view->setbounds(rown, 0, i, bodyw, 1);
-			view->settext(rown, line);
-			view->show(rown);
+			setlabel(u, p.leftids[i], 0, i, bodyw, lefttext, leftcode);
+
+			n = view->find(u.tree, p.separators[i]);
+			if(n != nil)
+				view->hide(n);
+
+			n = view->find(u.tree, p.rightids[i]);
+			if(n != nil)
+				view->hide(n);
 		}
 	}
 
@@ -1251,20 +1425,36 @@ down(u: ref IcUi->Ui, p: ref IcPanel->Panel): IcMsg->Msg
 
 left(u: ref IcUi->Ui, p: ref IcPanel->Panel): IcMsg->Msg
 {
-	idx, step: int;
+	idx, rows, row, mt: int;
 
 	if(p == nil || len p.lines == 0)
 		return msg->none();
 
-	if(p.opts.mode == IcPanel->ModeBrief2Col && p.opts.columncount >= 2){
-		step = briefcolstep(p);
+	if(visiblecols(p) >= 2){
+		rows = visiblebodyrows(p);
 		idx = currentindex(p);
 		if(idx < 0)
 			idx = 0;
-		else
-			idx -= step;
+
+		row = idx - p.top;
+		if(row < 0)
+			row = 0;
+
+		if(row >= rows){
+			idx -= rows;
+		}else{
+			idx -= rows;
+			p.top -= rows;
+			if(p.top < 0)
+				p.top = 0;
+		}
+
 		if(idx < 0)
 			idx = 0;
+
+		mt = maxtop(p);
+		if(p.top > mt)
+			p.top = mt;
 
 		return selectid(u, p, p.lines[idx].itemid);
 	}
@@ -1274,20 +1464,34 @@ left(u: ref IcUi->Ui, p: ref IcPanel->Panel): IcMsg->Msg
 
 right(u: ref IcUi->Ui, p: ref IcPanel->Panel): IcMsg->Msg
 {
-	idx, step: int;
+	idx, rows, row, mt: int;
 
 	if(p == nil || len p.lines == 0)
 		return msg->none();
 
-	if(p.opts.mode == IcPanel->ModeBrief2Col && p.opts.columncount >= 2){
-		step = briefcolstep(p);
+	if(visiblecols(p) >= 2){
+		rows = visiblebodyrows(p);
 		idx = currentindex(p);
 		if(idx < 0)
 			idx = 0;
-		else
-			idx += step;
+
+		row = idx - p.top;
+		if(row < 0)
+			row = 0;
+
+		if(row >= rows){
+			idx += rows;
+			p.top += rows;
+		}else{
+			idx += rows;
+		}
+
 		if(idx >= len p.lines)
 			idx = len p.lines - 1;
+
+		mt = maxtop(p);
+		if(p.top > mt)
+			p.top = mt;
 
 		return selectid(u, p, p.lines[idx].itemid);
 	}
@@ -1302,13 +1506,7 @@ pageup(u: ref IcUi->Ui, p: ref IcPanel->Panel): IcMsg->Msg
 	if(p == nil || len p.lines == 0)
 		return msg->none();
 
-	if(p.opts.mode == IcPanel->ModeBrief2Col && p.opts.columncount >= 2)
-		step = briefpagestep(p);
-	else{
-		step = p.opts.pagestep;
-		if(step <= 0)
-			step = visiblebodyrows(p);
-	}
+	step = briefpagestep(p);
 
 	idx = currentindex(p);
 	if(idx < 0)
@@ -1319,23 +1517,21 @@ pageup(u: ref IcUi->Ui, p: ref IcPanel->Panel): IcMsg->Msg
 	if(idx < 0)
 		idx = 0;
 
+	p.top -= step;
+	if(p.top < 0)
+		p.top = 0;
+
 	return selectid(u, p, p.lines[idx].itemid);
 }
 
 pagedown(u: ref IcUi->Ui, p: ref IcPanel->Panel): IcMsg->Msg
 {
-	idx, step: int;
+	idx, step, mt: int;
 
 	if(p == nil || len p.lines == 0)
 		return msg->none();
 
-	if(p.opts.mode == IcPanel->ModeBrief2Col && p.opts.columncount >= 2)
-		step = briefpagestep(p);
-	else{
-		step = p.opts.pagestep;
-		if(step <= 0)
-			step = visiblebodyrows(p);
-	}
+	step = briefpagestep(p);
 
 	idx = currentindex(p);
 	if(idx < 0)
@@ -1346,6 +1542,11 @@ pagedown(u: ref IcUi->Ui, p: ref IcPanel->Panel): IcMsg->Msg
 	if(idx >= len p.lines)
 		idx = len p.lines - 1;
 
+	p.top += step;
+	mt = maxtop(p);
+	if(p.top > mt)
+		p.top = mt;
+
 	return selectid(u, p, p.lines[idx].itemid);
 }
 
@@ -1354,6 +1555,7 @@ home(u: ref IcUi->Ui, p: ref IcPanel->Panel): IcMsg->Msg
 	if(p == nil || len p.lines == 0)
 		return msg->none();
 
+	p.top = 0;
 	return selectid(u, p, p.lines[0].itemid);
 }
 
@@ -1362,6 +1564,7 @@ end(u: ref IcUi->Ui, p: ref IcPanel->Panel): IcMsg->Msg
 	if(p == nil || len p.lines == 0)
 		return msg->none();
 
+	p.top = maxtop(p);
 	return selectid(u, p, p.lines[len p.lines - 1].itemid);
 }
 

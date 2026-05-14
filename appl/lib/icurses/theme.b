@@ -37,11 +37,11 @@ sgr(attr: int): string
 		if(attr == AttrFrame)
 			return "38;2;230;240;255;48;2;20;45;90";
 		if(attr == AttrTitle)
-			return "38;2;255;230;120;48;2;20;45;90";
+			return "1;38;2;255;230;120;48;2;20;45;90";
 		if(attr == AttrButton)
 			return "38;2;10;25;35;48;2;70;210;230";
 		if(attr == AttrFocus)
-			return "38;2;255;240;120;48;2;170;35;45";
+			return "1;38;2;0;0;0;48;2;170;225;255";
 		if(attr == AttrStatus)
 			return "38;2;20;25;30;48;2;225;225;225";
 		if(attr == AttrScroll)
@@ -83,7 +83,7 @@ sgr(attr: int): string
 	if(attr == AttrButton)
 		return "1;30;46";
 	if(attr == AttrFocus)
-		return "1;33;41";
+		return "1;30;106";
 	if(attr == AttrStatus)
 		return "1;30;47";
 	if(attr == AttrScroll)
