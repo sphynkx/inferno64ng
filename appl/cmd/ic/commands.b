@@ -8,6 +8,7 @@ IcAppPanel: module
 
 	init: fn();
 	setactive: fn(state: ref IcState->AppState, p: ref IcState->PanelState, active: int): int;
+	togglemarkadvance: fn(state: ref IcState->AppState, p: ref IcState->PanelState): int;
 };
 
 IcScreenMod: module
@@ -18,8 +19,17 @@ IcScreenMod: module
 	rebuild: fn(state: ref IcState->AppState): int;
 };
 
+IcCopyCmd: module
+{
+	PATH: con "/dis/ic/copycmd.dis";
+
+	init: fn();
+	run: fn(state: ref IcState->AppState): int;
+};
+
 appanel: IcAppPanel;
 screen: IcScreenMod;
+copycmd: IcCopyCmd;
 
 init()
 {
@@ -31,8 +41,13 @@ init()
 	if(screen == nil)
 		raise "fail:load ic/screen";
 
+	copycmd = load IcCopyCmd IcCopyCmd->PATH;
+	if(copycmd == nil)
+		raise "fail:load ic/copycmd";
+
 	appanel->init();
 	screen->init();
+	copycmd->init();
 }
 
 exec(state: ref IcState->AppState, cmd: int): int
@@ -62,6 +77,15 @@ exec(state: ref IcState->AppState, cmd: int): int
 			state.panelshidden = 1;
 
 		return screen->rebuild(state);
+
+	IcCommands->CmdToggleSelection =>
+		if(state.activepanel == IcState->PanelLeft)
+			return appanel->togglemarkadvance(state, state.left);
+
+		return appanel->togglemarkadvance(state, state.right);
+
+	IcCommands->CmdCopy =>
+		return copycmd->run(state);
 	}
 
 	return 0;

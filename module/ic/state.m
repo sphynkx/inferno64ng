@@ -42,6 +42,13 @@ IcState: module
 		items: array of FsEntry;
 	};
 
+	SelectedItem: adt
+	{
+		path: string;
+		name: string;
+		kind: string;
+	};
+
 	PanelState: adt
 	{
 		id: int;
@@ -53,6 +60,8 @@ IcState: module
 		dir: ref PanelDir;
 
 		lastchildname: string;
+
+		selected: array of SelectedItem;
 
 		panel: ref IcPanel->Panel;
 		model: ref IcPanel->Model;

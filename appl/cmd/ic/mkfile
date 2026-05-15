@@ -8,6 +8,7 @@ TARG=\
 	layout.dis\
 	input.dis\
 	commands.dis\
+	copycmd.dis\
 	config.dis\
 	theme.dis\
 	fsmodel.dis\
@@ -25,6 +26,7 @@ SYSMODULES=\
 	ic/layout.m\
 	ic/input.m\
 	ic/commands.m\
+	ic/copycmd.m\
 	ic/config.m\
 	ic/theme.m\
 	ic/fsmodel.m\

@@ -10,5 +10,6 @@ IcAppPanel: module
 	build: fn(state: ref IcState->AppState, p: ref IcState->PanelState, rect: IcLayout->Rect): int;
 	refresh: fn(state: ref IcState->AppState, p: ref IcState->PanelState): int;
 	setactive: fn(state: ref IcState->AppState, p: ref IcState->PanelState, active: int): int;
+	togglemarkadvance: fn(state: ref IcState->AppState, p: ref IcState->PanelState): int;
 	handlekey: fn(state: ref IcState->AppState, p: ref IcState->PanelState, k: int): int;
 };

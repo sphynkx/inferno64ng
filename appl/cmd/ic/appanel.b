@@ -69,9 +69,14 @@ parentpath: fn(path: string): string;
 normalizepath: fn(path: string): string;
 trimdirsuffix: fn(name: string): string;
 basename: fn(path: string): string;
+selectedpath: fn(base, name: string): string;
+findselected: fn(p: ref IcState->PanelState, path: string): int;
+appendselected: fn(a: array of IcState->SelectedItem, e: IcState->SelectedItem): array of IcState->SelectedItem;
+removeselected: fn(a: array of IcState->SelectedItem, idx: int): array of IcState->SelectedItem;
+markitem: fn(p: ref IcState->PanelState, it: IcPanel->Item): IcPanel->Item;
 selectparent: fn(state: ref IcState->AppState, p: ref IcState->PanelState);
 selectremembered: fn(state: ref IcState->AppState, p: ref IcState->PanelState);
-buildmodel: fn(d: ref IcState->PanelDir): ref IcPanel->Model;
+buildmodel: fn(p: ref IcState->PanelState, d: ref IcState->PanelDir): ref IcPanel->Model;
 itempath: fn(p: ref IcState->PanelState): string;
 navigate: fn(state: ref IcState->AppState, p: ref IcState->PanelState): int;
 
@@ -164,12 +169,19 @@ maketitle(p: ref IcState->PanelState): string
 
 makeinfo(p: ref IcState->PanelState): string
 {
-	n: int;
+	n, s: int;
 
 	if(p == nil || p.dir == nil || p.dir.items == nil)
 		return DefaultInfoText;
 
 	n = len p.dir.items;
+	s = 0;
+	if(p.selected != nil)
+		s = len p.selected;
+
+	if(s > 0)
+		return "Items: " + string n + "  Selected: " + string s;
+
 	return "Items: " + string n;
 }
 
@@ -279,6 +291,8 @@ makeopts(state: ref IcState->AppState, p: ref IcState->PanelState): IcPanel->Opt
 		s = cfgdata->get(state.cfg, PanelSection, "namefit", "middle");
 		o.namefit = namefitvalue(s, IcPanel->NameFitMiddle);
 
+		o.markedcode = cfgdata->get(state.cfg, PanelSection, "markedcode", "");
+
 		o.mouseenabled = cfgdata->getbool(state.cfg, PanelSection, "mouseenabled", 0);
 		o.wrapnav = cfgdata->getbool(state.cfg, PanelSection, "wrapnav", 0);
 		o.vimnav = cfgdata->getbool(state.cfg, PanelSection, "vimnav", 0);
@@ -387,7 +401,91 @@ parentpath(path: string): string
 	return "/";
 }
 
-buildmodel(d: ref IcState->PanelDir): ref IcPanel->Model
+selectedpath(base, name: string): string
+{
+	return joinpath(base, trimdirsuffix(name));
+}
+
+findselected(p: ref IcState->PanelState, path: string): int
+{
+	i: int;
+
+	if(p == nil || p.selected == nil || path == "")
+		return -1;
+
+	for(i = 0; i < len p.selected; i++){
+		if(p.selected[i].path == path)
+			return i;
+	}
+
+	return -1;
+}
+
+appendselected(a: array of IcState->SelectedItem, e: IcState->SelectedItem): array of IcState->SelectedItem
+{
+	r: array of IcState->SelectedItem;
+	i, n: int;
+
+	if(a == nil){
+		r = array[1] of IcState->SelectedItem;
+		r[0] = e;
+		return r;
+	}
+
+	n = len a;
+	r = array[n + 1] of IcState->SelectedItem;
+
+	for(i = 0; i < n; i++)
+		r[i] = a[i];
+
+	r[n] = e;
+	return r;
+}
+
+removeselected(a: array of IcState->SelectedItem, idx: int): array of IcState->SelectedItem
+{
+	r: array of IcState->SelectedItem;
+	i, j, n: int;
+
+	if(a == nil || idx < 0 || idx >= len a)
+		return a;
+
+	n = len a - 1;
+	if(n <= 0)
+		return array[0] of IcState->SelectedItem;
+
+	r = array[n] of IcState->SelectedItem;
+	j = 0;
+
+	for(i = 0; i < len a; i++){
+		if(i == idx)
+			continue;
+
+		r[j] = a[i];
+		j++;
+	}
+
+	return r;
+}
+
+markitem(p: ref IcState->PanelState, it: IcPanel->Item): IcPanel->Item
+{
+	path: string;
+
+	if(p == nil)
+		return it;
+
+	if(it.kind == "root" || it.kind == "parent")
+		return it;
+
+	path = selectedpath(p.path, it.name);
+	if(findselected(p, path) >= 0)
+		it.flags = it.flags | IcPanel->FlagMarked;
+
+	return it;
+}
+
+buildmodel(p: ref IcState->PanelState, d: ref IcState->PanelDir): ref IcPanel->Model
 {
 	m: ref IcPanel->Model;
 	it: IcPanel->Item;
@@ -425,6 +523,7 @@ buildmodel(d: ref IcState->PanelDir): ref IcPanel->Model
 		else
 			it.kind = "file";
 
+		it = markitem(p, it);
 		m.items = appenditem(m.items, it);
 	}
 
@@ -470,6 +569,7 @@ newpanel(side: int): ref IcState->PanelState
 	p.path = cwdpath();
 	p.dir = nil;
 	p.lastchildname = "";
+	p.selected = array[0] of IcState->SelectedItem;
 	p.panel = nil;
 	p.model = nil;
 
@@ -531,6 +631,8 @@ navigate(state: ref IcState->AppState, p: ref IcState->PanelState): int
 	else
 		p.lastchildname = "";
 
+	p.selected = array[0] of IcState->SelectedItem;
+
 	p.path = next;
 
 	if(refresh(state, p) < 0)
@@ -559,6 +661,9 @@ build(state: ref IcState->AppState, p: ref IcState->PanelState, rect: IcLayout->
 	else
 		p.path = normalizepath(p.path);
 
+	if(p.selected == nil)
+		p.selected = array[0] of IcState->SelectedItem;
+
 	if(p.id <= 0)
 		p.id = view->allocid(state.ui.tree);
 
@@ -579,7 +684,7 @@ build(state: ref IcState->AppState, p: ref IcState->PanelState, rect: IcLayout->
 	panelui->setcommandbar(p.panel, DefaultCommandBarText);
 
 	p.dir = fsmodel->readdir(p.path);
-	p.model = buildmodel(p.dir);
+	p.model = buildmodel(p, p.dir);
 
 	panelui->setinfo(p.panel, makeinfo(p));
 	panelui->setmodel(p.panel, p.model);
@@ -599,12 +704,15 @@ refresh(state: ref IcState->AppState, p: ref IcState->PanelState): int
 
 	p.path = normalizepath(p.path);
 
+	if(p.selected == nil)
+		p.selected = array[0] of IcState->SelectedItem;
+
 	opts = makeopts(state, p);
 	panelui->setopts(p.panel, opts);
 	panelui->setactive(p.panel, p.active);
 
 	p.dir = fsmodel->readdir(p.path);
-	p.model = buildmodel(p.dir);
+	p.model = buildmodel(p, p.dir);
 
 	panelui->settitle(p.panel, maketitle(p));
 	panelui->setinfo(p.panel, makeinfo(p));
@@ -624,6 +732,51 @@ setactive(state: ref IcState->AppState, p: ref IcState->PanelState, active: int)
 		panelui->setactive(p.panel, p.active);
 
 	return refresh(state, p);
+}
+
+togglemarkadvance(state: ref IcState->AppState, p: ref IcState->PanelState): int
+{
+	name, kind, path: string;
+	idx, id: int;
+	sel: IcState->SelectedItem;
+	m: IcMsg->Msg;
+
+	if(state == nil || state.ui == nil || p == nil || p.panel == nil)
+		return -1;
+
+	name = panelui->currentname(p.panel);
+	kind = panelui->currentkind(p.panel);
+
+	if(kind == "parent" || name == "..")
+		return panelui->render(state.ui, p.panel);
+
+	if(kind != "dir" && kind != "file")
+		return panelui->render(state.ui, p.panel);
+
+	path = selectedpath(p.path, name);
+	idx = findselected(p, path);
+
+	if(idx >= 0){
+		p.selected = removeselected(p.selected, idx);
+	}else{
+		sel.path = path;
+		sel.name = trimdirsuffix(name);
+		sel.kind = kind;
+		p.selected = appendselected(p.selected, sel);
+	}
+
+	id = panelui->currentid(p.panel);
+
+	if(refresh(state, p) < 0)
+		return -1;
+
+	panelui->selectid(state.ui, p.panel, id);
+	m = panelui->down(state.ui, p.panel);
+	m = m;
+
+	panelui->setinfo(p.panel, makeinfo(p));
+
+	return panelui->render(state.ui, p.panel);
 }
 
 handlekey(state: ref IcState->AppState, p: ref IcState->PanelState, k: int): int

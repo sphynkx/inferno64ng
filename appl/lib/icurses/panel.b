@@ -66,12 +66,14 @@ fittext: fn(s: string, w, mode: int): string;
 padtext: fn(s: string, w: int): string;
 rowseparator: fn(p: ref IcPanel->Panel): string;
 linecode: fn(p: ref IcPanel->Panel, l: IcPanel->Line, leftidx, rightidx, row: int): string;
+markcode: fn(p: ref IcPanel->Panel): string;
 hideunusedrows: fn(u: ref IcUi->Ui, p: ref IcPanel->Panel, from: int);
 
 CodeWindow: string;
 CodeFocus: string;
 CodeTitle: string;
 CodeFrame: string;
+CodeMarked: string;
 
 init()
 {
@@ -119,6 +121,7 @@ init()
 	CodeFocus = theme->sgr(IcTheme->AttrFocus);
 	CodeTitle = theme->sgr(IcTheme->AttrTitle);
 	CodeFrame = theme->sgr(IcTheme->AttrFrame);
+	CodeMarked = theme->sgr(IcTheme->AttrMarked);
 }
 
 spaces(n: int): string
@@ -209,8 +212,12 @@ linecode(p: ref IcPanel->Panel, l: IcPanel->Line, leftidx, rightidx, row: int): 
 	if(p == nil || l.itemid < 0)
 		return CodeWindow;
 
-	if(p.currentid != l.itemid)
+	if(p.currentid != l.itemid){
+		if((l.flags & IcPanel->FlagMarked) != 0)
+			return markcode(p);
+
 		return CodeWindow;
+	}
 
 	if(p.opts.mode != IcPanel->ModeBrief2Col || p.opts.columncount < 2){
 		if(p.active)
@@ -228,15 +235,27 @@ linecode(p: ref IcPanel->Panel, l: IcPanel->Line, leftidx, rightidx, row: int): 
 		return CodeTitle;
 	}
 
-	if(cur < p.top || cur >= p.top + visiblecapacity(p))
+	if(cur < p.top || cur >= p.top + visiblecapacity(p)){
+		if((l.flags & IcPanel->FlagMarked) != 0)
+			return markcode(p);
+
 		return CodeWindow;
+	}
 
 	if(cur < p.top + rows){
-		if(cur - p.top != row)
+		if(cur - p.top != row){
+			if((l.flags & IcPanel->FlagMarked) != 0)
+				return markcode(p);
+
 			return CodeWindow;
+		}
 	}else{
-		if(cur - (p.top + rows) != row)
+		if(cur - (p.top + rows) != row){
+			if((l.flags & IcPanel->FlagMarked) != 0)
+				return markcode(p);
+
 			return CodeWindow;
+		}
 	}
 
 	if(p.active)
@@ -275,6 +294,7 @@ defaultopts(): IcPanel->Options
 	o.customfields = array[0] of string;
 
 	o.namefit = IcPanel->NameFitMiddle;
+	o.markedcode = "";
 
 	o.mouseenabled = 0;
 	o.wrapnav = 0;
@@ -296,6 +316,7 @@ new(id: int, title: string, opts: IcPanel->Options): ref IcPanel->Panel
 	d = defaultopts();
 
 	if(opts.columncount != 0 || opts.commandbarrows != 0 || opts.infobarrows != 0 ||
+	   opts.markedcode != "" ||
 	   opts.mode != 0 || opts.cursorstyle != 0 || opts.showframe != 0 ||
 	   opts.showcommandbar != 0 || opts.showinfobar != 0 || opts.showparentitem != 0 ||
 	   opts.hideparentatroot != 0 || opts.directoriesfirst != 0 || opts.showhidden != 0 ||
@@ -1289,11 +1310,11 @@ render(u: ref IcUi->Ui, p: ref IcPanel->Panel): int
 				righttext = fittext(rightline.text, colw, p.opts.namefit);
 
 			leftcode = CodeWindow;
-			if(leftline.itemid == p.currentid)
+			if(leftline.itemid >= 0)
 				leftcode = linecode(p, leftline, leftidx, rightidx, i);
 
 			rightcode = CodeWindow;
-			if(rightline.itemid == p.currentid)
+			if(rightline.itemid >= 0)
 				rightcode = linecode(p, rightline, leftidx, rightidx, i);
 
 			setlabel(u, p.leftids[i], 0, i, colw, lefttext, leftcode);
@@ -1316,7 +1337,7 @@ render(u: ref IcUi->Ui, p: ref IcPanel->Panel): int
 				lefttext = fittext(leftline.text, bodyw, p.opts.namefit);
 
 			leftcode = CodeWindow;
-			if(leftline.itemid == p.currentid)
+			if(leftline.itemid >= 0)
 				leftcode = linecode(p, leftline, leftidx, -1, i);
 
 			setlabel(u, p.leftids[i], 0, i, bodyw, lefttext, leftcode);
@@ -1664,6 +1685,14 @@ clickselect(u: ref IcUi->Ui, p: ref IcPanel->Panel, row: int): IcMsg->Msg
 		return msg->none();
 
 	return selectid(u, p, p.lines[idx].itemid);
+}
+
+markcode(p: ref IcPanel->Panel): string
+{
+	if(p != nil && p.opts.markedcode != "")
+		return p.opts.markedcode;
+
+	return CodeMarked;
 }
 
 handlemouse(u: ref IcUi->Ui, p: ref IcPanel->Panel, mouse: string): IcMsg->Msg

@@ -9,6 +9,8 @@ IcCommands: module
 	CmdExit: con 1;
 	CmdSwitchPanel: con 2;
 	CmdTogglePanels: con 3;
+	CmdToggleSelection: con 4;
+	CmdCopy: con 5;
 
 	init: fn();
 	exec: fn(state: ref IcState->AppState, cmd: int): int;
@@ -27,7 +29,9 @@ appanel: IcAppPanel;
 
 CtrlO: con 15;
 TabKey: con 9;
+F5Key: con 57413;
 F10Key: con 57418;
+InsKey: con 57443;
 
 init()
 {
@@ -53,6 +57,12 @@ handlekey(state: ref IcState->AppState, k: int): int
 
 	if(k == CtrlO)
 		return commands->exec(state, IcCommands->CmdTogglePanels);
+
+	if(k == InsKey)
+		return commands->exec(state, IcCommands->CmdToggleSelection);
+
+	if(k == F5Key)
+		return commands->exec(state, IcCommands->CmdCopy);
 
 	if(k == F10Key)
 		return commands->exec(state, IcCommands->CmdExit);

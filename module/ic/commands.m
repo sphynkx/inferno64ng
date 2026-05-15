@@ -8,6 +8,8 @@ IcCommands: module
 	CmdExit: con 1;
 	CmdSwitchPanel: con 2;
 	CmdTogglePanels: con 3;
+	CmdToggleSelection: con 4;
+	CmdCopy: con 5;
 
 	init: fn();
 	exec: fn(state: ref IcState->AppState, cmd: int): int;

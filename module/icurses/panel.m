@@ -91,6 +91,7 @@ IcPanel: module
 		customfields:     array of string;
 
 		namefit:          int;
+		markedcode:       string;
 
 		mouseenabled:     int;
 		wrapnav:          int;
