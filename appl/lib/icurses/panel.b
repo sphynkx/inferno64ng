@@ -1261,6 +1261,12 @@ render(u: ref IcUi->Ui, p: ref IcPanel->Panel): int
 			view->setframe(n, p.opts.framestyle);
 	}
 
+	n = view->find(u.tree, p.titleid);
+	if(n != nil){
+		view->settext(n, p.title);
+		view->setcode(n, CodeTitle);
+	}
+
 	n = view->find(u.tree, p.commandbarid);
 	if(n != nil){
 		if(cmdrows > 0)

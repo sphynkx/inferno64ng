@@ -11,6 +11,7 @@ TARG=\
 	ic.dis\
 	input.dis\
 	layout.dis\
+	modal.dis\
 	screen.dis\
 	theme.dis\
 	topbar.dis\
@@ -27,6 +28,7 @@ SYSMODULES=\
 	ic/fsmodel.m\
 	ic/input.m\
 	ic/layout.m\
+	ic/modal.m\
 	ic/screen.m\
 	ic/state.m\
 	ic/theme.m\

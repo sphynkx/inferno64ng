@@ -159,12 +159,9 @@ emptyitem(): IcPanel->Item
 maketitle(p: ref IcState->PanelState): string
 {
 	if(p == nil)
-		return "";
+		return "[]";
 
-	if(p.active)
-		return "[" + p.path + "]";
-
-	return " " + p.path + " ";
+	return "[" + p.path + "]";
 }
 
 makeinfo(p: ref IcState->PanelState): string
@@ -497,17 +494,23 @@ buildmodel(p: ref IcState->PanelState, d: ref IcState->PanelDir): ref IcPanel->M
 
 	it = emptyitem();
 	it.id = RootItemId;
-	it.parentid = ParentItemId;
+	it.parentid = -1;
 	it.name = "";
 	it.kind = "root";
+
+	if(p != nil && normalizepath(p.path) != "/")
+		it.parentid = ParentItemId;
+
 	m.items = appenditem(m.items, it);
 
-	it = emptyitem();
-	it.id = ParentItemId;
-	it.parentid = -1;
-	it.name = "..";
-	it.kind = "parent";
-	m.items = appenditem(m.items, it);
+	if(p != nil && normalizepath(p.path) != "/"){
+		it = emptyitem();
+		it.id = ParentItemId;
+		it.parentid = -1;
+		it.name = "..";
+		it.kind = "parent";
+		m.items = appenditem(m.items, it);
+	}
 
 	if(d == nil || d.items == nil)
 		return m;
@@ -632,7 +635,6 @@ navigate(state: ref IcState->AppState, p: ref IcState->PanelState): int
 		p.lastchildname = "";
 
 	p.selected = array[0] of IcState->SelectedItem;
-
 	p.path = next;
 
 	if(refresh(state, p) < 0)
@@ -792,4 +794,17 @@ handlekey(state: ref IcState->AppState, p: ref IcState->PanelState, k: int): int
 		return navigate(state, p);
 
 	return panelui->render(state.ui, p.panel);
+}
+
+clearselection(state: ref IcState->AppState, p: ref IcState->PanelState): int
+{
+	if(state == nil || p == nil)
+		return -1;
+
+	p.selected = array[0] of IcState->SelectedItem;
+
+	if(p.panel == nil)
+		return 0;
+
+	return refresh(state, p);
 }

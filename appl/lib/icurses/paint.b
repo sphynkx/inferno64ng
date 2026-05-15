@@ -793,7 +793,7 @@ drawshadow(r: ref IcPaint->Renderer, t: ref IcView->Tree, n: ref IcView->Node)
 
 drawwindow(r: ref IcPaint->Renderer, t: ref IcView->Tree, n: ref IcView->Node)
 {
-	x, y, w, h, tx, style: int;
+	x, y, w, h, tx, tw, style: int;
 	title: string;
 	fc: array of string;
 
@@ -828,9 +828,13 @@ drawwindow(r: ref IcPaint->Renderer, t: ref IcView->Tree, n: ref IcView->Node)
 
 	title = view->gettext(n);
 	if(title != ""){
+		title = " " + title + " ";
+		tw = w - 4;
+		if(tw < 1)
+			tw = 1;
 		tx = x + 2;
 		if(tx < x + w - 1)
-			putslimit(r, tx, y, w - 4, title, CodeTitle);
+			putslimit(r, tx, y, tw, title, CodeTitle);
 	}
 
 	drawcontent(r, t, n);

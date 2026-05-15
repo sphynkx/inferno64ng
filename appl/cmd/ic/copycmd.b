@@ -8,6 +8,7 @@ IcAppPanel: module
 
 	init: fn();
 	refresh: fn(state: ref IcState->AppState, p: ref IcState->PanelState): int;
+	clearselection: fn(state: ref IcState->AppState, p: ref IcState->PanelState): int;
 };
 
 IcPanelMod: module
@@ -28,11 +29,17 @@ passivepanel: fn(state: ref IcState->AppState): ref IcState->PanelState;
 trimdirsuffix: fn(name: string): string;
 basename: fn(path: string): string;
 joinpath: fn(base, name: string): string;
-copyfile: fn(src, dst: string): int;
-copydir: fn(src, dst: string): int;
-copyone: fn(src, dstbase: string): int;
-copycurrent: fn(state: ref IcState->AppState, srcp, dstp: ref IcState->PanelState): int;
-copyselected: fn(state: ref IcState->AppState, srcp, dstp: ref IcState->PanelState): int;
+samefile: fn(a, b: Sys->Dir): int;
+dstpath: fn(src, dstbase: string): string;
+exists: fn(path: string): int;
+copyfile: fn(src, dst: string, overwrite: int): int;
+copydir: fn(src, dst: string, overwrite: int): int;
+copyone: fn(src, dstbase: string, overwrite: int): int;
+currentpath: fn(srcp: ref IcState->PanelState): string;
+hascurrentconflict: fn(srcp, dstp: ref IcState->PanelState): int;
+hasselectedconflicts: fn(srcp, dstp: ref IcState->PanelState): int;
+copycurrent: fn(srcp, dstp: ref IcState->PanelState, overwrite: int): int;
+copyselected: fn(srcp, dstp: ref IcState->PanelState, overwrite: int): int;
 
 init()
 {
@@ -113,7 +120,28 @@ joinpath(base, name: string): string
 	return base + "/" + name;
 }
 
-copyfile(src, dst: string): int
+samefile(a, b: Sys->Dir): int
+{
+	return a.qid.path == b.qid.path && a.dev == b.dev && a.dtype == b.dtype;
+}
+
+dstpath(src, dstbase: string): string
+{
+	return joinpath(dstbase, basename(src));
+}
+
+exists(path: string): int
+{
+	ok: int;
+	d: Sys->Dir;
+
+	(ok, d) = sys->stat(path);
+	d = d;
+
+	return ok >= 0;
+}
+
+copyfile(src, dst: string, overwrite: int): int
 {
 	sfd, dfd: ref Sys->FD;
 	ok: int;
@@ -125,9 +153,23 @@ copyfile(src, dst: string): int
 	if(ok < 0)
 		return -1;
 
+	if((ds.mode & Sys->DMDIR) != 0)
+		return -1;
+
 	(ok, dd) = sys->stat(dst);
-	if(ok >= 0 && ds.qid.path == dd.qid.path && ds.dev == dd.dev && ds.dtype == dd.dtype)
-		return 0;
+	if(ok >= 0){
+		if((dd.mode & Sys->DMDIR) != 0)
+			return -1;
+
+		if(samefile(ds, dd))
+			return 0;
+
+		if(!overwrite)
+			return -1;
+
+		if(sys->remove(dst) < 0)
+			return -1;
+	}
 
 	sfd = sys->open(src, Sys->OREAD);
 	if(sfd == nil)
@@ -143,6 +185,7 @@ copyfile(src, dst: string): int
 		n = sys->read(sfd, buf, len buf);
 		if(n < 0)
 			return -1;
+
 		if(n == 0)
 			break;
 
@@ -153,7 +196,7 @@ copyfile(src, dst: string): int
 	return 0;
 }
 
-copydir(src, dst: string): int
+copydir(src, dst: string, overwrite: int): int
 {
 	ok, n, i: int;
 	ds, dd: Sys->Dir;
@@ -165,10 +208,16 @@ copydir(src, dst: string): int
 	if(ok < 0)
 		return -1;
 
+	if((ds.mode & Sys->DMDIR) == 0)
+		return -1;
+
 	(ok, dd) = sys->stat(dst);
 	if(ok >= 0){
 		if((dd.mode & Sys->DMDIR) == 0)
 			return -1;
+
+		if(samefile(ds, dd))
+			return 0;
 	}else{
 		dfd = sys->create(dst, Sys->OREAD, Sys->DMDIR | (ds.mode & 8r777) | 8r300);
 		if(dfd == nil)
@@ -189,10 +238,10 @@ copydir(src, dst: string): int
 			childdst = joinpath(dst, dirs[i].name);
 
 			if((dirs[i].mode & Sys->DMDIR) != 0){
-				if(copydir(childsrc, childdst) < 0)
+				if(copydir(childsrc, childdst, overwrite) < 0)
 					return -1;
 			}else{
-				if(copyfile(childsrc, childdst) < 0)
+				if(copyfile(childsrc, childdst, overwrite) < 0)
 					return -1;
 			}
 		}
@@ -201,7 +250,7 @@ copydir(src, dst: string): int
 	return 0;
 }
 
-copyone(src, dstbase: string): int
+copyone(src, dstbase: string, overwrite: int): int
 {
 	ok: int;
 	d: Sys->Dir;
@@ -214,55 +263,112 @@ copyone(src, dstbase: string): int
 	if(ok < 0)
 		return -1;
 
-	dst = joinpath(dstbase, basename(src));
+	dst = dstpath(src, dstbase);
 
 	if((d.mode & Sys->DMDIR) != 0)
-		return copydir(src, dst);
+		return copydir(src, dst, overwrite);
 
-	return copyfile(src, dst);
+	return copyfile(src, dst, overwrite);
 }
 
-copycurrent(state: ref IcState->AppState, srcp, dstp: ref IcState->PanelState): int
+currentpath(srcp: ref IcState->PanelState): string
 {
-	name, kind, src: string;
+	name, kind: string;
 
-	state = state;
-
-	if(srcp == nil || dstp == nil || srcp.panel == nil)
-		return -1;
+	if(srcp == nil || srcp.panel == nil)
+		return "";
 
 	name = panelui->currentname(srcp.panel);
 	kind = panelui->currentkind(srcp.panel);
 
 	if(kind == "parent" || name == "..")
-		return 0;
+		return "";
 
 	if(kind != "dir" && kind != "file")
-		return 0;
+		return "";
 
-	src = joinpath(srcp.path, name);
-	return copyone(src, dstp.path);
+	return joinpath(srcp.path, name);
 }
 
-copyselected(state: ref IcState->AppState, srcp, dstp: ref IcState->PanelState): int
+hascurrentconflict(srcp, dstp: ref IcState->PanelState): int
+{
+	src, dst: string;
+
+	if(srcp == nil || dstp == nil)
+		return 0;
+
+	src = currentpath(srcp);
+	if(src == "")
+		return 0;
+
+	dst = dstpath(src, dstp.path);
+	return exists(dst);
+}
+
+hasselectedconflicts(srcp, dstp: ref IcState->PanelState): int
+{
+	i: int;
+	dst: string;
+
+	if(srcp == nil || dstp == nil || srcp.selected == nil)
+		return 0;
+
+	for(i = 0; i < len srcp.selected; i++){
+		dst = dstpath(srcp.selected[i].path, dstp.path);
+		if(exists(dst))
+			return 1;
+	}
+
+	return 0;
+}
+
+hasconflicts(state: ref IcState->AppState): int
+{
+	srcp, dstp: ref IcState->PanelState;
+
+	srcp = activepanel(state);
+	dstp = passivepanel(state);
+
+	if(srcp == nil || dstp == nil)
+		return 0;
+
+	if(srcp.selected != nil && len srcp.selected > 0)
+		return hasselectedconflicts(srcp, dstp);
+
+	return hascurrentconflict(srcp, dstp);
+}
+
+copycurrent(srcp, dstp: ref IcState->PanelState, overwrite: int): int
+{
+	src: string;
+
+	if(srcp == nil || dstp == nil)
+		return -1;
+
+	src = currentpath(srcp);
+	if(src == "")
+		return 0;
+
+	return copyone(src, dstp.path, overwrite);
+}
+
+copyselected(srcp, dstp: ref IcState->PanelState, overwrite: int): int
 {
 	i, rc: int;
-
-	state = state;
 
 	if(srcp == nil || dstp == nil || srcp.selected == nil)
 		return -1;
 
 	rc = 0;
 	for(i = 0; i < len srcp.selected; i++){
-		if(copyone(srcp.selected[i].path, dstp.path) < 0)
+		if(copyone(srcp.selected[i].path, dstp.path, overwrite) < 0)
 			rc = -1;
 	}
 
 	return rc;
 }
 
-run(state: ref IcState->AppState): int
+run(state: ref IcState->AppState, overwrite: int): int
 {
 	srcp, dstp: ref IcState->PanelState;
 	rc: int;
@@ -277,14 +383,14 @@ run(state: ref IcState->AppState): int
 		return -1;
 
 	if(srcp.selected != nil && len srcp.selected > 0)
-		rc = copyselected(state, srcp, dstp);
+		rc = copyselected(srcp, dstp, overwrite);
 	else
-		rc = copycurrent(state, srcp, dstp);
+		rc = copycurrent(srcp, dstp, overwrite);
 
-	srcp.selected = array[0] of IcState->SelectedItem;
-
+	appanel->clearselection(state, srcp);
 	appanel->refresh(state, srcp);
 	appanel->refresh(state, dstp);
 
-	return rc;
+	rc = rc;
+	return 0;
 }

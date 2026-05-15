@@ -18,8 +18,8 @@ MKindButton: con 5;
 # Applications can override them through IcUi->setquitkeys().
 # Set a key to "" to disable that quit binding.
 #
-DefaultQuitKey1: con "q";
-DefaultQuitKey2: con "Q";
+DefaultQuitKey1: con "";
+DefaultQuitKey2: con "";
 
 EscapeKeyCode: con 27;
 
@@ -790,9 +790,6 @@ readkey(): int
 isquit(k: int): int
 {
 	u: ref IcUi->Ui;
-
-	if(k == EscapeKeyCode)
-		return 1;
 
 	u = activeui;
 	if(u == nil)

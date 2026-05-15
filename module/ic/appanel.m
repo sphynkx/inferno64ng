@@ -12,4 +12,5 @@ IcAppPanel: module
 	setactive: fn(state: ref IcState->AppState, p: ref IcState->PanelState, active: int): int;
 	togglemarkadvance: fn(state: ref IcState->AppState, p: ref IcState->PanelState): int;
 	handlekey: fn(state: ref IcState->AppState, p: ref IcState->PanelState, k: int): int;
+	clearselection: fn(state: ref IcState->AppState, p: ref IcState->PanelState): int;
 };
