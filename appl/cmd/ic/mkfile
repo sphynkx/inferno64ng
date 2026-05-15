@@ -1,38 +1,36 @@
 <../../../mkconfig
 
 TARG=\
-	ic.dis\
 	app.dis\
-#	runtime.dis\
-	screen.dis\
-	layout.dis\
-	input.dis\
-	commands.dis\
-	copycmd.dis\
-	config.dis\
-	theme.dis\
-	fsmodel.dis\
 	appanel.dis\
-	topbar.dis\
 	bottombar.dis\
+	commands.dis\
+	config.dis\
+	copycmd.dis\
+	fsmodel.dis\
+	ic.dis\
+	input.dis\
+	layout.dis\
+	screen.dis\
+	theme.dis\
+	topbar.dis\
 
 MODULES=\
 
 SYSMODULES=\
-	ic/state.m\
 	ic/app.m\
-#	ic/runtime.m\
-	ic/screen.m\
-	ic/layout.m\
-	ic/input.m\
-	ic/commands.m\
-	ic/copycmd.m\
-	ic/config.m\
-	ic/theme.m\
-	ic/fsmodel.m\
 	ic/appanel.m\
-	ic/topbar.m\
 	ic/bottombar.m\
+	ic/commands.m\
+	ic/config.m\
+	ic/copycmd.m\
+	ic/fsmodel.m\
+	ic/input.m\
+	ic/layout.m\
+	ic/screen.m\
+	ic/state.m\
+	ic/theme.m\
+	ic/topbar.m\
 
 DISBIN=$ROOT/dis/ic
 
