@@ -63,11 +63,13 @@ cursorvalue: fn(s: string, def: int): int;
 sortvalue: fn(s: string, def: int): int;
 namefitvalue: fn(s: string, def: int): int;
 framevalue: fn(s: string, def: int): int;
+cwdpath: fn(): string;
 joinpath: fn(base, name: string): string;
 parentpath: fn(path: string): string;
 normalizepath: fn(path: string): string;
 trimdirsuffix: fn(name: string): string;
 basename: fn(path: string): string;
+selectparent: fn(state: ref IcState->AppState, p: ref IcState->PanelState);
 selectremembered: fn(state: ref IcState->AppState, p: ref IcState->PanelState);
 buildmodel: fn(d: ref IcState->PanelDir): ref IcPanel->Model;
 itempath: fn(p: ref IcState->PanelState): string;
@@ -291,13 +293,32 @@ makeopts(state: ref IcState->AppState, p: ref IcState->PanelState): IcPanel->Opt
 	return o;
 }
 
+cwdpath(): string
+{
+	fd: ref Sys->FD;
+	path: string;
+
+	fd = sys->open(".", Sys->OREAD);
+	if(fd == nil)
+		return DefaultPath;
+
+	path = sys->fd2path(fd);
+	if(path == nil || path == "")
+		return DefaultPath;
+
+	if(len path > 1 && path[len path - 1] == '/')
+		path = path[0:len path - 1];
+
+	return path;
+}
+
 normalizepath(path: string): string
 {
-	if(path == "")
-		return ".";
+	if(path == "" || path == ".")
+		return cwdpath();
 
 	if(path == "./")
-		return ".";
+		return cwdpath();
 
 	if(len path > 1 && path[len path - 1] == '/')
 		return path[0:len path - 1];
@@ -318,7 +339,7 @@ basename(path: string): string
 	i: int;
 
 	path = normalizepath(path);
-	if(path == "." || path == "/")
+	if(path == "/")
 		return path;
 
 	for(i = len path - 1; i >= 0; i--){
@@ -340,9 +361,6 @@ joinpath(base, name: string): string
 	if(name == "..")
 		return parentpath(base);
 
-	if(base == ".")
-		return name;
-
 	if(base == "/")
 		return "/" + name;
 
@@ -355,7 +373,7 @@ parentpath(path: string): string
 
 	path = normalizepath(path);
 
-	if(path == "." || path == "/")
+	if(path == "/")
 		return path;
 
 	for(i = len path - 1; i >= 0; i--){
@@ -366,7 +384,7 @@ parentpath(path: string): string
 		}
 	}
 
-	return ".";
+	return "/";
 }
 
 buildmodel(d: ref IcState->PanelDir): ref IcPanel->Model
@@ -413,14 +431,20 @@ buildmodel(d: ref IcState->PanelDir): ref IcPanel->Model
 	return m;
 }
 
+selectparent(state: ref IcState->AppState, p: ref IcState->PanelState)
+{
+	if(state == nil || state.ui == nil || p == nil || p.panel == nil)
+		return;
+
+	panelui->selectid(state.ui, p.panel, ParentItemId);
+}
+
 selectremembered(state: ref IcState->AppState, p: ref IcState->PanelState)
 {
 	i: int;
 	name: string;
 
-	state = state;
-
-	if(p == nil || p.panel == nil || p.model == nil)
+	if(state == nil || state.ui == nil || p == nil || p.panel == nil || p.model == nil)
 		return;
 
 	name = p.lastchildname;
@@ -443,7 +467,7 @@ newpanel(side: int): ref IcState->PanelState
 	p.id = -1;
 	p.side = side;
 	p.active = side == IcState->SideLeft;
-	p.path = DefaultPath;
+	p.path = cwdpath();
 	p.dir = nil;
 	p.lastchildname = "";
 	p.panel = nil;
@@ -457,7 +481,7 @@ itempath(p: ref IcState->PanelState): string
 	name, kind: string;
 
 	if(p == nil || p.panel == nil)
-		return p.path;
+		return normalizepath(p.path);
 
 	name = panelui->currentname(p.panel);
 	kind = panelui->currentkind(p.panel);
@@ -468,7 +492,7 @@ itempath(p: ref IcState->PanelState): string
 	if(kind == "dir")
 		return joinpath(p.path, name);
 
-	return p.path;
+	return normalizepath(p.path);
 }
 
 navigate(state: ref IcState->AppState, p: ref IcState->PanelState): int
@@ -497,7 +521,10 @@ navigate(state: ref IcState->AppState, p: ref IcState->PanelState): int
 
 	next = normalizepath(next);
 	if(next == "")
-		next = ".";
+		next = cwdpath();
+
+	if(next == curpath && kind == "parent")
+		return panelui->render(state.ui, p.panel);
 
 	if(kind == "parent")
 		p.lastchildname = curbase;
@@ -511,6 +538,8 @@ navigate(state: ref IcState->AppState, p: ref IcState->PanelState): int
 
 	if(kind == "parent")
 		selectremembered(state, p);
+	else
+		selectparent(state, p);
 
 	return panelui->render(state.ui, p.panel);
 }
@@ -524,6 +553,11 @@ build(state: ref IcState->AppState, p: ref IcState->PanelState, rect: IcLayout->
 
 	if(rect.w <= 0 || rect.h <= 0)
 		return 0;
+
+	if(p.path == "" || p.path == ".")
+		p.path = cwdpath();
+	else
+		p.path = normalizepath(p.path);
 
 	if(p.id <= 0)
 		p.id = view->allocid(state.ui.tree);
@@ -562,6 +596,8 @@ refresh(state: ref IcState->AppState, p: ref IcState->PanelState): int
 
 	if(state == nil || state.ui == nil || p == nil || p.panel == nil)
 		return -1;
+
+	p.path = normalizepath(p.path);
 
 	opts = makeopts(state, p);
 	panelui->setopts(p.panel, opts);
