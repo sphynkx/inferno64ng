@@ -49,6 +49,54 @@ IcState: module
 		kind: string;
 	};
 
+	CopyTask: adt
+	{
+		src: string;
+		dst: string;
+		kind: string;
+		mode: int;
+	};
+
+	CopyState: adt
+	{
+		active: int;
+		phase: int;
+
+		index: int;
+		overwriteall: int;
+		errors: int;
+
+		tasks: array of CopyTask;
+	};
+
+	ModalState: adt
+	{
+		active: int;
+		kind: int;
+
+		title: string;
+		message: string;
+		checkbox: string;
+		checked: int;
+
+		focus: int;
+		result: int;
+
+		buttoncount: int;
+		button0: string;
+		button1: string;
+		button2: string;
+
+		hotkey0: string;
+		hotkey1: string;
+		hotkey2: string;
+
+		windowid: int;
+		messageid: int;
+		checkboxid: int;
+		buttonsid: int;
+	};
+
 	PanelState: adt
 	{
 		id: int;
@@ -104,5 +152,8 @@ IcState: module
 
 		topbar: ref TopBarState;
 		bottombar: ref BottomBarState;
+
+		modal: ref ModalState;
+		copy: ref CopyState;
 	};
 };

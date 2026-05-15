@@ -24,8 +24,18 @@ IcAppPanel: module
 	handlekey: fn(state: ref IcState->AppState, p: ref IcState->PanelState, k: int): int;
 };
 
+IcCopyCmd: module
+{
+	PATH: con "/dis/ic/copycmd.dis";
+
+	init: fn();
+	active: fn(state: ref IcState->AppState): int;
+	handlekey: fn(state: ref IcState->AppState, k: int): int;
+};
+
 commands: IcCommands;
 appanel: IcAppPanel;
+copycmd: IcCopyCmd;
 
 CtrlO: con 15;
 TabKey: con 9;
@@ -43,14 +53,22 @@ init()
 	if(appanel == nil)
 		raise "fail:load ic/appanel";
 
+	copycmd = load IcCopyCmd IcCopyCmd->PATH;
+	if(copycmd == nil)
+		raise "fail:load ic/copycmd";
+
 	commands->init();
 	appanel->init();
+	copycmd->init();
 }
 
 handlekey(state: ref IcState->AppState, k: int): int
 {
 	if(state == nil)
 		return -1;
+
+	if(copycmd->active(state))
+		return copycmd->handlekey(state, k);
 
 	if(k == TabKey)
 		return commands->exec(state, IcCommands->CmdSwitchPanel);

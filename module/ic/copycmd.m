@@ -6,6 +6,7 @@ IcCopyCmd: module
 
 	init: fn();
 
-	hasconflicts: fn(state: ref IcState->AppState): int;
-	run: fn(state: ref IcState->AppState, overwrite: int): int;
+	active: fn(state: ref IcState->AppState): int;
+	start: fn(state: ref IcState->AppState): int;
+	handlekey: fn(state: ref IcState->AppState, k: int): int;
 };

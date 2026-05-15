@@ -4,23 +4,28 @@ IcModal: module
 {
 	PATH: con "/dis/ic/modal.dis";
 
+	KindNone: con 0;
+	KindCopyConfirm: con 1;
+	KindOverwrite: con 2;
+
 	ResultNone: con 0;
 	ResultOk: con 1;
 	ResultCancel: con 2;
+	ResultOverwrite: con 3;
+	ResultSkip: con 4;
 
-	Dialog: adt
-	{
-		title: string;
-		message: array of string;
-
-		checkbox: string;
-		checked: int;
-
-		result: int;
-	};
+	FocusCheckbox: con 0;
+	FocusButton0: con 1;
+	FocusButton1: con 2;
+	FocusButton2: con 3;
 
 	init: fn();
 
-	copyconfirm: fn(title, message, checkbox: string, checked: int): ref Dialog;
-	handlekey: fn(d: ref Dialog, k: int): int;
+	active: fn(state: ref IcState->AppState): int;
+	close: fn(state: ref IcState->AppState): int;
+
+	showcopyconfirm: fn(state: ref IcState->AppState, count: int, dst: string): int;
+	showoverwrite: fn(state: ref IcState->AppState, path: string): int;
+
+	handlekey: fn(state: ref IcState->AppState, k: int): int;
 };

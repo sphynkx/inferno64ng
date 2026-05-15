@@ -8,7 +8,6 @@ IcAppPanel: module
 
 	init: fn();
 	refresh: fn(state: ref IcState->AppState, p: ref IcState->PanelState): int;
-	clearselection: fn(state: ref IcState->AppState, p: ref IcState->PanelState): int;
 };
 
 IcPanelMod: module
@@ -20,26 +19,55 @@ IcPanelMod: module
 	currentkind: fn(p: ref IcPanel->Panel): string;
 };
 
+IcModal: module
+{
+	PATH: con "/dis/ic/modal.dis";
+
+	ResultNone: con 0;
+	ResultOk: con 1;
+	ResultCancel: con 2;
+	ResultOverwrite: con 3;
+	ResultSkip: con 4;
+
+	init: fn();
+	close: fn(state: ref IcState->AppState): int;
+	showcopyconfirm: fn(state: ref IcState->AppState, count: int, dst: string): int;
+	showoverwrite: fn(state: ref IcState->AppState, path: string): int;
+	handlekey: fn(state: ref IcState->AppState, k: int): int;
+};
+
 sys: Sys;
 appanel: IcAppPanel;
 panelui: IcPanelMod;
+modal: IcModal;
+
+PhaseNone: con 0;
+PhaseConfirm: con 1;
+PhaseCopy: con 2;
+PhaseOverwrite: con 3;
+
+KindFile: con "file";
+KindDir: con "dir";
 
 activepanel: fn(state: ref IcState->AppState): ref IcState->PanelState;
 passivepanel: fn(state: ref IcState->AppState): ref IcState->PanelState;
+initcopy: fn(state: ref IcState->AppState);
 trimdirsuffix: fn(name: string): string;
 basename: fn(path: string): string;
 joinpath: fn(base, name: string): string;
 samefile: fn(a, b: Sys->Dir): int;
-dstpath: fn(src, dstbase: string): string;
-exists: fn(path: string): int;
-copyfile: fn(src, dst: string, overwrite: int): int;
-copydir: fn(src, dst: string, overwrite: int): int;
-copyone: fn(src, dstbase: string, overwrite: int): int;
+appendtask: fn(a: array of IcState->CopyTask, t: IcState->CopyTask): array of IcState->CopyTask;
+prepareone: fn(tasks: array of IcState->CopyTask, src, dstbase: string): array of IcState->CopyTask;
+preparecurrent: fn(srcp, dstp: ref IcState->PanelState): array of IcState->CopyTask;
+prepareselected: fn(srcp, dstp: ref IcState->PanelState): array of IcState->CopyTask;
 currentpath: fn(srcp: ref IcState->PanelState): string;
-hascurrentconflict: fn(srcp, dstp: ref IcState->PanelState): int;
-hasselectedconflicts: fn(srcp, dstp: ref IcState->PanelState): int;
-copycurrent: fn(srcp, dstp: ref IcState->PanelState, overwrite: int): int;
-copyselected: fn(srcp, dstp: ref IcState->PanelState, overwrite: int): int;
+makeparentdirs: fn(path: string): int;
+copyfile: fn(src, dst: string, overwrite: int): int;
+makedir: fn(path: string, mode: int): int;
+processtask: fn(state: ref IcState->AppState, t: IcState->CopyTask, overwrite: int): int;
+conflict: fn(t: IcState->CopyTask): int;
+proceed: fn(state: ref IcState->AppState): int;
+finish: fn(state: ref IcState->AppState): int;
 
 init()
 {
@@ -55,8 +83,38 @@ init()
 	if(panelui == nil)
 		raise "fail:load icurses/panel";
 
+	modal = load IcModal IcModal->PATH;
+	if(modal == nil)
+		raise "fail:load ic/modal";
+
 	appanel->init();
 	panelui->init();
+	modal->init();
+}
+
+initcopy(state: ref IcState->AppState)
+{
+	if(state == nil)
+		return;
+
+	if(state.copy != nil)
+		return;
+
+	state.copy = ref IcState->CopyState;
+	state.copy.active = 0;
+	state.copy.phase = PhaseNone;
+	state.copy.index = 0;
+	state.copy.overwriteall = 0;
+	state.copy.errors = 0;
+	state.copy.tasks = array[0] of IcState->CopyTask;
+}
+
+active(state: ref IcState->AppState): int
+{
+	if(state == nil || state.copy == nil)
+		return 0;
+
+	return state.copy.active != 0;
 }
 
 activepanel(state: ref IcState->AppState): ref IcState->PanelState
@@ -125,150 +183,70 @@ samefile(a, b: Sys->Dir): int
 	return a.qid.path == b.qid.path && a.dev == b.dev && a.dtype == b.dtype;
 }
 
-dstpath(src, dstbase: string): string
+appendtask(a: array of IcState->CopyTask, t: IcState->CopyTask): array of IcState->CopyTask
 {
-	return joinpath(dstbase, basename(src));
-}
+	r: array of IcState->CopyTask;
+	i, n: int;
 
-exists(path: string): int
-{
-	ok: int;
-	d: Sys->Dir;
-
-	(ok, d) = sys->stat(path);
-	d = d;
-
-	return ok >= 0;
-}
-
-copyfile(src, dst: string, overwrite: int): int
-{
-	sfd, dfd: ref Sys->FD;
-	ok: int;
-	ds, dd: Sys->Dir;
-	buf: array of byte;
-	n: int;
-
-	(ok, ds) = sys->stat(src);
-	if(ok < 0)
-		return -1;
-
-	if((ds.mode & Sys->DMDIR) != 0)
-		return -1;
-
-	(ok, dd) = sys->stat(dst);
-	if(ok >= 0){
-		if((dd.mode & Sys->DMDIR) != 0)
-			return -1;
-
-		if(samefile(ds, dd))
-			return 0;
-
-		if(!overwrite)
-			return -1;
-
-		if(sys->remove(dst) < 0)
-			return -1;
+	if(a == nil){
+		r = array[1] of IcState->CopyTask;
+		r[0] = t;
+		return r;
 	}
 
-	sfd = sys->open(src, Sys->OREAD);
-	if(sfd == nil)
-		return -1;
+	n = len a;
+	r = array[n + 1] of IcState->CopyTask;
 
-	dfd = sys->create(dst, Sys->OWRITE, ds.mode & 8r777);
-	if(dfd == nil)
-		return -1;
+	for(i = 0; i < n; i++)
+		r[i] = a[i];
 
-	buf = array[Sys->ATOMICIO] of byte;
-
-	for(;;){
-		n = sys->read(sfd, buf, len buf);
-		if(n < 0)
-			return -1;
-
-		if(n == 0)
-			break;
-
-		if(sys->write(dfd, buf, n) != n)
-			return -1;
-	}
-
-	return 0;
+	r[n] = t;
+	return r;
 }
 
-copydir(src, dst: string, overwrite: int): int
+prepareone(tasks: array of IcState->CopyTask, src, dstbase: string): array of IcState->CopyTask
 {
 	ok, n, i: int;
-	ds, dd: Sys->Dir;
-	fd, dfd: ref Sys->FD;
-	dirs: array of Sys->Dir;
-	childsrc, childdst: string;
-
-	(ok, ds) = sys->stat(src);
-	if(ok < 0)
-		return -1;
-
-	if((ds.mode & Sys->DMDIR) == 0)
-		return -1;
-
-	(ok, dd) = sys->stat(dst);
-	if(ok >= 0){
-		if((dd.mode & Sys->DMDIR) == 0)
-			return -1;
-
-		if(samefile(ds, dd))
-			return 0;
-	}else{
-		dfd = sys->create(dst, Sys->OREAD, Sys->DMDIR | (ds.mode & 8r777) | 8r300);
-		if(dfd == nil)
-			return -1;
-	}
-
-	fd = sys->open(src, Sys->OREAD);
-	if(fd == nil)
-		return -1;
-
-	for(;;){
-		(n, dirs) = sys->dirread(fd);
-		if(n <= 0)
-			break;
-
-		for(i = 0; i < n; i++){
-			childsrc = joinpath(src, dirs[i].name);
-			childdst = joinpath(dst, dirs[i].name);
-
-			if((dirs[i].mode & Sys->DMDIR) != 0){
-				if(copydir(childsrc, childdst, overwrite) < 0)
-					return -1;
-			}else{
-				if(copyfile(childsrc, childdst, overwrite) < 0)
-					return -1;
-			}
-		}
-	}
-
-	return 0;
-}
-
-copyone(src, dstbase: string, overwrite: int): int
-{
-	ok: int;
 	d: Sys->Dir;
+	fd: ref Sys->FD;
+	dirs: array of Sys->Dir;
 	dst: string;
-
-	if(src == "" || dstbase == "")
-		return -1;
+	t: IcState->CopyTask;
 
 	(ok, d) = sys->stat(src);
 	if(ok < 0)
-		return -1;
+		return tasks;
 
-	dst = dstpath(src, dstbase);
+	dst = joinpath(dstbase, basename(src));
 
-	if((d.mode & Sys->DMDIR) != 0)
-		return copydir(src, dst, overwrite);
+	if((d.mode & Sys->DMDIR) != 0){
+		t.src = src;
+		t.dst = dst;
+		t.kind = KindDir;
+		t.mode = d.mode;
+		tasks = appendtask(tasks, t);
 
-	return copyfile(src, dst, overwrite);
+		fd = sys->open(src, Sys->OREAD);
+		if(fd == nil)
+			return tasks;
+
+		for(;;){
+			(n, dirs) = sys->dirread(fd);
+			if(n <= 0)
+				break;
+
+			for(i = 0; i < n; i++)
+				tasks = prepareone(tasks, joinpath(src, dirs[i].name), dst);
+		}
+
+		return tasks;
+	}
+
+	t.src = src;
+	t.dst = dst;
+	t.kind = KindFile;
+	t.mode = d.mode;
+	return appendtask(tasks, t);
 }
 
 currentpath(srcp: ref IcState->PanelState): string
@@ -290,107 +268,317 @@ currentpath(srcp: ref IcState->PanelState): string
 	return joinpath(srcp.path, name);
 }
 
-hascurrentconflict(srcp, dstp: ref IcState->PanelState): int
+preparecurrent(srcp, dstp: ref IcState->PanelState): array of IcState->CopyTask
 {
-	src, dst: string;
+	src: string;
+	tasks: array of IcState->CopyTask;
+
+	tasks = array[0] of IcState->CopyTask;
 
 	if(srcp == nil || dstp == nil)
-		return 0;
+		return tasks;
 
 	src = currentpath(srcp);
 	if(src == "")
-		return 0;
+		return tasks;
 
-	dst = dstpath(src, dstp.path);
-	return exists(dst);
+	return prepareone(tasks, src, dstp.path);
 }
 
-hasselectedconflicts(srcp, dstp: ref IcState->PanelState): int
+prepareselected(srcp, dstp: ref IcState->PanelState): array of IcState->CopyTask
 {
 	i: int;
-	dst: string;
+	tasks: array of IcState->CopyTask;
+
+	tasks = array[0] of IcState->CopyTask;
 
 	if(srcp == nil || dstp == nil || srcp.selected == nil)
-		return 0;
+		return tasks;
 
-	for(i = 0; i < len srcp.selected; i++){
-		dst = dstpath(srcp.selected[i].path, dstp.path);
-		if(exists(dst))
-			return 1;
+	for(i = 0; i < len srcp.selected; i++)
+		tasks = prepareone(tasks, srcp.selected[i].path, dstp.path);
+
+	return tasks;
+}
+
+makeparentdirs(path: string): int
+{
+	i: int;
+	p: string;
+	fd: ref Sys->FD;
+	ok: int;
+	d: Sys->Dir;
+
+	p = "";
+
+	for(i = 0; i < len path; i++){
+		if(path[i] != '/')
+			continue;
+
+		if(i == 0)
+			continue;
+
+		p = path[0:i];
+
+		(ok, d) = sys->stat(p);
+		if(ok >= 0){
+			if((d.mode & Sys->DMDIR) == 0)
+				return -1;
+			continue;
+		}
+
+		fd = sys->create(p, Sys->OREAD, Sys->DMDIR | 8r777);
+		if(fd == nil)
+			return -1;
 	}
 
 	return 0;
 }
 
-hasconflicts(state: ref IcState->AppState): int
+copyfile(src, dst: string, overwrite: int): int
 {
-	srcp, dstp: ref IcState->PanelState;
+	sfd, dfd: ref Sys->FD;
+	ok: int;
+	ds, dd: Sys->Dir;
+	buf: array of byte;
+	n: int;
 
-	srcp = activepanel(state);
-	dstp = passivepanel(state);
-
-	if(srcp == nil || dstp == nil)
-		return 0;
-
-	if(srcp.selected != nil && len srcp.selected > 0)
-		return hasselectedconflicts(srcp, dstp);
-
-	return hascurrentconflict(srcp, dstp);
-}
-
-copycurrent(srcp, dstp: ref IcState->PanelState, overwrite: int): int
-{
-	src: string;
-
-	if(srcp == nil || dstp == nil)
+	(ok, ds) = sys->stat(src);
+	if(ok < 0)
 		return -1;
 
-	src = currentpath(srcp);
-	if(src == "")
-		return 0;
+	(ok, dd) = sys->stat(dst);
+	if(ok >= 0){
+		if((dd.mode & Sys->DMDIR) != 0)
+			return -1;
 
-	return copyone(src, dstp.path, overwrite);
-}
+		if(samefile(ds, dd))
+			return 0;
 
-copyselected(srcp, dstp: ref IcState->PanelState, overwrite: int): int
-{
-	i, rc: int;
+		if(!overwrite)
+			return -1;
 
-	if(srcp == nil || dstp == nil || srcp.selected == nil)
-		return -1;
-
-	rc = 0;
-	for(i = 0; i < len srcp.selected; i++){
-		if(copyone(srcp.selected[i].path, dstp.path, overwrite) < 0)
-			rc = -1;
+		if(sys->remove(dst) < 0)
+			return -1;
 	}
 
-	return rc;
+	if(makeparentdirs(dst) < 0)
+		return -1;
+
+	sfd = sys->open(src, Sys->OREAD);
+	if(sfd == nil)
+		return -1;
+
+	dfd = sys->create(dst, Sys->OWRITE, ds.mode & 8r777);
+	if(dfd == nil)
+		return -1;
+
+	buf = array[Sys->ATOMICIO] of byte;
+
+	for(;;){
+		n = sys->read(sfd, buf, len buf);
+		if(n < 0)
+			return -1;
+		if(n == 0)
+			break;
+
+		if(sys->write(dfd, buf, n) != n)
+			return -1;
+	}
+
+	return 0;
 }
 
-run(state: ref IcState->AppState, overwrite: int): int
+makedir(path: string, mode: int): int
+{
+	ok: int;
+	d: Sys->Dir;
+	fd: ref Sys->FD;
+
+	(ok, d) = sys->stat(path);
+	if(ok >= 0){
+		if((d.mode & Sys->DMDIR) != 0)
+			return 0;
+
+		return -1;
+	}
+
+	if(makeparentdirs(path) < 0)
+		return -1;
+
+	fd = sys->create(path, Sys->OREAD, Sys->DMDIR | (mode & 8r777) | 8r300);
+	if(fd == nil)
+		return -1;
+
+	return 0;
+}
+
+processtask(state: ref IcState->AppState, t: IcState->CopyTask, overwrite: int): int
+{
+	state = state;
+
+	if(t.kind == KindDir)
+		return makedir(t.dst, t.mode);
+
+	return copyfile(t.src, t.dst, overwrite);
+}
+
+conflict(t: IcState->CopyTask): int
+{
+	ok: int;
+	d: Sys->Dir;
+
+	if(t.kind != KindFile)
+		return 0;
+
+	(ok, d) = sys->stat(t.dst);
+	d = d;
+
+	return ok >= 0;
+}
+
+start(state: ref IcState->AppState): int
 {
 	srcp, dstp: ref IcState->PanelState;
-	rc: int;
 
 	if(state == nil)
 		return -1;
 
+	initcopy(state);
+
 	srcp = activepanel(state);
 	dstp = passivepanel(state);
 
 	if(srcp == nil || dstp == nil)
-		return -1;
+		return 0;
+
+	state.copy.active = 1;
+	state.copy.phase = PhaseConfirm;
+	state.copy.index = 0;
+	state.copy.overwriteall = 0;
+	state.copy.errors = 0;
 
 	if(srcp.selected != nil && len srcp.selected > 0)
-		rc = copyselected(srcp, dstp, overwrite);
+		state.copy.tasks = prepareselected(srcp, dstp);
 	else
-		rc = copycurrent(srcp, dstp, overwrite);
+		state.copy.tasks = preparecurrent(srcp, dstp);
 
-	appanel->clearselection(state, srcp);
-	appanel->refresh(state, srcp);
-	appanel->refresh(state, dstp);
+	if(len state.copy.tasks == 0)
+		return finish(state);
 
-	rc = rc;
+	return modal->showcopyconfirm(state, len state.copy.tasks, dstp.path);
+}
+
+proceed(state: ref IcState->AppState): int
+{
+	t: IcState->CopyTask;
+
+	if(state == nil || state.copy == nil)
+		return 0;
+
+	state.copy.phase = PhaseCopy;
+
+	while(state.copy.index < len state.copy.tasks){
+		t = state.copy.tasks[state.copy.index];
+
+		if(conflict(t) && !state.copy.overwriteall){
+			state.copy.phase = PhaseOverwrite;
+			return modal->showoverwrite(state, t.dst);
+		}
+
+		if(processtask(state, t, state.copy.overwriteall) < 0)
+			state.copy.errors++;
+
+		state.copy.index++;
+	}
+
+	return finish(state);
+}
+
+finish(state: ref IcState->AppState): int
+{
+	srcp, dstp: ref IcState->PanelState;
+
+	if(state == nil)
+		return -1;
+
+	initcopy(state);
+
+	srcp = activepanel(state);
+	dstp = passivepanel(state);
+
+	if(srcp != nil)
+		srcp.selected = array[0] of IcState->SelectedItem;
+
+	state.copy.active = 0;
+	state.copy.phase = PhaseNone;
+	state.copy.index = 0;
+	state.copy.overwriteall = 0;
+	state.copy.tasks = array[0] of IcState->CopyTask;
+
+	modal->close(state);
+
+	if(srcp != nil)
+		appanel->refresh(state, srcp);
+	if(dstp != nil)
+		appanel->refresh(state, dstp);
+
+	if(state.ui != nil){
+		if(state.copy.errors > 0)
+			state.ui.status = "copy finished with errors";
+		else
+			state.ui.status = "copy done";
+	}
+
+	return 0;
+}
+
+handlekey(state: ref IcState->AppState, k: int): int
+{
+	r: int;
+	t: IcState->CopyTask;
+
+	if(state == nil || state.copy == nil || !state.copy.active)
+		return 0;
+
+	r = modal->handlekey(state, k);
+	if(r == IcModal->ResultNone)
+		return 0;
+
+	if(state.copy.phase == PhaseConfirm){
+		if(r == IcModal->ResultCancel)
+			return finish(state);
+
+		if(r == IcModal->ResultOk){
+			if(state.modal != nil)
+				state.copy.overwriteall = state.modal.checked != 0;
+
+			modal->close(state);
+			return proceed(state);
+		}
+	}
+
+	if(state.copy.phase == PhaseOverwrite){
+		t = state.copy.tasks[state.copy.index];
+
+		if(r == IcModal->ResultOverwrite){
+			if(processtask(state, t, 1) < 0)
+				state.copy.errors++;
+
+			state.copy.index++;
+			modal->close(state);
+			return proceed(state);
+		}
+
+		if(r == IcModal->ResultSkip){
+			state.copy.index++;
+			modal->close(state);
+			return proceed(state);
+		}
+
+		if(r == IcModal->ResultCancel)
+			return finish(state);
+	}
+
 	return 0;
 }
