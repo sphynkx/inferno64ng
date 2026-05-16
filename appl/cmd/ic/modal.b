@@ -317,11 +317,6 @@ stylecodes(state: ref IcState->AppState): array of string
 	a[6] = state.theme.modalbuttoncode;
 	a[7] = state.theme.modalbuttonfocuscode;
 
-	#
-	# Do not override framework shadow from the app theme for now.
-	# The app keeps modal_shadow_code in config/state, but shadow rendering
-	# stays on the framework default path until shadow style support is finalized.
-	#
 	a[8] = "";
 
 	return a;
@@ -413,6 +408,33 @@ showcopyconfirm(state: ref IcState->AppState, count: int, direction, target: str
 	state.modal.title = "Copy";
 	state.modal.message = "Copy " + string count + " item(s)  " + direction;
 	state.modal.inputlabel = "Copy to:";
+	state.modal.input = target;
+	state.modal.checkbox = "Overwrite all";
+	state.modal.checked = 0;
+	state.modal.focus = IcModal->FocusInput;
+	state.modal.result = IcModal->ResultNone;
+
+	state.modal.buttoncount = 2;
+	state.modal.button0 = "OK";
+	state.modal.button1 = "Cancel";
+	state.modal.button2 = "";
+
+	state.modal.hotkey0 = "O";
+	state.modal.hotkey1 = "C";
+	state.modal.hotkey2 = "";
+
+	return draw(state);
+}
+
+showmoveconfirm(state: ref IcState->AppState, count: int, direction, target: string): int
+{
+	initstate(state);
+
+	state.modal.active = 1;
+	state.modal.kind = IcModal->KindMoveConfirm;
+	state.modal.title = "Move";
+	state.modal.message = "Move " + string count + " item(s)  " + direction;
+	state.modal.inputlabel = "Move to:";
 	state.modal.input = target;
 	state.modal.checkbox = "Overwrite all";
 	state.modal.checked = 0;
@@ -548,7 +570,7 @@ activatefocus(m: ref IcState->ModalState): int
 	if(m.focus == IcModal->FocusInput)
 		return IcModal->ResultOk;
 
-	if(m.kind == IcModal->KindCopyConfirm){
+	if(m.kind == IcModal->KindCopyConfirm || m.kind == IcModal->KindMoveConfirm){
 		if(m.focus == IcModal->FocusButton0)
 			return IcModal->ResultOk;
 		return IcModal->ResultCancel;

@@ -74,6 +74,7 @@ IcState: module
 	{
 		active: int;
 		phase: int;
+		move: int;
 
 		index: int;
 		overwriteall: int;

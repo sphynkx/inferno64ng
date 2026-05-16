@@ -32,6 +32,7 @@ IcModal: module
 	init: fn();
 	close: fn(state: ref IcState->AppState): int;
 	showcopyconfirm: fn(state: ref IcState->AppState, count: int, direction, target: string): int;
+	showmoveconfirm: fn(state: ref IcState->AppState, count: int, direction, target: string): int;
 	showoverwrite: fn(state: ref IcState->AppState, path: string): int;
 	handlekey: fn(state: ref IcState->AppState, k: int): int;
 };
@@ -67,8 +68,12 @@ defaulttarget: fn(state: ref IcState->AppState, srcp, dstp: ref IcState->PanelSt
 makeparentdirs: fn(path: string): int;
 copyfile: fn(src, dst: string, overwrite: int): int;
 makedir: fn(path: string, mode: int): int;
+removefile: fn(path: string): int;
+removedirempty: fn(path: string): int;
 processtask: fn(state: ref IcState->AppState, t: IcState->CopyTask, overwrite: int): int;
+cleanupmove: fn(state: ref IcState->AppState, t: IcState->CopyTask): int;
 conflict: fn(state: ref IcState->AppState, t: IcState->CopyTask): int;
+startop: fn(state: ref IcState->AppState, move: int): int;
 proceed: fn(state: ref IcState->AppState): int;
 finish: fn(state: ref IcState->AppState): int;
 
@@ -106,6 +111,7 @@ initcopy(state: ref IcState->AppState)
 	state.copy = ref IcState->CopyState;
 	state.copy.active = 0;
 	state.copy.phase = PhaseNone;
+	state.copy.move = 0;
 	state.copy.index = 0;
 	state.copy.overwriteall = 0;
 	state.copy.errors = 0;
@@ -320,9 +326,9 @@ directiontext(state: ref IcState->AppState): string
 		return "";
 
 	if(state.activepanel == IcState->PanelLeft)
-		return "Left => Right";
+		return "=>";
 
-	return "Right => Left";
+	return "<=";
 }
 
 defaulttarget(state: ref IcState->AppState, srcp, dstp: ref IcState->PanelState): string
@@ -451,6 +457,16 @@ makedir(path: string, mode: int): int
 	return 0;
 }
 
+removefile(path: string): int
+{
+	return sys->remove(path);
+}
+
+removedirempty(path: string): int
+{
+	return sys->remove(path);
+}
+
 processtask(state: ref IcState->AppState, t: IcState->CopyTask, overwrite: int): int
 {
 	dst: string;
@@ -461,6 +477,35 @@ processtask(state: ref IcState->AppState, t: IcState->CopyTask, overwrite: int):
 		return makedir(dst, t.mode);
 
 	return copyfile(t.src, dst, overwrite);
+}
+
+cleanupmove(state: ref IcState->AppState, t: IcState->CopyTask): int
+{
+	dst, src: string;
+	ok: int;
+	ds, dd: Sys->Dir;
+
+	if(state == nil || state.copy == nil || !state.copy.move)
+		return 0;
+
+	src = t.src;
+	dst = copydst(state, t);
+
+	(ok, ds) = sys->stat(src);
+	if(ok < 0)
+		return 0;
+
+	(ok, dd) = sys->stat(dst);
+	if(ok < 0)
+		return 0;
+
+	if(samefile(ds, dd))
+		return 0;
+
+	if(t.kind == KindFile)
+		return removefile(src);
+
+	return 0;
 }
 
 conflict(state: ref IcState->AppState, t: IcState->CopyTask): int
@@ -477,7 +522,7 @@ conflict(state: ref IcState->AppState, t: IcState->CopyTask): int
 	return ok >= 0;
 }
 
-start(state: ref IcState->AppState): int
+startop(state: ref IcState->AppState, move: int): int
 {
 	srcp, dstp: ref IcState->PanelState;
 
@@ -494,6 +539,7 @@ start(state: ref IcState->AppState): int
 
 	state.copy.active = 1;
 	state.copy.phase = PhaseConfirm;
+	state.copy.move = move != 0;
 	state.copy.index = 0;
 	state.copy.overwriteall = 0;
 	state.copy.errors = 0;
@@ -510,12 +556,26 @@ start(state: ref IcState->AppState): int
 
 	state.copy.target = defaulttarget(state, srcp, dstp);
 
+	if(move)
+		return modal->showmoveconfirm(state, len state.copy.tasks, directiontext(state), state.copy.target);
+
 	return modal->showcopyconfirm(state, len state.copy.tasks, directiontext(state), state.copy.target);
+}
+
+startcopy(state: ref IcState->AppState): int
+{
+	return startop(state, 0);
+}
+
+startmove(state: ref IcState->AppState): int
+{
+	return startop(state, 1);
 }
 
 proceed(state: ref IcState->AppState): int
 {
 	t: IcState->CopyTask;
+	i: int;
 
 	if(state == nil || state.copy == nil)
 		return 0;
@@ -532,8 +592,20 @@ proceed(state: ref IcState->AppState): int
 
 		if(processtask(state, t, state.copy.overwriteall) < 0)
 			state.copy.errors++;
+		else if(cleanupmove(state, t) < 0)
+			state.copy.errors++;
 
 		state.copy.index++;
+	}
+
+	if(state.copy.move){
+		for(i = len state.copy.tasks - 1; i >= 0; i--){
+			if(state.copy.tasks[i].kind != KindDir)
+				continue;
+
+			if(removedirempty(state.copy.tasks[i].src) < 0)
+				state.copy.errors++;
+		}
 	}
 
 	return finish(state);
@@ -542,7 +614,7 @@ proceed(state: ref IcState->AppState): int
 finish(state: ref IcState->AppState): int
 {
 	srcp, dstp: ref IcState->PanelState;
-	errors: int;
+	errors, move: int;
 
 	if(state == nil)
 		return -1;
@@ -553,12 +625,14 @@ finish(state: ref IcState->AppState): int
 	dstp = passivepanel(state);
 
 	errors = state.copy.errors;
+	move = state.copy.move;
 
 	if(srcp != nil)
 		srcp.selected = array[0] of IcState->SelectedItem;
 
 	state.copy.active = 0;
 	state.copy.phase = PhaseNone;
+	state.copy.move = 0;
 	state.copy.index = 0;
 	state.copy.overwriteall = 0;
 	state.copy.target = "";
@@ -573,10 +647,17 @@ finish(state: ref IcState->AppState): int
 		appanel->refresh(state, dstp);
 
 	if(state.ui != nil){
-		if(errors > 0)
-			state.ui.status = "copy finished with errors";
-		else
-			state.ui.status = "copy done";
+		if(errors > 0){
+			if(move)
+				state.ui.status = "move finished with errors";
+			else
+				state.ui.status = "copy finished with errors";
+		}else{
+			if(move)
+				state.ui.status = "move done";
+			else
+				state.ui.status = "copy done";
+		}
 	}
 
 	return 0;
@@ -617,6 +698,8 @@ handlekey(state: ref IcState->AppState, k: int): int
 
 		if(r == IcModal->ResultOverwrite){
 			if(processtask(state, t, 1) < 0)
+				state.copy.errors++;
+			else if(cleanupmove(state, t) < 0)
 				state.copy.errors++;
 
 			state.copy.index++;

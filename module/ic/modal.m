@@ -7,6 +7,7 @@ IcModal: module
 	KindNone: con 0;
 	KindCopyConfirm: con 1;
 	KindOverwrite: con 2;
+	KindMoveConfirm: con 3;
 
 	ResultNone: con 0;
 	ResultOk: con 1;
@@ -26,6 +27,7 @@ IcModal: module
 	close: fn(state: ref IcState->AppState): int;
 
 	showcopyconfirm: fn(state: ref IcState->AppState, count: int, direction, target: string): int;
+	showmoveconfirm: fn(state: ref IcState->AppState, count: int, direction, target: string): int;
 	showoverwrite: fn(state: ref IcState->AppState, path: string): int;
 
 	handlekey: fn(state: ref IcState->AppState, k: int): int;

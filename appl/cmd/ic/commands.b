@@ -16,7 +16,8 @@ IcCopyCmd: module
 	PATH: con "/dis/ic/copycmd.dis";
 
 	init: fn();
-	start: fn(state: ref IcState->AppState): int;
+	startcopy: fn(state: ref IcState->AppState): int;
+	startmove: fn(state: ref IcState->AppState): int;
 };
 
 IcScreenMod: module
@@ -85,7 +86,10 @@ exec(state: ref IcState->AppState, cmd: int): int
 		return appanel->togglemarkadvance(state, state.right);
 
 	IcCommands->CmdCopy =>
-		return copycmd->start(state);
+		return copycmd->startcopy(state);
+
+	IcCommands->CmdMove =>
+		return copycmd->startmove(state);
 	}
 
 	return 0;
