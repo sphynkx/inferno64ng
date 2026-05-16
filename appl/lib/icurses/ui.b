@@ -919,6 +919,64 @@ shadowwindow(u: ref IcUi->Ui, parentid, shadowid, id: int, x, y, w, h: int, titl
 	return window(u, parentid, id, x, y, w, h, title);
 }
 
+modal(u: ref IcUi->Ui, parentid, shadowid, id: int, x, y, w, h: int, title, message, inputlabel, input, checkbox: string, checked, focus, kind: int, button0, button1, button2: string, buttoncount: int, dx, dy: int, styles: array of string): int
+{
+	n, sh: ref IcView->Node;
+
+	if(u == nil || u.tree == nil)
+		return -1;
+
+	if(w < 4)
+		w = 4;
+	if(h < 3)
+		h = 3;
+
+	if(dx != 0 || dy != 0){
+		if(shadowid == IcView->NoId)
+			shadowid = view->allocid(u.tree);
+
+		sh = view->newnode(shadowid, "shadow", IcView->NoId, x + dx, y + dy, w, h);
+		if(styles != nil && len styles > 8)
+			view->setcode(sh, styles[8]);
+
+		if(view->addchildnode(u.tree, parentid, sh) < 0)
+			return -1;
+	}
+
+	if(id == IcView->NoId)
+		id = view->allocid(u.tree);
+
+	n = view->newnode(id, "modal", IcView->NoId, x, y, w, h);
+
+	#
+	# Modal node data:
+	# text     -> title
+	# content  -> message
+	# code     -> inputlabel
+	# hotkey   -> input text
+	# command  -> checkbox label
+	# sarg     -> button0 + "\n" + button1 + "\n" + button2
+	# targetid -> buttoncount
+	# iarg0    -> checked
+	# iarg1    -> focus
+	# iarg2    -> modal kind
+	# styles   -> modal style codes
+	#
+	view->settext(n, title);
+	view->setcontent(n, message);
+	view->setcode(n, inputlabel);
+	view->sethotkey(n, input);
+	view->setaction(n, buttoncount, checkbox);
+	view->setargs(n, button0 + "\n" + button1 + "\n" + button2, checked, focus, kind);
+
+	if(styles != nil)
+		n.styles = styles;
+	else
+		n.styles = array[0] of string;
+
+	return view->addchildnode(u.tree, parentid, n);
+}
+
 button(u: ref IcUi->Ui, parentid, id: int, x, y, w, h: int, label, hotkey: string, targetid: int, command: string): int
 {
 	n: ref IcView->Node;

@@ -65,6 +65,7 @@ IcInputData: module
 
 	init: fn();
 	handlekey: fn(state: ref IcState->AppState, k: int): int;
+	handletick: fn(state: ref IcState->AppState): int;
 };
 
 IcConfigData: module
@@ -243,6 +244,9 @@ run(state: ref IcState->AppState): int
 		}
 
 		if(step.kind == IcUi->StepTick){
+			if(input->handletick(state))
+				screen->redraw(state);
+
 			(nw, nh, resized) = appfw->pollresize(ctx, state.width, state.height);
 			if(resized){
 				state.width = nw;

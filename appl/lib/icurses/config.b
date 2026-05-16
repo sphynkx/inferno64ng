@@ -151,11 +151,23 @@ striplinecomment(s: string): string
 {
 	i: int;
 
+	#
+	# '#' is an inline comment marker.
+	#
+	# ';' is NOT treated as an inline comment because SGR values use it:
+	#   38;2;R;G;B;48;2;R;G;B
+	#
+	# A line starting with ';' is still treated as a comment line.
+	#
+	s = trimspace(s);
+	if(s == "")
+		return "";
+
+	if(s[0] == ';')
+		return "";
+
 	for(i = 0; i < len s; i++){
 		if(s[i] == '#')
-			return trimspace(s[0:i]);
-
-		if(s[i] == ';')
 			return trimspace(s[0:i]);
 	}
 

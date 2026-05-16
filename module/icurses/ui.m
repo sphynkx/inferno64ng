@@ -77,6 +77,7 @@ IcUi: module
 	window: fn(u: ref Ui, parentid, id: int, x, y, w, h: int, title: string): int;
 	shadowwindow: fn(u: ref Ui, parentid, shadowid, id: int, x, y, w, h: int, title: string, dx, dy: int): int;
 	button: fn(u: ref Ui, parentid, id: int, x, y, w, h: int, label, hotkey: string, targetid: int, command: string): int;
+	modal: fn(u: ref Ui, parentid, shadowid, id: int, x, y, w, h: int, title, message, inputlabel, input, checkbox: string, checked, focus, kind: int, button0, button1, button2: string, buttoncount: int, dx, dy: int, styles: array of string): int;
 	canvas: fn(u: ref Ui, parentid, id: int, x, y, w, h: int): int;
 
 	hbar: fn(u: ref Ui, parentid, id: int, x, y, w, value, total: int): int;

@@ -28,6 +28,19 @@ IcState: module
 	{
 		frame: int;
 		panelshadow: int;
+
+		modalanimticks: int;
+
+		modalcopycode: string;
+		modaloverwritecode: string;
+		modalframecode: string;
+		modaltextcode: string;
+		modalshadowcode: string;
+
+		modalfieldcode: string;
+		modalfocuscode: string;
+		modalbuttoncode: string;
+		modalbuttonfocuscode: string;
 	};
 
 	FsEntry: adt
@@ -52,7 +65,7 @@ IcState: module
 	CopyTask: adt
 	{
 		src: string;
-		dst: string;
+		rel: string;
 		kind: string;
 		mode: int;
 	};
@@ -66,16 +79,27 @@ IcState: module
 		overwriteall: int;
 		errors: int;
 
+		target: string;
+		singletarget: int;
+
 		tasks: array of CopyTask;
 	};
 
 	ModalState: adt
 	{
 		active: int;
+		animating: int;
+		animstage: int;
+		animwait: int;
+
 		kind: int;
 
 		title: string;
 		message: string;
+
+		inputlabel: string;
+		input: string;
+
 		checkbox: string;
 		checked: int;
 
@@ -91,10 +115,13 @@ IcState: module
 		hotkey1: string;
 		hotkey2: string;
 
-		windowid: int;
-		messageid: int;
-		checkboxid: int;
-		buttonsid: int;
+		x: int;
+		y: int;
+		w: int;
+		h: int;
+
+		shadowid: int;
+		canvasid: int;
 	};
 
 	PanelState: adt

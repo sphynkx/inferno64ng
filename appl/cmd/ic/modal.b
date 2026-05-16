@@ -7,8 +7,8 @@ IcUiMod: module
 	PATH: con "/dis/lib/icurses/ui.dis";
 
 	init: fn();
-	window: fn(u: ref IcUi->Ui, parentid, id: int, x, y, w, h: int, title: string): int;
-	label: fn(u: ref IcUi->Ui, parentid, id: int, x, y, w: int, text: string): int;
+	node: fn(u: ref IcUi->Ui, parentid, id: int, kind: string, x, y, w, h: int): int;
+	modal: fn(u: ref IcUi->Ui, parentid, shadowid, id: int, x, y, w, h: int, title, message, inputlabel, input, checkbox: string, checked, focus, kind: int, button0, button1, button2: string, buttoncount: int, dx, dy: int, styles: array of string): int;
 };
 
 IcViewMod: module
@@ -22,35 +22,51 @@ IcViewMod: module
 	hidetree: fn(t: ref IcView->Tree, id: int);
 	bringtofront: fn(t: ref IcView->Tree, id: int): int;
 	find: fn(t: ref IcView->Tree, id: int): ref IcView->Node;
-	settext: fn(v: ref IcView->Node, text: string);
+	setcode: fn(v: ref IcView->Node, code: string);
 };
 
 sys: Sys;
 ui: IcUiMod;
 view: IcViewMod;
 
+StageNone: con 0;
+StageShadow: con 1;
+StageWindow: con 2;
+StageClosingShadow: con 3;
+
 TabKey: con 9;
 EnterKey: con 10;
 ReturnKey: con 13;
 EscapeKey: con 27;
 SpaceKey: con 32;
+BackspaceKey: con 8;
+DeleteKey: con 127;
 LeftKey: con 57364;
 RightKey: con 57365;
 
 initstate: fn(state: ref IcState->AppState);
 disposewindow: fn(state: ref IcState->AppState);
+resetids: fn(m: ref IcState->ModalState);
 maxint: fn(a, b: int): int;
 fitw: fn(state: ref IcState->AppState, w: int): int;
-draw: fn(state: ref IcState->AppState): int;
+animticks: fn(state: ref IcState->AppState): int;
 checkboxtext: fn(m: ref IcState->ModalState): string;
-buttonstext: fn(m: ref IcState->ModalState): string;
-refresh: fn(state: ref IcState->AppState);
+buttonlabel: fn(s: string): string;
+buttonw: fn(s: string): int;
+buttonstotalw: fn(m: ref IcState->ModalState): int;
+measure: fn(state: ref IcState->AppState);
+stylecodes: fn(state: ref IcState->AppState): array of string;
+draw: fn(state: ref IcState->AppState): int;
+drawshadow: fn(state: ref IcState->AppState): int;
+drawwindow: fn(state: ref IcState->AppState): int;
 focusmin: fn(m: ref IcState->ModalState): int;
 focusmax: fn(m: ref IcState->ModalState): int;
 focusnext: fn(m: ref IcState->ModalState);
 focusprev: fn(m: ref IcState->ModalState);
 activatefocus: fn(m: ref IcState->ModalState): int;
 hotkey: fn(k: int, h: string): int;
+printable: fn(k: int): int;
+setresult: fn(m: ref IcState->ModalState, r: int): int;
 
 init()
 {
@@ -80,24 +96,46 @@ initstate(state: ref IcState->AppState)
 
 	state.modal = ref IcState->ModalState;
 	state.modal.active = 0;
+	state.modal.animating = 0;
+	state.modal.animstage = StageNone;
+	state.modal.animwait = 0;
+
 	state.modal.kind = IcModal->KindNone;
 	state.modal.title = "";
 	state.modal.message = "";
+	state.modal.inputlabel = "";
+	state.modal.input = "";
 	state.modal.checkbox = "";
 	state.modal.checked = 0;
+
 	state.modal.focus = IcModal->FocusButton0;
 	state.modal.result = IcModal->ResultNone;
+
 	state.modal.buttoncount = 0;
 	state.modal.button0 = "";
 	state.modal.button1 = "";
 	state.modal.button2 = "";
+
 	state.modal.hotkey0 = "";
 	state.modal.hotkey1 = "";
 	state.modal.hotkey2 = "";
-	state.modal.windowid = -1;
-	state.modal.messageid = -1;
-	state.modal.checkboxid = -1;
-	state.modal.buttonsid = -1;
+
+	state.modal.x = 0;
+	state.modal.y = 0;
+	state.modal.w = 0;
+	state.modal.h = 0;
+
+	state.modal.shadowid = -1;
+	state.modal.canvasid = -1;
+}
+
+resetids(m: ref IcState->ModalState)
+{
+	if(m == nil)
+		return;
+
+	m.shadowid = -1;
+	m.canvasid = -1;
 }
 
 active(state: ref IcState->AppState): int
@@ -113,13 +151,13 @@ disposewindow(state: ref IcState->AppState)
 	if(state == nil || state.ui == nil || state.ui.tree == nil || state.modal == nil)
 		return;
 
-	if(state.modal.windowid >= 0)
-		view->removetree(state.ui.tree, state.modal.windowid);
+	if(state.modal.canvasid >= 0)
+		view->removetree(state.ui.tree, state.modal.canvasid);
 
-	state.modal.windowid = -1;
-	state.modal.messageid = -1;
-	state.modal.checkboxid = -1;
-	state.modal.buttonsid = -1;
+	if(state.modal.shadowid >= 0)
+		view->removetree(state.ui.tree, state.modal.shadowid);
+
+	resetids(state.modal);
 }
 
 close(state: ref IcState->AppState): int
@@ -128,9 +166,24 @@ close(state: ref IcState->AppState): int
 		return -1;
 
 	initstate(state);
+
+	if(animticks(state) > 0 && state.modal.animstage == StageWindow){
+		if(state.ui != nil && state.ui.tree != nil && state.modal.canvasid >= 0)
+			view->removetree(state.ui.tree, state.modal.canvasid);
+
+		state.modal.canvasid = -1;
+		state.modal.active = 0;
+		state.modal.animating = 1;
+		state.modal.animstage = StageClosingShadow;
+		state.modal.animwait = 0;
+		return 0;
+	}
+
 	disposewindow(state);
 
 	state.modal.active = 0;
+	state.modal.animating = 0;
+	state.modal.animstage = StageNone;
 	state.modal.kind = IcModal->KindNone;
 	state.modal.result = IcModal->ResultNone;
 
@@ -161,10 +214,18 @@ fitw(state: ref IcState->AppState, w: int): int
 	if(w > maxw)
 		w = maxw;
 
-	if(w < 34)
-		w = 34;
+	if(w < 38)
+		w = 38;
 
 	return w;
+}
+
+animticks(state: ref IcState->AppState): int
+{
+	if(state != nil && state.theme != nil && state.theme.modalanimticks >= 0)
+		return state.theme.modalanimticks;
+
+	return 0;
 }
 
 checkboxtext(m: ref IcState->ModalState): string
@@ -178,91 +239,109 @@ checkboxtext(m: ref IcState->ModalState): string
 	return "[ ] " + m.checkbox;
 }
 
-buttonstext(m: ref IcState->ModalState): string
+buttonlabel(s: string): string
 {
-	s: string;
-
-	if(m == nil)
-		return "";
-
-	s = "";
-
-	if(m.buttoncount > 0){
-		if(m.focus == IcModal->FocusButton0)
-			s += "[" + m.button0 + "]";
-		else
-			s += " " + m.button0 + " ";
-	}
-
-	if(m.buttoncount > 1){
-		s += "  ";
-		if(m.focus == IcModal->FocusButton1)
-			s += "[" + m.button1 + "]";
-		else
-			s += " " + m.button1 + " ";
-	}
-
-	if(m.buttoncount > 2){
-		s += "  ";
-		if(m.focus == IcModal->FocusButton2)
-			s += "[" + m.button2 + "]";
-		else
-			s += " " + m.button2 + " ";
-	}
-
-	return s;
+	return "[" + s + "]";
 }
 
-draw(state: ref IcState->AppState): int
+buttonw(s: string): int
+{
+	return len buttonlabel(s) + 2;
+}
+
+buttonstotalw(m: ref IcState->ModalState): int
+{
+	w: int;
+
+	if(m == nil)
+		return 0;
+
+	w = 0;
+
+	if(m.buttoncount > 0)
+		w += buttonw(m.button0);
+	if(m.buttoncount > 1)
+		w += 2 + buttonw(m.button1);
+	if(m.buttoncount > 2)
+		w += 2 + buttonw(m.button2);
+
+	return w;
+}
+
+measure(state: ref IcState->AppState)
 {
 	m: ref IcState->ModalState;
-	w, h, x, y, bw: int;
+	w, h: int;
 
-	if(state == nil || state.ui == nil || state.ui.tree == nil)
-		return -1;
-
-	initstate(state);
 	m = state.modal;
-
-	disposewindow(state);
 
 	w = len m.title + 8;
 	w = maxint(w, len m.message + 6);
+	w = maxint(w, len m.inputlabel + len m.input + 8);
 	w = maxint(w, len checkboxtext(m) + 6);
-	w = maxint(w, len buttonstext(m) + 6);
+	w = maxint(w, buttonstotalw(m) + 6);
 	w = fitw(state, w);
 
 	h = 7;
+	if(m.inputlabel != "")
+		h += 2;
 	if(m.checkbox != "")
-		h = 8;
+		h += 2;
 
-	x = (state.width - w) / 2;
-	y = (state.height - h) / 2;
-	if(x < 0)
-		x = 0;
-	if(y < 0)
-		y = 0;
+	m.w = w;
+	m.h = h;
+	m.x = (state.width - w) / 2;
+	m.y = (state.height - h) / 2;
 
-	m.windowid = view->allocid(state.ui.tree);
-	m.messageid = view->allocid(state.ui.tree);
-	m.checkboxid = view->allocid(state.ui.tree);
-	m.buttonsid = view->allocid(state.ui.tree);
+	if(m.x < 0)
+		m.x = 0;
+	if(m.y < 0)
+		m.y = 0;
+}
 
-	if(ui->window(state.ui, state.modalid, m.windowid, x, y, w, h, m.title) < 0)
+stylecodes(state: ref IcState->AppState): array of string
+{
+	a: array of string;
+
+	a = array[9] of string;
+
+	if(state == nil || state.theme == nil)
+		return a;
+
+	a[0] = state.theme.modalcopycode;
+	a[1] = state.theme.modaloverwritecode;
+	a[2] = state.theme.modalframecode;
+	a[3] = state.theme.modaltextcode;
+	a[4] = state.theme.modalfieldcode;
+	a[5] = state.theme.modalfocuscode;
+	a[6] = state.theme.modalbuttoncode;
+	a[7] = state.theme.modalbuttonfocuscode;
+
+	#
+	# Do not override framework shadow from the app theme for now.
+	# The app keeps modal_shadow_code in config/state, but shadow rendering
+	# stays on the framework default path until shadow style support is finalized.
+	#
+	a[8] = "";
+
+	return a;
+}
+
+drawshadow(state: ref IcState->AppState): int
+{
+	m: ref IcState->ModalState;
+
+	if(state == nil || state.ui == nil || state.ui.tree == nil || state.modal == nil)
 		return -1;
 
-	ui->label(state.ui, m.windowid, m.messageid, 2, 2, w - 4, m.message);
+	m = state.modal;
 
-	if(m.checkbox != "")
-		ui->label(state.ui, m.windowid, m.checkboxid, 2, 4, w - 4, checkboxtext(m));
+	if(m.shadowid >= 0)
+		view->removetree(state.ui.tree, m.shadowid);
 
-	bw = len buttonstext(m);
-	if(bw > w - 4)
-		bw = w - 4;
-	if(bw < 1)
-		bw = 1;
-
-	ui->label(state.ui, m.windowid, m.buttonsid, (w - bw) / 2, h - 2, bw, buttonstext(m));
+	m.shadowid = view->allocid(state.ui.tree);
+	if(ui->node(state.ui, state.modalid, m.shadowid, "shadow", m.x + 2, m.y + 1, m.w, m.h) < 0)
+		return -1;
 
 	view->showtree(state.ui.tree, state.modalid);
 	view->bringtofront(state.ui.tree, state.modalid);
@@ -270,33 +349,74 @@ draw(state: ref IcState->AppState): int
 	return 0;
 }
 
-refresh(state: ref IcState->AppState)
+drawwindow(state: ref IcState->AppState): int
 {
-	n: ref IcView->Node;
+	m: ref IcState->ModalState;
 
 	if(state == nil || state.ui == nil || state.ui.tree == nil || state.modal == nil)
-		return;
+		return -1;
 
-	n = view->find(state.ui.tree, state.modal.checkboxid);
-	if(n != nil)
-		view->settext(n, checkboxtext(state.modal));
+	m = state.modal;
 
-	n = view->find(state.ui.tree, state.modal.buttonsid);
-	if(n != nil)
-		view->settext(n, buttonstext(state.modal));
+	if(m.canvasid >= 0)
+		view->removetree(state.ui.tree, m.canvasid);
+
+	if(m.shadowid >= 0)
+		view->removetree(state.ui.tree, m.shadowid);
+
+	m.shadowid = view->allocid(state.ui.tree);
+	m.canvasid = view->allocid(state.ui.tree);
+
+	if(ui->modal(state.ui, state.modalid, m.shadowid, m.canvasid, m.x, m.y, m.w, m.h,
+		m.title, m.message, m.inputlabel, m.input, m.checkbox,
+		m.checked, m.focus, m.kind,
+		m.button0, m.button1, m.button2, m.buttoncount, 2, 1, stylecodes(state)) < 0)
+		return -1;
+
+	view->showtree(state.ui.tree, state.modalid);
+	view->bringtofront(state.ui.tree, state.modalid);
+
+	m.animstage = StageWindow;
+	return 0;
 }
 
-showcopyconfirm(state: ref IcState->AppState, count: int, dst: string): int
+draw(state: ref IcState->AppState): int
+{
+	if(state == nil || state.ui == nil || state.ui.tree == nil)
+		return -1;
+
+	initstate(state);
+	measure(state);
+	disposewindow(state);
+
+	if(animticks(state) > 0){
+		state.modal.animating = 1;
+		state.modal.animstage = StageShadow;
+		state.modal.animwait = 0;
+		drawshadow(state);
+		return 0;
+	}
+
+	state.modal.animating = 0;
+	state.modal.animstage = StageWindow;
+
+	drawshadow(state);
+	return drawwindow(state);
+}
+
+showcopyconfirm(state: ref IcState->AppState, count: int, direction, target: string): int
 {
 	initstate(state);
 
 	state.modal.active = 1;
 	state.modal.kind = IcModal->KindCopyConfirm;
 	state.modal.title = "Copy";
-	state.modal.message = "Copy " + string count + " item(s) to " + dst;
+	state.modal.message = "Copy " + string count + " item(s)  " + direction;
+	state.modal.inputlabel = "Copy to:";
+	state.modal.input = target;
 	state.modal.checkbox = "Overwrite all";
 	state.modal.checked = 0;
-	state.modal.focus = IcModal->FocusButton0;
+	state.modal.focus = IcModal->FocusInput;
 	state.modal.result = IcModal->ResultNone;
 
 	state.modal.buttoncount = 2;
@@ -319,6 +439,8 @@ showoverwrite(state: ref IcState->AppState, path: string): int
 	state.modal.kind = IcModal->KindOverwrite;
 	state.modal.title = "Overwrite";
 	state.modal.message = "Overwrite " + path + "?";
+	state.modal.inputlabel = "";
+	state.modal.input = "";
 	state.modal.checkbox = "";
 	state.modal.checked = 0;
 	state.modal.focus = IcModal->FocusButton0;
@@ -338,6 +460,9 @@ showoverwrite(state: ref IcState->AppState, path: string): int
 
 focusmin(m: ref IcState->ModalState): int
 {
+	if(m != nil && m.inputlabel != "")
+		return IcModal->FocusInput;
+
 	if(m != nil && m.checkbox != "")
 		return IcModal->FocusCheckbox;
 
@@ -363,6 +488,19 @@ focusnext(m: ref IcState->ModalState)
 	if(m == nil)
 		return;
 
+	if(m.focus == IcModal->FocusInput){
+		if(m.checkbox != "")
+			m.focus = IcModal->FocusCheckbox;
+		else
+			m.focus = IcModal->FocusButton0;
+		return;
+	}
+
+	if(m.focus == IcModal->FocusCheckbox){
+		m.focus = IcModal->FocusButton0;
+		return;
+	}
+
 	m.focus++;
 	if(m.focus > focusmax(m))
 		m.focus = focusmin(m);
@@ -373,9 +511,28 @@ focusprev(m: ref IcState->ModalState)
 	if(m == nil)
 		return;
 
-	m.focus--;
-	if(m.focus < focusmin(m))
+	if(m.focus == IcModal->FocusInput){
 		m.focus = focusmax(m);
+		return;
+	}
+
+	if(m.focus == IcModal->FocusCheckbox){
+		if(m.inputlabel != "")
+			m.focus = IcModal->FocusInput;
+		else
+			m.focus = focusmax(m);
+		return;
+	}
+
+	m.focus--;
+	if(m.focus < IcModal->FocusButton0){
+		if(m.checkbox != "")
+			m.focus = IcModal->FocusCheckbox;
+		else if(m.inputlabel != "")
+			m.focus = IcModal->FocusInput;
+		else
+			m.focus = focusmax(m);
+	}
 }
 
 activatefocus(m: ref IcState->ModalState): int
@@ -387,6 +544,9 @@ activatefocus(m: ref IcState->ModalState): int
 		m.checked = !m.checked;
 		return IcModal->ResultNone;
 	}
+
+	if(m.focus == IcModal->FocusInput)
+		return IcModal->ResultOk;
 
 	if(m.kind == IcModal->KindCopyConfirm){
 		if(m.focus == IcModal->FocusButton0)
@@ -420,6 +580,20 @@ hotkey(k: int, h: string): int
 	return 0;
 }
 
+printable(k: int): int
+{
+	return k >= 32 && k < 127;
+}
+
+setresult(m: ref IcState->ModalState, r: int): int
+{
+	if(m == nil)
+		return IcModal->ResultCancel;
+
+	m.result = r;
+	return r;
+}
+
 handlekey(state: ref IcState->AppState, k: int): int
 {
 	m: ref IcState->ModalState;
@@ -430,64 +604,120 @@ handlekey(state: ref IcState->AppState, k: int): int
 
 	m = state.modal;
 
-	if(k == EscapeKey){
-		m.result = IcModal->ResultCancel;
-		return m.result;
-	}
+	if(m.animstage != StageWindow)
+		return IcModal->ResultNone;
 
-	if(hotkey(k, m.hotkey0)){
-		if(m.kind == IcModal->KindOverwrite)
-			m.result = IcModal->ResultOverwrite;
-		else
-			m.result = IcModal->ResultOk;
-		return m.result;
-	}
+	if(k == EscapeKey)
+		return setresult(m, IcModal->ResultCancel);
 
-	if(hotkey(k, m.hotkey1)){
-		if(m.kind == IcModal->KindOverwrite)
-			m.result = IcModal->ResultSkip;
-		else
-			m.result = IcModal->ResultCancel;
-		return m.result;
-	}
+	if(m.focus != IcModal->FocusInput){
+		if(hotkey(k, m.hotkey0)){
+			if(m.kind == IcModal->KindOverwrite)
+				return setresult(m, IcModal->ResultOverwrite);
+			return setresult(m, IcModal->ResultOk);
+		}
 
-	if(hotkey(k, m.hotkey2)){
-		m.result = IcModal->ResultCancel;
-		return m.result;
+		if(hotkey(k, m.hotkey1)){
+			if(m.kind == IcModal->KindOverwrite)
+				return setresult(m, IcModal->ResultSkip);
+			return setresult(m, IcModal->ResultCancel);
+		}
+
+		if(hotkey(k, m.hotkey2))
+			return setresult(m, IcModal->ResultCancel);
 	}
 
 	if(k == TabKey || k == RightKey){
 		focusnext(m);
-		refresh(state);
+		drawwindow(state);
 		return IcModal->ResultNone;
 	}
 
 	if(k == LeftKey){
 		focusprev(m);
-		refresh(state);
+		drawwindow(state);
 		return IcModal->ResultNone;
 	}
 
-	if(k == SpaceKey){
-		if(m.focus == IcModal->FocusCheckbox)
-			m.checked = !m.checked;
-		else{
-			r = activatefocus(m);
-			m.result = r;
-			return r;
+	if(k == SpaceKey && m.focus == IcModal->FocusCheckbox){
+		m.checked = !m.checked;
+		drawwindow(state);
+		return IcModal->ResultNone;
+	}
+
+	if(m.focus == IcModal->FocusInput){
+		if(k == BackspaceKey || k == DeleteKey){
+			if(len m.input > 0)
+				m.input = m.input[0:len m.input - 1];
+			drawwindow(state);
+			return IcModal->ResultNone;
 		}
 
-		refresh(state);
-		return IcModal->ResultNone;
+		if(printable(k)){
+			m.input += string k;
+			drawwindow(state);
+			return IcModal->ResultNone;
+		}
+	}
+
+	if(k == SpaceKey){
+		r = activatefocus(m);
+		if(r == IcModal->ResultNone)
+			drawwindow(state);
+		return setresult(m, r);
 	}
 
 	if(k == EnterKey || k == ReturnKey){
 		r = activatefocus(m);
-		m.result = r;
 		if(r == IcModal->ResultNone)
-			refresh(state);
-		return r;
+			drawwindow(state);
+		return setresult(m, r);
 	}
 
 	return IcModal->ResultNone;
+}
+
+handletick(state: ref IcState->AppState): int
+{
+	m: ref IcState->ModalState;
+	delay: int;
+
+	if(state == nil || state.modal == nil)
+		return 0;
+
+	m = state.modal;
+
+	if(!m.animating)
+		return 0;
+
+	delay = animticks(state);
+	if(delay <= 0)
+		delay = 1;
+
+	m.animwait++;
+	if(m.animwait < delay)
+		return 0;
+
+	m.animwait = 0;
+
+	if(m.animstage == StageShadow){
+		m.animstage = StageWindow;
+		drawwindow(state);
+		return 1;
+	}
+
+	if(m.animstage == StageClosingShadow){
+		disposewindow(state);
+		m.animating = 0;
+		m.animstage = StageNone;
+		m.kind = IcModal->KindNone;
+		m.result = IcModal->ResultNone;
+
+		if(state.ui != nil && state.ui.tree != nil)
+			view->hidetree(state.ui.tree, state.modalid);
+
+		return 1;
+	}
+
+	return 0;
 }

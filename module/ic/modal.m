@@ -18,14 +18,16 @@ IcModal: module
 	FocusButton0: con 1;
 	FocusButton1: con 2;
 	FocusButton2: con 3;
+	FocusInput: con 4;
 
 	init: fn();
 
 	active: fn(state: ref IcState->AppState): int;
 	close: fn(state: ref IcState->AppState): int;
 
-	showcopyconfirm: fn(state: ref IcState->AppState, count: int, dst: string): int;
+	showcopyconfirm: fn(state: ref IcState->AppState, count: int, direction, target: string): int;
 	showoverwrite: fn(state: ref IcState->AppState, path: string): int;
 
 	handlekey: fn(state: ref IcState->AppState, k: int): int;
+	handletick: fn(state: ref IcState->AppState): int;
 };

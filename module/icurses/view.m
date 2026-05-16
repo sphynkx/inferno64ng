@@ -20,6 +20,7 @@ IcView: module
 		text:       string;
 		content:    string;
 		code:       string;
+		styles:     array of string;
 
 		hotkey:     string;
 		targetid:   int;

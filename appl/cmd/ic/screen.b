@@ -9,6 +9,7 @@ IcUiMod: module
 
 	init: fn();
 	group: fn(u: ref IcUi->Ui, parentid, id: int, x, y, w, h: int): int;
+	setframestyle: fn(u: ref IcUi->Ui, style: int);
 	draw: fn(u: ref IcUi->Ui);
 };
 
@@ -153,6 +154,9 @@ build(state: ref IcState->AppState): int
 		return -1;
 
 	state.rootid = root.id;
+
+	if(state.theme != nil)
+		ui->setframestyle(state.ui, state.theme.frame);
 
 	if(state.screensaverid <= 0)
 		state.screensaverid = view->allocid(state.ui.tree);

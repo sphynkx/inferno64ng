@@ -183,6 +183,7 @@ newroot(): ref IcView->Node
 	v.focusable = 0;
 	v.dirty = 0;
 	v.children = array[0] of int;
+	v.styles = array[0] of string;
 	return v;
 }
 
@@ -216,6 +217,7 @@ newnode(id: int, kind: string, parentid: int, x, y, w, h: int): ref IcView->Node
 	v.focusable = 0;
 	v.dirty = 0;
 	v.children = array[0] of int;
+	v.styles = array[0] of string;
 	return v;
 }
 

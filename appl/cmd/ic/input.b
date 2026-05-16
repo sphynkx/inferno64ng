@@ -33,9 +33,18 @@ IcCopyCmd: module
 	handlekey: fn(state: ref IcState->AppState, k: int): int;
 };
 
+IcModal: module
+{
+	PATH: con "/dis/ic/modal.dis";
+
+	init: fn();
+	handletick: fn(state: ref IcState->AppState): int;
+};
+
 commands: IcCommands;
 appanel: IcAppPanel;
 copycmd: IcCopyCmd;
+modal: IcModal;
 
 CtrlO: con 15;
 TabKey: con 9;
@@ -57,9 +66,14 @@ init()
 	if(copycmd == nil)
 		raise "fail:load ic/copycmd";
 
+	modal = load IcModal IcModal->PATH;
+	if(modal == nil)
+		raise "fail:load ic/modal";
+
 	commands->init();
 	appanel->init();
 	copycmd->init();
+	modal->init();
 }
 
 handlekey(state: ref IcState->AppState, k: int): int
@@ -89,4 +103,12 @@ handlekey(state: ref IcState->AppState, k: int): int
 		return appanel->handlekey(state, state.left, k);
 
 	return appanel->handlekey(state, state.right, k);
+}
+
+handletick(state: ref IcState->AppState): int
+{
+	if(state == nil)
+		return 0;
+
+	return modal->handletick(state);
 }

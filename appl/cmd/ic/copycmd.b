@@ -31,7 +31,7 @@ IcModal: module
 
 	init: fn();
 	close: fn(state: ref IcState->AppState): int;
-	showcopyconfirm: fn(state: ref IcState->AppState, count: int, dst: string): int;
+	showcopyconfirm: fn(state: ref IcState->AppState, count: int, direction, target: string): int;
 	showoverwrite: fn(state: ref IcState->AppState, path: string): int;
 	handlekey: fn(state: ref IcState->AppState, k: int): int;
 };
@@ -56,16 +56,19 @@ trimdirsuffix: fn(name: string): string;
 basename: fn(path: string): string;
 joinpath: fn(base, name: string): string;
 samefile: fn(a, b: Sys->Dir): int;
+copydst: fn(state: ref IcState->AppState, t: IcState->CopyTask): string;
 appendtask: fn(a: array of IcState->CopyTask, t: IcState->CopyTask): array of IcState->CopyTask;
-prepareone: fn(tasks: array of IcState->CopyTask, src, dstbase: string): array of IcState->CopyTask;
-preparecurrent: fn(srcp, dstp: ref IcState->PanelState): array of IcState->CopyTask;
-prepareselected: fn(srcp, dstp: ref IcState->PanelState): array of IcState->CopyTask;
+prepareone: fn(tasks: array of IcState->CopyTask, src, rel: string): array of IcState->CopyTask;
+preparecurrent: fn(srcp: ref IcState->PanelState): array of IcState->CopyTask;
+prepareselected: fn(srcp: ref IcState->PanelState): array of IcState->CopyTask;
 currentpath: fn(srcp: ref IcState->PanelState): string;
+directiontext: fn(state: ref IcState->AppState): string;
+defaulttarget: fn(state: ref IcState->AppState, srcp, dstp: ref IcState->PanelState): string;
 makeparentdirs: fn(path: string): int;
 copyfile: fn(src, dst: string, overwrite: int): int;
 makedir: fn(path: string, mode: int): int;
 processtask: fn(state: ref IcState->AppState, t: IcState->CopyTask, overwrite: int): int;
-conflict: fn(t: IcState->CopyTask): int;
+conflict: fn(state: ref IcState->AppState, t: IcState->CopyTask): int;
 proceed: fn(state: ref IcState->AppState): int;
 finish: fn(state: ref IcState->AppState): int;
 
@@ -106,6 +109,8 @@ initcopy(state: ref IcState->AppState)
 	state.copy.index = 0;
 	state.copy.overwriteall = 0;
 	state.copy.errors = 0;
+	state.copy.target = "";
+	state.copy.singletarget = 0;
 	state.copy.tasks = array[0] of IcState->CopyTask;
 }
 
@@ -183,6 +188,17 @@ samefile(a, b: Sys->Dir): int
 	return a.qid.path == b.qid.path && a.dev == b.dev && a.dtype == b.dtype;
 }
 
+copydst(state: ref IcState->AppState, t: IcState->CopyTask): string
+{
+	if(state != nil && state.copy != nil && state.copy.singletarget)
+		return state.copy.target;
+
+	if(state == nil || state.copy == nil)
+		return t.rel;
+
+	return joinpath(state.copy.target, t.rel);
+}
+
 appendtask(a: array of IcState->CopyTask, t: IcState->CopyTask): array of IcState->CopyTask
 {
 	r: array of IcState->CopyTask;
@@ -204,24 +220,21 @@ appendtask(a: array of IcState->CopyTask, t: IcState->CopyTask): array of IcStat
 	return r;
 }
 
-prepareone(tasks: array of IcState->CopyTask, src, dstbase: string): array of IcState->CopyTask
+prepareone(tasks: array of IcState->CopyTask, src, rel: string): array of IcState->CopyTask
 {
 	ok, n, i: int;
 	d: Sys->Dir;
 	fd: ref Sys->FD;
 	dirs: array of Sys->Dir;
-	dst: string;
 	t: IcState->CopyTask;
 
 	(ok, d) = sys->stat(src);
 	if(ok < 0)
 		return tasks;
 
-	dst = joinpath(dstbase, basename(src));
-
 	if((d.mode & Sys->DMDIR) != 0){
 		t.src = src;
-		t.dst = dst;
+		t.rel = rel;
 		t.kind = KindDir;
 		t.mode = d.mode;
 		tasks = appendtask(tasks, t);
@@ -236,14 +249,14 @@ prepareone(tasks: array of IcState->CopyTask, src, dstbase: string): array of Ic
 				break;
 
 			for(i = 0; i < n; i++)
-				tasks = prepareone(tasks, joinpath(src, dirs[i].name), dst);
+				tasks = prepareone(tasks, joinpath(src, dirs[i].name), joinpath(rel, dirs[i].name));
 		}
 
 		return tasks;
 	}
 
 	t.src = src;
-	t.dst = dst;
+	t.rel = rel;
 	t.kind = KindFile;
 	t.mode = d.mode;
 	return appendtask(tasks, t);
@@ -268,37 +281,62 @@ currentpath(srcp: ref IcState->PanelState): string
 	return joinpath(srcp.path, name);
 }
 
-preparecurrent(srcp, dstp: ref IcState->PanelState): array of IcState->CopyTask
+preparecurrent(srcp: ref IcState->PanelState): array of IcState->CopyTask
 {
 	src: string;
 	tasks: array of IcState->CopyTask;
 
 	tasks = array[0] of IcState->CopyTask;
 
-	if(srcp == nil || dstp == nil)
+	if(srcp == nil)
 		return tasks;
 
 	src = currentpath(srcp);
 	if(src == "")
 		return tasks;
 
-	return prepareone(tasks, src, dstp.path);
+	return prepareone(tasks, src, basename(src));
 }
 
-prepareselected(srcp, dstp: ref IcState->PanelState): array of IcState->CopyTask
+prepareselected(srcp: ref IcState->PanelState): array of IcState->CopyTask
 {
 	i: int;
 	tasks: array of IcState->CopyTask;
 
 	tasks = array[0] of IcState->CopyTask;
 
-	if(srcp == nil || dstp == nil || srcp.selected == nil)
+	if(srcp == nil || srcp.selected == nil)
 		return tasks;
 
 	for(i = 0; i < len srcp.selected; i++)
-		tasks = prepareone(tasks, srcp.selected[i].path, dstp.path);
+		tasks = prepareone(tasks, srcp.selected[i].path, basename(srcp.selected[i].path));
 
 	return tasks;
+}
+
+directiontext(state: ref IcState->AppState): string
+{
+	if(state == nil)
+		return "";
+
+	if(state.activepanel == IcState->PanelLeft)
+		return "Left => Right";
+
+	return "Right => Left";
+}
+
+defaulttarget(state: ref IcState->AppState, srcp, dstp: ref IcState->PanelState): string
+{
+	if(state == nil || state.copy == nil || dstp == nil)
+		return "";
+
+	if(len state.copy.tasks == 1 && state.copy.tasks[0].kind == KindFile){
+		state.copy.singletarget = 1;
+		return joinpath(dstp.path, state.copy.tasks[0].rel);
+	}
+
+	state.copy.singletarget = 0;
+	return dstp.path;
 }
 
 makeparentdirs(path: string): int
@@ -415,15 +453,17 @@ makedir(path: string, mode: int): int
 
 processtask(state: ref IcState->AppState, t: IcState->CopyTask, overwrite: int): int
 {
-	state = state;
+	dst: string;
+
+	dst = copydst(state, t);
 
 	if(t.kind == KindDir)
-		return makedir(t.dst, t.mode);
+		return makedir(dst, t.mode);
 
-	return copyfile(t.src, t.dst, overwrite);
+	return copyfile(t.src, dst, overwrite);
 }
 
-conflict(t: IcState->CopyTask): int
+conflict(state: ref IcState->AppState, t: IcState->CopyTask): int
 {
 	ok: int;
 	d: Sys->Dir;
@@ -431,7 +471,7 @@ conflict(t: IcState->CopyTask): int
 	if(t.kind != KindFile)
 		return 0;
 
-	(ok, d) = sys->stat(t.dst);
+	(ok, d) = sys->stat(copydst(state, t));
 	d = d;
 
 	return ok >= 0;
@@ -457,16 +497,20 @@ start(state: ref IcState->AppState): int
 	state.copy.index = 0;
 	state.copy.overwriteall = 0;
 	state.copy.errors = 0;
+	state.copy.target = "";
+	state.copy.singletarget = 0;
 
 	if(srcp.selected != nil && len srcp.selected > 0)
-		state.copy.tasks = prepareselected(srcp, dstp);
+		state.copy.tasks = prepareselected(srcp);
 	else
-		state.copy.tasks = preparecurrent(srcp, dstp);
+		state.copy.tasks = preparecurrent(srcp);
 
 	if(len state.copy.tasks == 0)
 		return finish(state);
 
-	return modal->showcopyconfirm(state, len state.copy.tasks, dstp.path);
+	state.copy.target = defaulttarget(state, srcp, dstp);
+
+	return modal->showcopyconfirm(state, len state.copy.tasks, directiontext(state), state.copy.target);
 }
 
 proceed(state: ref IcState->AppState): int
@@ -481,9 +525,9 @@ proceed(state: ref IcState->AppState): int
 	while(state.copy.index < len state.copy.tasks){
 		t = state.copy.tasks[state.copy.index];
 
-		if(conflict(t) && !state.copy.overwriteall){
+		if(conflict(state, t) && !state.copy.overwriteall){
 			state.copy.phase = PhaseOverwrite;
-			return modal->showoverwrite(state, t.dst);
+			return modal->showoverwrite(state, copydst(state, t));
 		}
 
 		if(processtask(state, t, state.copy.overwriteall) < 0)
@@ -498,6 +542,7 @@ proceed(state: ref IcState->AppState): int
 finish(state: ref IcState->AppState): int
 {
 	srcp, dstp: ref IcState->PanelState;
+	errors: int;
 
 	if(state == nil)
 		return -1;
@@ -507,6 +552,8 @@ finish(state: ref IcState->AppState): int
 	srcp = activepanel(state);
 	dstp = passivepanel(state);
 
+	errors = state.copy.errors;
+
 	if(srcp != nil)
 		srcp.selected = array[0] of IcState->SelectedItem;
 
@@ -514,6 +561,8 @@ finish(state: ref IcState->AppState): int
 	state.copy.phase = PhaseNone;
 	state.copy.index = 0;
 	state.copy.overwriteall = 0;
+	state.copy.target = "";
+	state.copy.singletarget = 0;
 	state.copy.tasks = array[0] of IcState->CopyTask;
 
 	modal->close(state);
@@ -524,7 +573,7 @@ finish(state: ref IcState->AppState): int
 		appanel->refresh(state, dstp);
 
 	if(state.ui != nil){
-		if(state.copy.errors > 0)
+		if(errors > 0)
 			state.ui.status = "copy finished with errors";
 		else
 			state.ui.status = "copy done";
@@ -550,8 +599,13 @@ handlekey(state: ref IcState->AppState, k: int): int
 			return finish(state);
 
 		if(r == IcModal->ResultOk){
-			if(state.modal != nil)
+			if(state.modal != nil){
 				state.copy.overwriteall = state.modal.checked != 0;
+				state.copy.target = state.modal.input;
+			}
+
+			if(state.copy.target == "")
+				return finish(state);
 
 			modal->close(state);
 			return proceed(state);
