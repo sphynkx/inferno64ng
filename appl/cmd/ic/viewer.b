@@ -224,7 +224,7 @@ viewh, w, h:     int;
 nw, nh, resized: int;
 running:         int;
 
-mode = mode;# reserved for future hex mode
+mode = mode;	# reserved for future hex mode
 
 lines = loadlines(path);
 if(lines == nil)
