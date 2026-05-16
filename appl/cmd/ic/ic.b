@@ -1,30 +1,34 @@
 implement Command;
 
+include "sys.m";
 include "draw.m";
-include "ic/app.m";
 
 Command: module
 {
 	init: fn(ctxt: ref Draw->Context, argv: list of string);
 };
 
+IcAppRunner: module
+{
+	PATH: con "/dis/ic/app.dis";
+
+	init: fn();
+	runnew: fn(): int;
+};
+
 init(ctxt: ref Draw->Context, argv: list of string)
 {
-	app: IcApp;
-	state: ref IcState->AppState;
+	app: IcAppRunner;
 
 	ctxt = ctxt;
 	argv = argv;
 
-	app = load IcApp IcApp->PATH;
+	app = load IcAppRunner IcAppRunner->PATH;
 	if(app == nil)
 		raise "fail:load ic/app";
 
 	app->init();
 
-	state = app->newstate();
-	if(state == nil)
-		raise "fail:ic/state";
-
-	app->run(state);
+	if(app->runnew() < 0)
+		raise "fail:ic/run";
 }

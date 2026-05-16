@@ -188,6 +188,17 @@ newstate(): ref IcState->AppState
 	return s;
 }
 
+runnew(): int
+{
+	state: ref IcState->AppState;
+
+	state = newstate();
+	if(state == nil)
+		return -1;
+
+	return run(state);
+}
+
 run(state: ref IcState->AppState): int
 {
 	ctx: ref IcursesApp->Context;

@@ -10,6 +10,7 @@ TARG=\
 	deletecmd.dis\
 	fsmodel.dis\
 	ic.dis\
+	icview.dis\
 	input.dis\
 	layout.dis\
 	mkdircmd.dis\
@@ -17,6 +18,8 @@ TARG=\
 	screen.dis\
 	theme.dis\
 	topbar.dis\
+	viewcmd.dis\
+	viewer.dis\
 
 MODULES=\
 
@@ -37,6 +40,8 @@ SYSMODULES=\
 	ic/state.m\
 	ic/theme.m\
 	ic/topbar.m\
+	ic/viewcmd.m\
+	ic/viewer.m\
 
 DISBIN=$ROOT/dis/ic
 
@@ -49,6 +54,9 @@ install:V: all
 	cp *.dis $ROOT/dis/ic
 	rm -f $ROOT/dis/ic.dis
 	mv $ROOT/dis/ic/ic.dis $ROOT/dis/ic.dis
+	rm -f $ROOT/dis/icview.dis
+	mv $ROOT/dis/ic/icview.dis $ROOT/dis/icview.dis
 
 nuke:V: nuke-std
 	rm -f $ROOT/dis/ic.dis
+	rm -f $ROOT/dis/icview.dis

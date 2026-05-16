@@ -14,6 +14,7 @@ IcCommands: module
 	CmdMove: con 6;
 	CmdMkdir: con 7;
 	CmdDelete: con 8;
+	CmdView: con 9;
 
 	init: fn();
 	exec: fn(state: ref IcState->AppState, cmd: int): int;
@@ -81,15 +82,11 @@ bottombar: IcBottomBar;
 
 CtrlO: con 15;
 TabKey: con 9;
-F1Key: con 57409;
-F2Key: con 57410;
 F3Key: con 57411;
-F4Key: con 57412;
 F5Key: con 57413;
 F6Key: con 57414;
 F7Key: con 57415;
 F8Key: con 57416;
-F9Key: con 57417;
 F10Key: con 57418;
 InsKey: con 57443;
 
@@ -165,24 +162,9 @@ handlekey(state: ref IcState->AppState, k: int): int
 	if(k == InsKey)
 		return commands->exec(state, IcCommands->CmdToggleSelection);
 
-	if(k == F1Key){
-		flashfkey(state, 1);
-		return 0;
-	}
-
-	if(k == F2Key){
-		flashfkey(state, 2);
-		return 0;
-	}
-
 	if(k == F3Key){
 		flashfkey(state, 3);
-		return 0;
-	}
-
-	if(k == F4Key){
-		flashfkey(state, 4);
-		return 0;
+		return commands->exec(state, IcCommands->CmdView);
 	}
 
 	if(k == F5Key){
@@ -203,11 +185,6 @@ handlekey(state: ref IcState->AppState, k: int): int
 	if(k == F8Key){
 		flashfkey(state, 8);
 		return commands->exec(state, IcCommands->CmdDelete);
-	}
-
-	if(k == F9Key){
-		flashfkey(state, 9);
-		return 0;
 	}
 
 	if(k == F10Key){

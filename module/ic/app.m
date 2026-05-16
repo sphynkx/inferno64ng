@@ -7,4 +7,5 @@ IcApp: module
 	init: fn();
 	newstate: fn(): ref IcState->AppState;
 	run: fn(state: ref IcState->AppState): int;
+	runnew: fn(): int;
 };
