@@ -480,6 +480,34 @@ showdeleteconfirm(state: ref IcState->AppState, count: int, target: string): int
 	return draw(state);
 }
 
+showmkdirconfirm(state: ref IcState->AppState, basepath: string): int
+{
+	initstate(state);
+
+	state.modal.active = 1;
+	state.modal.kind = IcModal->KindMkdirConfirm;
+	state.modal.title = "Create directory";
+	state.modal.message = "Create new directory";
+	state.modal.inputlabel = "Name:";
+	state.modal.input = "";
+	state.modal.checkbox = "";
+	state.modal.checked = 0;
+	state.modal.focus = IcModal->FocusInput;
+	state.modal.result = IcModal->ResultNone;
+
+	state.modal.buttoncount = 2;
+	state.modal.button0 = "OK";
+	state.modal.button1 = "Cancel";
+	state.modal.button2 = "";
+
+	state.modal.hotkey0 = "O";
+	state.modal.hotkey1 = "C";
+	state.modal.hotkey2 = "";
+
+	basepath = basepath;
+	return draw(state);
+}
+
 showoverwrite(state: ref IcState->AppState, path: string): int
 {
 	initstate(state);
@@ -509,7 +537,10 @@ showoverwrite(state: ref IcState->AppState, path: string): int
 
 focusmin(m: ref IcState->ModalState): int
 {
-	if(m != nil && m.inputlabel != "" && (m.kind == IcModal->KindCopyConfirm || m.kind == IcModal->KindMoveConfirm))
+	if(m != nil && m.inputlabel != "" &&
+		(m.kind == IcModal->KindCopyConfirm ||
+		 m.kind == IcModal->KindMoveConfirm ||
+		 m.kind == IcModal->KindMkdirConfirm))
 		return IcModal->FocusInput;
 
 	if(m != nil && m.checkbox != "")
@@ -577,7 +608,10 @@ focusprev(m: ref IcState->ModalState)
 	if(m.focus < IcModal->FocusButton0){
 		if(m.checkbox != "")
 			m.focus = IcModal->FocusCheckbox;
-		else if(m.inputlabel != "" && (m.kind == IcModal->KindCopyConfirm || m.kind == IcModal->KindMoveConfirm))
+		else if(m.inputlabel != "" &&
+			(m.kind == IcModal->KindCopyConfirm ||
+			 m.kind == IcModal->KindMoveConfirm ||
+			 m.kind == IcModal->KindMkdirConfirm))
 			m.focus = IcModal->FocusInput;
 		else
 			m.focus = focusmax(m);
@@ -597,7 +631,10 @@ activatefocus(m: ref IcState->ModalState): int
 	if(m.focus == IcModal->FocusInput)
 		return IcModal->ResultOk;
 
-	if(m.kind == IcModal->KindCopyConfirm || m.kind == IcModal->KindMoveConfirm || m.kind == IcModal->KindDeleteConfirm){
+	if(m.kind == IcModal->KindCopyConfirm ||
+	   m.kind == IcModal->KindMoveConfirm ||
+	   m.kind == IcModal->KindDeleteConfirm ||
+	   m.kind == IcModal->KindMkdirConfirm){
 		if(m.focus == IcModal->FocusButton0)
 			return IcModal->ResultOk;
 		return IcModal->ResultCancel;
@@ -703,7 +740,7 @@ handlekey(state: ref IcState->AppState, k: int): int
 		}
 
 		if(printable(k)){
-			m.input += string k;
+			m.input += sys->sprint("%c", k);
 			drawwindow(state);
 			return IcModal->ResultNone;
 		}

@@ -12,6 +12,7 @@ TARG=\
 	ic.dis\
 	input.dis\
 	layout.dis\
+	mkdircmd.dis\
 	modal.dis\
 	screen.dis\
 	theme.dis\
@@ -31,6 +32,7 @@ SYSMODULES=\
 	ic/input.m\
 	ic/layout.m\
 	ic/modal.m\
+	ic/mkdircmd.m\
 	ic/screen.m\
 	ic/state.m\
 	ic/theme.m\

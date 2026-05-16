@@ -74,6 +74,7 @@ CodeFocus: string;
 CodeTitle: string;
 CodeFrame: string;
 CodeMarked: string;
+CodeMarkedFocus: string;
 
 init()
 {
@@ -122,6 +123,7 @@ init()
 	CodeTitle = theme->sgr(IcTheme->AttrTitle);
 	CodeFrame = theme->sgr(IcTheme->AttrFrame);
 	CodeMarked = theme->sgr(IcTheme->AttrMarked);
+	CodeMarkedFocus = theme->sgr(IcTheme->AttrMarkedFocus);
 }
 
 spaces(n: int): string
@@ -204,7 +206,7 @@ rowseparator(p: ref IcPanel->Panel): string
 
 linecode(p: ref IcPanel->Panel, l: IcPanel->Line, leftidx, rightidx, row: int): string
 {
-	cols, rows, cur: int;
+	cols, rows, cur, marked: int;
 
 	leftidx = leftidx;
 	rightidx = rightidx;
@@ -212,16 +214,26 @@ linecode(p: ref IcPanel->Panel, l: IcPanel->Line, leftidx, rightidx, row: int): 
 	if(p == nil || l.itemid < 0)
 		return CodeWindow;
 
+	marked = (l.flags & IcPanel->FlagMarked) != 0;
+
 	if(p.currentid != l.itemid){
-		if((l.flags & IcPanel->FlagMarked) != 0)
+		if(marked)
 			return markcode(p);
 
 		return CodeWindow;
 	}
 
 	if(p.opts.mode != IcPanel->ModeBrief2Col || p.opts.columncount < 2){
+		if(marked){
+			if(p.active)
+				return CodeMarkedFocus;
+
+			return markcode(p);
+		}
+
 		if(p.active)
 			return CodeFocus;
+
 		return CodeTitle;
 	}
 
@@ -230,13 +242,21 @@ linecode(p: ref IcPanel->Panel, l: IcPanel->Line, leftidx, rightidx, row: int): 
 	cur = currentindex(p);
 
 	if(cur < 0 || rows <= 0 || cols < 2){
+		if(marked){
+			if(p.active)
+				return CodeMarkedFocus;
+
+			return markcode(p);
+		}
+
 		if(p.active)
 			return CodeFocus;
+
 		return CodeTitle;
 	}
 
 	if(cur < p.top || cur >= p.top + visiblecapacity(p)){
-		if((l.flags & IcPanel->FlagMarked) != 0)
+		if(marked)
 			return markcode(p);
 
 		return CodeWindow;
@@ -244,18 +264,25 @@ linecode(p: ref IcPanel->Panel, l: IcPanel->Line, leftidx, rightidx, row: int): 
 
 	if(cur < p.top + rows){
 		if(cur - p.top != row){
-			if((l.flags & IcPanel->FlagMarked) != 0)
+			if(marked)
 				return markcode(p);
 
 			return CodeWindow;
 		}
 	}else{
 		if(cur - (p.top + rows) != row){
-			if((l.flags & IcPanel->FlagMarked) != 0)
+			if(marked)
 				return markcode(p);
 
 			return CodeWindow;
 		}
+	}
+
+	if(marked){
+		if(p.active)
+			return CodeMarkedFocus;
+
+		return markcode(p);
 	}
 
 	if(p.active)

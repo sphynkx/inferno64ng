@@ -104,6 +104,15 @@ IcState: module
 		tasks: array of DeleteTask;
 	};
 
+	MkdirState: adt
+	{
+		active: int;
+		phase: int;
+
+		target: string;
+		errors: int;
+	};
+
 	ModalState: adt
 	{
 		active: int;
@@ -202,5 +211,6 @@ IcState: module
 		modal: ref ModalState;
 		copy: ref CopyState;
 		delete: ref DeleteState;
+		mkdir: ref MkdirState;
 	};
 };

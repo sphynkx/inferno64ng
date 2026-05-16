@@ -12,7 +12,8 @@ IcCommands: module
 	CmdToggleSelection: con 4;
 	CmdCopy: con 5;
 	CmdMove: con 6;
-	CmdDelete: con 7;
+	CmdMkdir: con 7;
+	CmdDelete: con 8;
 
 	init: fn();
 	exec: fn(state: ref IcState->AppState, cmd: int): int;
@@ -29,6 +30,15 @@ IcAppPanel: module
 IcCopyCmd: module
 {
 	PATH: con "/dis/ic/copycmd.dis";
+
+	init: fn();
+	active: fn(state: ref IcState->AppState): int;
+	handlekey: fn(state: ref IcState->AppState, k: int): int;
+};
+
+IcMkdirCmd: module
+{
+	PATH: con "/dis/ic/mkdircmd.dis";
 
 	init: fn();
 	active: fn(state: ref IcState->AppState): int;
@@ -55,6 +65,7 @@ IcModal: module
 commands: IcCommands;
 appanel: IcAppPanel;
 copycmd: IcCopyCmd;
+mkdircmd: IcMkdirCmd;
 deletecmd: IcDeleteCmd;
 modal: IcModal;
 
@@ -62,6 +73,7 @@ CtrlO: con 15;
 TabKey: con 9;
 F5Key: con 57413;
 F6Key: con 57414;
+F7Key: con 57415;
 F8Key: con 57416;
 F10Key: con 57418;
 InsKey: con 57443;
@@ -80,6 +92,10 @@ init()
 	if(copycmd == nil)
 		raise "fail:load ic/copycmd";
 
+	mkdircmd = load IcMkdirCmd IcMkdirCmd->PATH;
+	if(mkdircmd == nil)
+		raise "fail:load ic/mkdircmd";
+
 	deletecmd = load IcDeleteCmd IcDeleteCmd->PATH;
 	if(deletecmd == nil)
 		raise "fail:load ic/deletecmd";
@@ -91,6 +107,7 @@ init()
 	commands->init();
 	appanel->init();
 	copycmd->init();
+	mkdircmd->init();
 	deletecmd->init();
 	modal->init();
 }
@@ -102,6 +119,9 @@ handlekey(state: ref IcState->AppState, k: int): int
 
 	if(copycmd->active(state))
 		return copycmd->handlekey(state, k);
+
+	if(mkdircmd->active(state))
+		return mkdircmd->handlekey(state, k);
 
 	if(deletecmd->active(state))
 		return deletecmd->handlekey(state, k);
@@ -120,6 +140,9 @@ handlekey(state: ref IcState->AppState, k: int): int
 
 	if(k == F6Key)
 		return commands->exec(state, IcCommands->CmdMove);
+
+	if(k == F7Key)
+		return commands->exec(state, IcCommands->CmdMkdir);
 
 	if(k == F8Key)
 		return commands->exec(state, IcCommands->CmdDelete);
