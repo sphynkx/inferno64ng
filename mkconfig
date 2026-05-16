@@ -26,8 +26,8 @@ CONF=emu
 #
 #	Except for building kernels, SYSTARG must always be the same as SYSHOST
 #
-SYSHOST=MinGW		# build system OS type (Hp, Inferno, Irix, Linux, MacOSX, Nt, Plan9, Solaris)
-SYSTARG=MinGW	# target system OS type (Hp, Inferno, Irix, Linux, Nt, Plan9, Solaris)
+SYSHOST=Linux		# build system OS type (Hp, Inferno, Irix, Linux, MacOSX, Nt, Plan9, Solaris)
+SYSTARG=Linux	# target system OS type (Hp, Inferno, Irix, Linux, Nt, Plan9, Solaris)
 
 #
 #	specify the architecture of the target system - Plan 9 imports it from the
