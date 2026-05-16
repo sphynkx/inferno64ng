@@ -11,6 +11,14 @@ IcPanelMod: module
 	currentkind: fn(p: ref IcPanel->Panel): string;
 };
 
+IcAppPanel: module
+{
+	PATH: con "/dis/ic/appanel.dis";
+
+	init: fn();
+	handlekey: fn(state: ref IcState->AppState, p: ref IcState->PanelState, k: int): int;
+};
+
 IcViewerMod: module
 {
 	PATH: con "/dis/ic/viewer.dis";
@@ -22,7 +30,11 @@ IcViewerMod: module
 };
 
 panelui: IcPanelMod;
+appanel: IcAppPanel;
 viewer: IcViewerMod;
+
+EnterKey: con 10;
+ReturnKey: con 13;
 
 activepanel: fn(state: ref IcState->AppState): ref IcState->PanelState;
 trimdirsuffix: fn(name: string): string;
@@ -34,11 +46,16 @@ init()
 	if(panelui == nil)
 		raise "fail:load icurses/panel";
 
+	appanel = load IcAppPanel IcAppPanel->PATH;
+	if(appanel == nil)
+		raise "fail:load ic/appanel";
+
 	viewer = load IcViewerMod IcViewerMod->PATH;
 	if(viewer == nil)
 		raise "fail:load ic/viewer";
 
 	panelui->init();
+	appanel->init();
 	viewer->init();
 }
 
@@ -78,6 +95,7 @@ start(state: ref IcState->AppState): int
 {
 	p: ref IcState->PanelState;
 	name, kind, path: string;
+	rc: int;
 
 	if(state == nil)
 		return -1;
@@ -88,6 +106,16 @@ start(state: ref IcState->AppState): int
 
 	name = panelui->currentname(p.panel);
 	kind = panelui->currentkind(p.panel);
+
+	if(name == "..")
+		kind = "parent";
+
+	if(kind == "dir" || kind == "parent"){
+		rc = appanel->handlekey(state, p, EnterKey);
+		if(rc < 0)
+			rc = appanel->handlekey(state, p, ReturnKey);
+		return rc;
+	}
 
 	if(kind != "file")
 		return 0;

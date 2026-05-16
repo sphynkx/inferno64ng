@@ -84,6 +84,9 @@ view: IcViewMod;
 TopCode: con "1;38;2;20;25;30;48;2;225;225;225";
 BodyCode: con "38;2;220;230;255;48;2;20;45;90";
 BottomCode: con "1;38;2;20;25;30;48;2;170;225;255";
+ErrorCode: con "1;38;2;255;120;120;48;2;20;45;90";
+
+ConsinfoPath: con "/dev/consinfo";
 
 Kesc: con 27;
 Kq: con int 'q';
@@ -94,9 +97,17 @@ Kpgup: con 57366;
 Kpgdown: con 57367;
 Khome: con 57360;
 Kend: con 57361;
+Kf3: con 57411;
 Kf10: con 57418;
 
+sanitizewide: int;
+
 loadlines: fn(path: string): array of string;
+loadconsinfo: fn(): string;
+detectwideunsafe: fn(): int;
+contains: fn(s, pattern: string): int;
+lowerascii: fn(s: string): string;
+sanitize: fn(text: string): string;
 splitlines: fn(text: string): array of string;
 appendline: fn(a: array of string, s: string): array of string;
 wraplines: fn(lines: array of string, width: int): array of string;
@@ -134,6 +145,8 @@ init()
 	if(view == nil)
 		raise "fail:load icurses/view";
 
+	sanitizewide = detectwideunsafe();
+
 	appfw->init("icview");
 	ui->init();
 	view->init();
@@ -162,6 +175,120 @@ newstate(): ref IcState->ViewerState
 runfile(path: string): int
 {
 	return runfilemode(path, ModeText);
+}
+
+contains(s, pattern: string): int
+{
+	i: int;
+
+	if(pattern == "")
+		return 1;
+
+	if(len pattern > len s)
+		return 0;
+
+	for(i = 0; i + len pattern <= len s; i++){
+		if(s[i:i + len pattern] == pattern)
+			return 1;
+	}
+
+	return 0;
+}
+
+lowerascii(s: string): string
+{
+	out: string;
+	i, c: int;
+
+	out = "";
+	for(i = 0; i < len s; i++){
+		c = s[i];
+		if(c >= 'A' && c <= 'Z')
+			c += 'a' - 'A';
+		out += sys->sprint("%c", c);
+	}
+
+	return out;
+}
+
+loadconsinfo(): string
+{
+	fd: ref Sys->FD;
+	buf: array of byte;
+	n: int;
+
+	fd = sys->open(ConsinfoPath, Sys->OREAD);
+	if(fd == nil)
+		return "";
+
+	buf = array[1024] of byte;
+	n = sys->read(fd, buf, len buf);
+	if(n <= 0)
+		return "";
+
+	return string buf[0:n];
+}
+
+detectwideunsafe(): int
+{
+	info: string;
+
+	info = lowerascii(loadconsinfo());
+
+	if(contains(info, "mingw"))
+		return 1;
+
+	if(contains(info, "windows"))
+		return 1;
+
+	if(contains(info, "win-console"))
+		return 1;
+
+	if(contains(info, "source=win"))
+		return 1;
+
+	return 0;
+}
+
+sanitize(text: string): string
+{
+	out: string;
+	i, c: int;
+
+	out = "";
+
+	for(i = 0; i < len text; i++){
+		c = text[i];
+
+		if(c == '\n'){
+			out += "\n";
+			continue;
+		}
+
+		if(c == '\r'){
+			out += "\r";
+			continue;
+		}
+
+		if(c == '\t'){
+			out += " ";
+			continue;
+		}
+
+		if(c < 32 || c == 127){
+			out += ".";
+			continue;
+		}
+
+		if(sanitizewide && c > 126){
+			out += ".";
+			continue;
+		}
+
+		out += sys->sprint("%c", c);
+	}
+
+	return out;
 }
 
 appendline(a: array of string, s: string): array of string
@@ -235,25 +362,31 @@ loadlines(path: string): array of string
 	buf: array of byte;
 	n: int;
 	text: string;
+	err: string;
 
 	fd = sys->open(path, Sys->OREAD);
-	if(fd == nil)
-		return nil;
+	if(fd == nil){
+		err = "Cannot open file: " + path;
+		return appendline(array[0] of string, err);
+	}
 
 	buf = array[Sys->ATOMICIO] of byte;
 	text = "";
 
 	for(;;){
 		n = sys->read(fd, buf, len buf);
-		if(n < 0)
-			return nil;
+		if(n < 0){
+			err = "Cannot read file: " + path;
+			return appendline(array[0] of string, err);
+		}
+
 		if(n == 0)
 			break;
 
 		text += string buf[0:n];
 	}
 
-	return splitlines(text);
+	return splitlines(sanitize(text));
 }
 
 spaces(n: int): string
@@ -409,6 +542,7 @@ ensureids(u: ref IcUi->Ui, v: ref IcState->ViewerState, rows: int)
 {
 	i: int;
 	body: array of int;
+	n: ref IcView->Node;
 
 	if(u == nil || u.tree == nil || v == nil)
 		return;
@@ -418,6 +552,14 @@ ensureids(u: ref IcUi->Ui, v: ref IcState->ViewerState, rows: int)
 
 	if(v.bottomid <= 0)
 		v.bottomid = view->allocid(u.tree);
+
+	if(v.bodyids != nil && len v.bodyids > rows){
+		for(i = rows; i < len v.bodyids; i++){
+			n = view->find(u.tree, v.bodyids[i]);
+			if(n != nil)
+				view->hide(n);
+		}
+	}
 
 	if(v.bodyids != nil && len v.bodyids == rows)
 		return;
@@ -463,13 +605,13 @@ toptext(v: ref IcState->ViewerState): string
 
 bottomtext(w: int): string
 {
-	return fittext(" F1 Help  F2 Wrap  F3 Hex  F7 Search  F10 Quit ", w);
+	return fittext(" F1 Help  F2 Wrap  F3 Quit  F4 Hex  F7 Search  F10 Quit ", w);
 }
 
 drawviewer(u: ref IcUi->Ui, parentid: int, v: ref IcState->ViewerState, w, h: int)
 {
 	i, rows, idx: int;
-	text: string;
+	text, code: string;
 
 	if(u == nil || v == nil)
 		return;
@@ -491,7 +633,13 @@ drawviewer(u: ref IcUi->Ui, parentid: int, v: ref IcState->ViewerState, w, h: in
 		else
 			text = "";
 
-		setlabel(u, parentid, v.bodyids[i], 0, 1 + i, w, text, BodyCode);
+		code = BodyCode;
+		if(len text >= 17 && text[0:17] == "Cannot open file")
+			code = ErrorCode;
+		else if(len text >= 17 && text[0:17] == "Cannot read file")
+			code = ErrorCode;
+
+		setlabel(u, parentid, v.bodyids[i], 0, 1 + i, w, text, code);
 	}
 
 	setlabel(u, parentid, v.bottomid, 0, h - 1, w, bottomtext(w), BottomCode);
@@ -547,7 +695,7 @@ handlekey(state: ref IcState->AppState, k: int): int
 	v = state.viewer;
 
 	case k {
-	Kq or Kesc or Kf10 =>
+	Kq or Kesc or Kf3 or Kf10 =>
 		v.active = 0;
 		return 2;
 
