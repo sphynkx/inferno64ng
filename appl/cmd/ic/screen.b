@@ -156,11 +156,6 @@ build(state: ref IcState->AppState): int
 
 	state.rootid = root.id;
 
-	#
-	# The application owns bottom UI rows itself:
-	# command line row and command button bar.
-	# Disable framework status/help rows so they do not overwrite the bottom bar.
-	#
 	ui->setstatusrows(state.ui, -1, -1);
 
 	if(state.theme != nil)

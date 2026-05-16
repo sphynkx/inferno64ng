@@ -41,6 +41,11 @@ IcState: module
 		modalfocuscode: string;
 		modalbuttoncode: string;
 		modalbuttonfocuscode: string;
+
+		commandbarcode: string;
+		commandbaractivecode: string;
+		commandbardisabledcode: string;
+		commandlinecode: string;
 	};
 
 	FsEntry: adt
@@ -189,6 +194,7 @@ IcState: module
 	BottomBarState: adt
 	{
 		id: int;
+		commandlineid: int;
 		buttons: array of BottomButtonState;
 		activefkey: int;
 		activewait: int;

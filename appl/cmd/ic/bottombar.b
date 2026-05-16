@@ -44,10 +44,7 @@ view: IcViewMod;
 
 FlashTicks: con 2;
 ButtonCount: con 10;
-
-CodeNormal: con "1;38;2;20;25;30;48;2;225;225;225";
-CodeDisabled: con "38;2;120;120;120;48;2;205;205;205";
-CodeActive: con "1;38;2;255;120;210;48;2;225;225;225";
+ButtonGap: con 1;
 
 ensurebuttons: fn(state: ref IcState->AppState, bar: ref IcState->BottomBarState);
 buttonx: fn(rect: IcLayout->Rect, idx: int): int;
@@ -56,6 +53,10 @@ buttontext: fn(fkey: int, text: string, w: int): string;
 fittext: fn(s: string, w: int): string;
 spaces: fn(n: int): string;
 refreshcodes: fn(state: ref IcState->AppState, bar: ref IcState->BottomBarState);
+commandlinecode: fn(state: ref IcState->AppState): string;
+commandbarcode: fn(state: ref IcState->AppState): string;
+commandbaractivecode: fn(state: ref IcState->AppState): string;
+commandbardisabledcode: fn(state: ref IcState->AppState): string;
 
 init()
 {
@@ -109,7 +110,51 @@ buttonx(rect: IcLayout->Rect, idx: int): int
 
 buttonw(rect: IcLayout->Rect, idx: int): int
 {
-	return ((rect.w * (idx + 1)) / ButtonCount) - buttonx(rect, idx);
+	x0, x1, w: int;
+
+	x0 = buttonx(rect, idx);
+	x1 = (rect.w * (idx + 1)) / ButtonCount;
+
+	w = x1 - x0;
+	if(idx < ButtonCount - 1)
+		w -= ButtonGap;
+
+	if(w < 1)
+		w = 1;
+
+	return w;
+}
+
+commandlinecode(state: ref IcState->AppState): string
+{
+	if(state != nil && state.theme != nil && state.theme.commandlinecode != "")
+		return state.theme.commandlinecode;
+
+	return "38;2;220;230;255;48;2;20;45;90";
+}
+
+commandbarcode(state: ref IcState->AppState): string
+{
+	if(state != nil && state.theme != nil && state.theme.commandbarcode != "")
+		return state.theme.commandbarcode;
+
+	return "1;38;2;20;25;30;48;2;170;225;255";
+}
+
+commandbaractivecode(state: ref IcState->AppState): string
+{
+	if(state != nil && state.theme != nil && state.theme.commandbaractivecode != "")
+		return state.theme.commandbaractivecode;
+
+	return "1;38;2;255;120;210;48;2;170;225;255";
+}
+
+commandbardisabledcode(state: ref IcState->AppState): string
+{
+	if(state != nil && state.theme != nil && state.theme.commandbardisabledcode != "")
+		return state.theme.commandbardisabledcode;
+
+	return "38;2;120;120;120;48;2;170;225;255";
 }
 
 newbar(): ref IcState->BottomBarState
@@ -118,6 +163,7 @@ newbar(): ref IcState->BottomBarState
 
 	bar = ref IcState->BottomBarState;
 	bar.id = -1;
+	bar.commandlineid = -1;
 	bar.buttons = array[0] of IcState->BottomButtonState;
 	bar.activefkey = 0;
 	bar.activewait = 0;
@@ -135,6 +181,12 @@ ensurebuttons(state: ref IcState->AppState, bar: ref IcState->BottomBarState)
 
 	if(bar.id <= 0)
 		bar.id = view->allocid(state.ui.tree);
+
+	if(bar.commandlineid <= 0)
+		bar.commandlineid = view->allocid(state.ui.tree);
+
+	if(ui->label(state.ui, state.mainid, bar.commandlineid, 0, 0, 1, "") < 0)
+		return;
 
 	if(ui->group(state.ui, state.mainid, bar.id, 0, 0, 1, 1) < 0)
 		return;
@@ -210,11 +262,11 @@ refreshcodes(state: ref IcState->AppState, bar: ref IcState->BottomBarState)
 			continue;
 
 		if(bar.buttons[i].active)
-			code = CodeActive;
+			code = commandbaractivecode(state);
 		else if(bar.buttons[i].enabled)
-			code = CodeNormal;
+			code = commandbarcode(state);
 		else
-			code = CodeDisabled;
+			code = commandbardisabledcode(state);
 
 		view->setcode(n, code);
 	}
@@ -223,12 +275,20 @@ refreshcodes(state: ref IcState->AppState, bar: ref IcState->BottomBarState)
 build(state: ref IcState->AppState, bar: ref IcState->BottomBarState, rect: IcLayout->Rect): int
 {
 	i, x, w: int;
-	g, l: ref IcView->Node;
+	g, l, cl: ref IcView->Node;
 
 	if(state == nil || state.ui == nil || bar == nil)
 		return -1;
 
 	ensurebuttons(state, bar);
+
+	cl = view->find(state.ui.tree, bar.commandlineid);
+	if(cl != nil){
+		view->setbounds(cl, rect.x, rect.y - 1, rect.w, 1);
+		view->settext(cl, spaces(rect.w));
+		view->setcode(cl, commandlinecode(state));
+		view->show(cl);
+	}
 
 	g = view->find(state.ui.tree, bar.id);
 	if(g != nil){
@@ -244,18 +304,12 @@ build(state: ref IcState->AppState, bar: ref IcState->BottomBarState, rect: IcLa
 
 		g = view->find(state.ui.tree, bar.buttons[i].id);
 		if(g != nil){
-			#
-			# Button group coordinates are relative to the bottom bar group.
-			#
 			view->setbounds(g, x, 0, w, 1);
 			view->show(g);
 		}
 
 		l = view->find(state.ui.tree, bar.buttons[i].labelid);
 		if(l != nil){
-			#
-			# Label coordinates are relative to the button group.
-			#
 			view->setbounds(l, 0, 0, w, 1);
 			view->settext(l, buttontext(bar.buttons[i].fkey, bar.buttons[i].text, w));
 			view->show(l);
