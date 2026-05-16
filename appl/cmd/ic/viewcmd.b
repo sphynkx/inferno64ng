@@ -15,8 +15,10 @@ IcViewerMod: module
 {
 	PATH: con "/dis/ic/viewer.dis";
 
+	ModeText: con 0;
+
 	init: fn();
-	runfile: fn(path: string): int;
+	start: fn(state: ref IcState->AppState, path: string, mode: int): int;
 };
 
 panelui: IcPanelMod;
@@ -94,5 +96,5 @@ start(state: ref IcState->AppState): int
 	if(path == "")
 		return 0;
 
-	return viewer->runfile(path);
+	return viewer->start(state, path, IcViewerMod->ModeText);
 }

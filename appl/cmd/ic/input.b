@@ -72,6 +72,23 @@ IcBottomBar: module
 	handletick: fn(state: ref IcState->AppState): int;
 };
 
+IcViewerMod: module
+{
+	PATH: con "/dis/ic/viewer.dis";
+
+	init: fn();
+	active: fn(state: ref IcState->AppState): int;
+	handlekey: fn(state: ref IcState->AppState, k: int): int;
+};
+
+IcScreenMod: module
+{
+	PATH: con "/dis/ic/screen.dis";
+
+	init: fn();
+	rebuild: fn(state: ref IcState->AppState): int;
+};
+
 commands: IcCommands;
 appanel: IcAppPanel;
 copycmd: IcCopyCmd;
@@ -79,6 +96,8 @@ mkdircmd: IcMkdirCmd;
 deletecmd: IcDeleteCmd;
 modal: IcModal;
 bottombar: IcBottomBar;
+viewer: IcViewerMod;
+screen: IcScreenMod;
 
 CtrlO: con 15;
 TabKey: con 9;
@@ -122,6 +141,14 @@ init()
 	if(bottombar == nil)
 		raise "fail:load ic/bottombar";
 
+	viewer = load IcViewerMod IcViewerMod->PATH;
+	if(viewer == nil)
+		raise "fail:load ic/viewer";
+
+	screen = load IcScreenMod IcScreenMod->PATH;
+	if(screen == nil)
+		raise "fail:load ic/screen";
+
 	commands->init();
 	appanel->init();
 	copycmd->init();
@@ -129,6 +156,8 @@ init()
 	deletecmd->init();
 	modal->init();
 	bottombar->init();
+	viewer->init();
+	screen->init();
 }
 
 flashfkey(state: ref IcState->AppState, fkey: int)
@@ -141,8 +170,17 @@ flashfkey(state: ref IcState->AppState, fkey: int)
 
 handlekey(state: ref IcState->AppState, k: int): int
 {
+	r: int;
+
 	if(state == nil)
 		return -1;
+
+	if(viewer->active(state)){
+		r = viewer->handlekey(state, k);
+		if(r == 2)
+			screen->rebuild(state);
+		return 0;
+	}
 
 	if(copycmd->active(state))
 		return copycmd->handlekey(state, k);

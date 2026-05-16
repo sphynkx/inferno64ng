@@ -95,6 +95,8 @@ init()
 
 exec(state: ref IcState->AppState, cmd: int): int
 {
+	rc: int;
+
 	if(state == nil)
 		return -1;
 
@@ -140,7 +142,10 @@ exec(state: ref IcState->AppState, cmd: int): int
 		return deletecmd->start(state);
 
 	IcCommands->CmdView =>
-		return viewcmd->start(state);
+		rc = viewcmd->start(state);
+		if(rc < 0)
+			return rc;
+		return screen->rebuild(state);
 	}
 
 	return 0;

@@ -168,6 +168,25 @@ IcState: module
 		active: int;
 	};
 
+	ViewerState: adt
+	{
+		active: int;
+		mode: int;
+
+		path: string;
+
+		lines: array of string;
+		wrapped: array of string;
+
+		topline: int;
+		nlines: int;
+
+		topid: int;
+		bottomid: int;
+		bodyids: array of int;
+		lastw: int;
+	};
+
 	PanelState: adt
 	{
 		id: int;
@@ -227,6 +246,8 @@ IcState: module
 
 		topbar: ref TopBarState;
 		bottombar: ref BottomBarState;
+
+		viewer: ref ViewerState;
 
 		modal: ref ModalState;
 		copy: ref CopyState;
