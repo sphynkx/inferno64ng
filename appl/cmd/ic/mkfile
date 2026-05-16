@@ -7,6 +7,7 @@ TARG=\
 	commands.dis\
 	config.dis\
 	copycmd.dis\
+	deletecmd.dis\
 	fsmodel.dis\
 	ic.dis\
 	input.dis\
@@ -25,6 +26,7 @@ SYSMODULES=\
 	ic/commands.m\
 	ic/config.m\
 	ic/copycmd.m\
+	ic/deletecmd.m\
 	ic/fsmodel.m\
 	ic/input.m\
 	ic/layout.m\

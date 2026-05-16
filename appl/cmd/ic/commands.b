@@ -20,6 +20,14 @@ IcCopyCmd: module
 	startmove: fn(state: ref IcState->AppState): int;
 };
 
+IcDeleteCmd: module
+{
+	PATH: con "/dis/ic/deletecmd.dis";
+
+	init: fn();
+	start: fn(state: ref IcState->AppState): int;
+};
+
 IcScreenMod: module
 {
 	PATH: con "/dis/ic/screen.dis";
@@ -30,6 +38,7 @@ IcScreenMod: module
 
 appanel: IcAppPanel;
 copycmd: IcCopyCmd;
+deletecmd: IcDeleteCmd;
 screen: IcScreenMod;
 
 init()
@@ -42,12 +51,17 @@ init()
 	if(copycmd == nil)
 		raise "fail:load ic/copycmd";
 
+	deletecmd = load IcDeleteCmd IcDeleteCmd->PATH;
+	if(deletecmd == nil)
+		raise "fail:load ic/deletecmd";
+
 	screen = load IcScreenMod IcScreenMod->PATH;
 	if(screen == nil)
 		raise "fail:load ic/screen";
 
 	appanel->init();
 	copycmd->init();
+	deletecmd->init();
 	screen->init();
 }
 
@@ -90,6 +104,9 @@ exec(state: ref IcState->AppState, cmd: int): int
 
 	IcCommands->CmdMove =>
 		return copycmd->startmove(state);
+
+	IcCommands->CmdDelete =>
+		return deletecmd->start(state);
 	}
 
 	return 0;

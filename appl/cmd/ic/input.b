@@ -12,6 +12,7 @@ IcCommands: module
 	CmdToggleSelection: con 4;
 	CmdCopy: con 5;
 	CmdMove: con 6;
+	CmdDelete: con 7;
 
 	init: fn();
 	exec: fn(state: ref IcState->AppState, cmd: int): int;
@@ -34,6 +35,15 @@ IcCopyCmd: module
 	handlekey: fn(state: ref IcState->AppState, k: int): int;
 };
 
+IcDeleteCmd: module
+{
+	PATH: con "/dis/ic/deletecmd.dis";
+
+	init: fn();
+	active: fn(state: ref IcState->AppState): int;
+	handlekey: fn(state: ref IcState->AppState, k: int): int;
+};
+
 IcModal: module
 {
 	PATH: con "/dis/ic/modal.dis";
@@ -45,12 +55,14 @@ IcModal: module
 commands: IcCommands;
 appanel: IcAppPanel;
 copycmd: IcCopyCmd;
+deletecmd: IcDeleteCmd;
 modal: IcModal;
 
 CtrlO: con 15;
 TabKey: con 9;
 F5Key: con 57413;
 F6Key: con 57414;
+F8Key: con 57416;
 F10Key: con 57418;
 InsKey: con 57443;
 
@@ -68,6 +80,10 @@ init()
 	if(copycmd == nil)
 		raise "fail:load ic/copycmd";
 
+	deletecmd = load IcDeleteCmd IcDeleteCmd->PATH;
+	if(deletecmd == nil)
+		raise "fail:load ic/deletecmd";
+
 	modal = load IcModal IcModal->PATH;
 	if(modal == nil)
 		raise "fail:load ic/modal";
@@ -75,6 +91,7 @@ init()
 	commands->init();
 	appanel->init();
 	copycmd->init();
+	deletecmd->init();
 	modal->init();
 }
 
@@ -85,6 +102,9 @@ handlekey(state: ref IcState->AppState, k: int): int
 
 	if(copycmd->active(state))
 		return copycmd->handlekey(state, k);
+
+	if(deletecmd->active(state))
+		return deletecmd->handlekey(state, k);
 
 	if(k == TabKey)
 		return commands->exec(state, IcCommands->CmdSwitchPanel);
@@ -100,6 +120,9 @@ handlekey(state: ref IcState->AppState, k: int): int
 
 	if(k == F6Key)
 		return commands->exec(state, IcCommands->CmdMove);
+
+	if(k == F8Key)
+		return commands->exec(state, IcCommands->CmdDelete);
 
 	if(k == F10Key)
 		return commands->exec(state, IcCommands->CmdExit);

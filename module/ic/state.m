@@ -70,6 +70,12 @@ IcState: module
 		mode: int;
 	};
 
+	DeleteTask: adt
+	{
+		path: string;
+		kind: string;
+	};
+
 	CopyState: adt
 	{
 		active: int;
@@ -84,6 +90,18 @@ IcState: module
 		singletarget: int;
 
 		tasks: array of CopyTask;
+	};
+
+	DeleteState: adt
+	{
+		active: int;
+		phase: int;
+
+		index: int;
+		errors: int;
+
+		targetsummary: string;
+		tasks: array of DeleteTask;
 	};
 
 	ModalState: adt
@@ -183,5 +201,6 @@ IcState: module
 
 		modal: ref ModalState;
 		copy: ref CopyState;
+		delete: ref DeleteState;
 	};
 };

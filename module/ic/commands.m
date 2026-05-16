@@ -11,6 +11,7 @@ IcCommands: module
 	CmdToggleSelection: con 4;
 	CmdCopy: con 5;
 	CmdMove: con 6;
+	CmdDelete: con 7;
 
 	init: fn();
 	exec: fn(state: ref IcState->AppState, cmd: int): int;
