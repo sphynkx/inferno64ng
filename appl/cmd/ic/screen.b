@@ -10,6 +10,7 @@ IcUiMod: module
 	init: fn();
 	group: fn(u: ref IcUi->Ui, parentid, id: int, x, y, w, h: int): int;
 	setframestyle: fn(u: ref IcUi->Ui, style: int);
+	setstatusrows: fn(u: ref IcUi->Ui, helprow, statusrow: int);
 	draw: fn(u: ref IcUi->Ui);
 };
 
@@ -154,6 +155,13 @@ build(state: ref IcState->AppState): int
 		return -1;
 
 	state.rootid = root.id;
+
+	#
+	# The application owns bottom UI rows itself:
+	# command line row and command button bar.
+	# Disable framework status/help rows so they do not overwrite the bottom bar.
+	#
+	ui->setstatusrows(state.ui, -1, -1);
 
 	if(state.theme != nil)
 		ui->setframestyle(state.ui, state.theme.frame);

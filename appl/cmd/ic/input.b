@@ -62,21 +62,38 @@ IcModal: module
 	handletick: fn(state: ref IcState->AppState): int;
 };
 
+IcBottomBar: module
+{
+	PATH: con "/dis/ic/bottombar.dis";
+
+	init: fn();
+	activatefkey: fn(state: ref IcState->AppState, fkey: int): int;
+	handletick: fn(state: ref IcState->AppState): int;
+};
+
 commands: IcCommands;
 appanel: IcAppPanel;
 copycmd: IcCopyCmd;
 mkdircmd: IcMkdirCmd;
 deletecmd: IcDeleteCmd;
 modal: IcModal;
+bottombar: IcBottomBar;
 
 CtrlO: con 15;
 TabKey: con 9;
+F1Key: con 57409;
+F2Key: con 57410;
+F3Key: con 57411;
+F4Key: con 57412;
 F5Key: con 57413;
 F6Key: con 57414;
 F7Key: con 57415;
 F8Key: con 57416;
+F9Key: con 57417;
 F10Key: con 57418;
 InsKey: con 57443;
+
+flashfkey: fn(state: ref IcState->AppState, fkey: int);
 
 init()
 {
@@ -104,12 +121,25 @@ init()
 	if(modal == nil)
 		raise "fail:load ic/modal";
 
+	bottombar = load IcBottomBar IcBottomBar->PATH;
+	if(bottombar == nil)
+		raise "fail:load ic/bottombar";
+
 	commands->init();
 	appanel->init();
 	copycmd->init();
 	mkdircmd->init();
 	deletecmd->init();
 	modal->init();
+	bottombar->init();
+}
+
+flashfkey(state: ref IcState->AppState, fkey: int)
+{
+	if(state == nil)
+		return;
+
+	bottombar->activatefkey(state, fkey);
 }
 
 handlekey(state: ref IcState->AppState, k: int): int
@@ -135,20 +165,55 @@ handlekey(state: ref IcState->AppState, k: int): int
 	if(k == InsKey)
 		return commands->exec(state, IcCommands->CmdToggleSelection);
 
-	if(k == F5Key)
+	if(k == F1Key){
+		flashfkey(state, 1);
+		return 0;
+	}
+
+	if(k == F2Key){
+		flashfkey(state, 2);
+		return 0;
+	}
+
+	if(k == F3Key){
+		flashfkey(state, 3);
+		return 0;
+	}
+
+	if(k == F4Key){
+		flashfkey(state, 4);
+		return 0;
+	}
+
+	if(k == F5Key){
+		flashfkey(state, 5);
 		return commands->exec(state, IcCommands->CmdCopy);
+	}
 
-	if(k == F6Key)
+	if(k == F6Key){
+		flashfkey(state, 6);
 		return commands->exec(state, IcCommands->CmdMove);
+	}
 
-	if(k == F7Key)
+	if(k == F7Key){
+		flashfkey(state, 7);
 		return commands->exec(state, IcCommands->CmdMkdir);
+	}
 
-	if(k == F8Key)
+	if(k == F8Key){
+		flashfkey(state, 8);
 		return commands->exec(state, IcCommands->CmdDelete);
+	}
 
-	if(k == F10Key)
+	if(k == F9Key){
+		flashfkey(state, 9);
+		return 0;
+	}
+
+	if(k == F10Key){
+		flashfkey(state, 10);
 		return commands->exec(state, IcCommands->CmdExit);
+	}
 
 	if(state.activepanel == IcState->PanelLeft)
 		return appanel->handlekey(state, state.left, k);
@@ -158,8 +223,18 @@ handlekey(state: ref IcState->AppState, k: int): int
 
 handletick(state: ref IcState->AppState): int
 {
+	redraw: int;
+
 	if(state == nil)
 		return 0;
 
-	return modal->handletick(state);
+	redraw = 0;
+
+	if(modal->handletick(state))
+		redraw = 1;
+
+	if(bottombar->handletick(state))
+		redraw = 1;
+
+	return redraw;
 }

@@ -16,6 +16,7 @@ IcLayout: module
 		topbar: Rect;
 		leftpanel: Rect;
 		rightpanel: Rect;
+		commandline: Rect;
 		bottombar: Rect;
 	};
 

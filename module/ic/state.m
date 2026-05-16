@@ -152,6 +152,17 @@ IcState: module
 		canvasid: int;
 	};
 
+	BottomButtonState: adt
+	{
+		id: int;
+		labelid: int;
+		fkey: int;
+		text: string;
+		cmd: int;
+		enabled: int;
+		active: int;
+	};
+
 	PanelState: adt
 	{
 		id: int;
@@ -178,6 +189,9 @@ IcState: module
 	BottomBarState: adt
 	{
 		id: int;
+		buttons: array of BottomButtonState;
+		activefkey: int;
+		activewait: int;
 	};
 
 	AppState: adt

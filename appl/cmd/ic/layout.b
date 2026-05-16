@@ -3,6 +3,7 @@ implement IcLayout;
 include "ic/layout.m";
 
 TopBarHeight: con 1;
+CommandLineHeight: con 1;
 BottomBarHeight: con 1;
 MinPanelWidth: con 10;
 
@@ -17,8 +18,8 @@ compute(w, h, panelshidden: int): IcLayout->LayoutState
 
 	if(w < 20)
 		w = 20;
-	if(h < 5)
-		h = 5;
+	if(h < 6)
+		h = 6;
 
 	l.screen.x = 0;
 	l.screen.y = 0;
@@ -35,7 +36,12 @@ compute(w, h, panelshidden: int): IcLayout->LayoutState
 	l.bottombar.w = w;
 	l.bottombar.h = BottomBarHeight;
 
-	innerh = h - TopBarHeight - BottomBarHeight;
+	l.commandline.x = 0;
+	l.commandline.y = l.bottombar.y - CommandLineHeight;
+	l.commandline.w = w;
+	l.commandline.h = CommandLineHeight;
+
+	innerh = h - TopBarHeight - CommandLineHeight - BottomBarHeight;
 	if(innerh < 1)
 		innerh = 1;
 
