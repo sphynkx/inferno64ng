@@ -163,6 +163,7 @@ newroot(): ref IcView->Node
 	v.parentid = IcView->NoId;
 	v.text = "";
 	v.content = "";
+	v.code = "";
 	v.hotkey = "";
 	v.targetid = IcView->NoId;
 	v.command = "";
@@ -182,6 +183,7 @@ newroot(): ref IcView->Node
 	v.focusable = 0;
 	v.dirty = 0;
 	v.children = array[0] of int;
+	v.styles = array[0] of string;
 	return v;
 }
 
@@ -195,6 +197,7 @@ newnode(id: int, kind: string, parentid: int, x, y, w, h: int): ref IcView->Node
 	v.parentid = parentid;
 	v.text = "";
 	v.content = "";
+	v.code = "";
 	v.hotkey = "";
 	v.targetid = IcView->NoId;
 	v.command = "";
@@ -214,6 +217,7 @@ newnode(id: int, kind: string, parentid: int, x, y, w, h: int): ref IcView->Node
 	v.focusable = 0;
 	v.dirty = 0;
 	v.children = array[0] of int;
+	v.styles = array[0] of string;
 	return v;
 }
 
@@ -308,6 +312,21 @@ getcontent(v: ref IcView->Node): string
 	if(v == nil)
 		return "";
 	return v.content;
+}
+
+setcode(v: ref IcView->Node, code: string)
+{
+	if(v == nil)
+		return;
+	v.code = code;
+	v.dirty = 1;
+}
+
+getcode(v: ref IcView->Node): string
+{
+	if(v == nil)
+		return "";
+	return v.code;
 }
 
 sethotkey(v: ref IcView->Node, hotkey: string)
@@ -999,6 +1018,14 @@ movetreeby(t: ref IcView->Tree, id: int, dx, dy: int)
 	moveby(n, dx, dy);
 }
 
+subtreecount(t: ref IcView->Tree, id: int): int
+{
+	if(t == nil || id < 0)
+		return 0;
+
+	return countkids(t, id);
+}
+
 countkids(t: ref IcView->Tree, id: int): int
 {
 	n: ref IcView->Node;
@@ -1015,31 +1042,46 @@ countkids(t: ref IcView->Tree, id: int): int
 	return total;
 }
 
-subtreecount(t: ref IcView->Tree, id: int): int
+setfocus(t: ref IcView->Tree, id: int): int
 {
-	return countkids(t, id);
+	n: ref IcView->Node;
+
+	if(t == nil || id < 0)
+		return -1;
+
+	n = find(t, id);
+	if(n == nil || !n.focusable || !n.enabled || !isvisibletree(t, id))
+		return -1;
+
+	t.focusid = id;
+	return 0;
 }
 
-focusableok(t: ref IcView->Tree, n: ref IcView->Node): int
+clearfocus(t: ref IcView->Tree)
 {
-	if(t == nil || n == nil)
-		return 0;
+	if(t != nil)
+		t.focusid = IcView->NoId;
+}
 
-	if(!n.focusable)
-		return 0;
+focusid(t: ref IcView->Tree): int
+{
+	if(t == nil)
+		return IcView->NoId;
 
-	if(!isvisibletree(t, n.id))
-		return 0;
+	return t.focusid;
+}
 
-	if(!isenabledtree(t, n.id))
-		return 0;
+focusnode(t: ref IcView->Tree): ref IcView->Node
+{
+	if(t == nil)
+		return nil;
 
-	return 1;
+	return find(t, t.focusid);
 }
 
 collectfocus(t: ref IcView->Tree, id: int, a: array of int): array of int
 {
-	n, c: ref IcView->Node;
+	n: ref IcView->Node;
 	i: int;
 
 	n = find(t, id);
@@ -1049,13 +1091,23 @@ collectfocus(t: ref IcView->Tree, id: int, a: array of int): array of int
 	if(focusableok(t, n))
 		a = appendchild(a, n.id);
 
-	for(i = 0; i < len n.children; i++){
-		c = find(t, n.children[i]);
-		if(c != nil)
-			a = collectfocus(t, c.id, a);
-	}
+	for(i = 0; i < len n.children; i++)
+		a = collectfocus(t, n.children[i], a);
 
 	return a;
+}
+
+focusableok(t: ref IcView->Tree, n: ref IcView->Node): int
+{
+	if(t == nil || n == nil)
+		return 0;
+	if(!n.focusable)
+		return 0;
+	if(!n.enabled)
+		return 0;
+	if(!isvisibletree(t, n.id))
+		return 0;
+	return 1;
 }
 
 focuslist(t: ref IcView->Tree): array of int
@@ -1066,115 +1118,62 @@ focuslist(t: ref IcView->Tree): array of int
 	return collectfocus(t, t.rootid, array[0] of int);
 }
 
-setfocus(t: ref IcView->Tree, id: int): int
-{
-	n: ref IcView->Node;
-
-	if(t == nil)
-		return -1;
-
-	n = find(t, id);
-	if(!focusableok(t, n))
-		return -1;
-
-	t.focusid = id;
-
-	n = find(t, n.parentid);
-	while(n != nil){
-		if(n.kind == "window"){
-			activatewindow(t, n.id);
-			break;
-		}
-		n = find(t, n.parentid);
-	}
-
-	return 0;
-}
-
-clearfocus(t: ref IcView->Tree)
-{
-	if(t == nil)
-		return;
-	t.focusid = IcView->NoId;
-}
-
-focusid(t: ref IcView->Tree): int
-{
-	if(t == nil)
-		return IcView->NoId;
-	return t.focusid;
-}
-
-focusnode(t: ref IcView->Tree): ref IcView->Node
-{
-	if(t == nil)
-		return nil;
-	return find(t, t.focusid);
-}
-
 nextfocus(t: ref IcView->Tree): int
 {
 	a: array of int;
-	i, n, cur: int;
+	i: int;
 
 	if(t == nil)
 		return IcView->NoId;
 
 	a = focuslist(t);
-	if(a == nil || len a == 0){
-		t.focusid = IcView->NoId;
+	if(len a == 0)
 		return IcView->NoId;
+
+	if(t.focusid == IcView->NoId){
+		t.focusid = a[0];
+		return t.focusid;
 	}
 
-	n = len a;
-	cur = -1;
-
-	for(i = 0; i < n; i++){
+	for(i = 0; i < len a; i++){
 		if(a[i] == t.focusid){
-			cur = i;
-			break;
+			t.focusid = a[(i + 1) % len a];
+			return t.focusid;
 		}
 	}
 
-	if(cur < 0)
-		setfocus(t, a[0]);
-	else
-		setfocus(t, a[(cur + 1) % n]);
-
+	t.focusid = a[0];
 	return t.focusid;
 }
 
 prevfocus(t: ref IcView->Tree): int
 {
 	a: array of int;
-	i, n, cur: int;
+	i: int;
 
 	if(t == nil)
 		return IcView->NoId;
 
 	a = focuslist(t);
-	if(a == nil || len a == 0){
-		t.focusid = IcView->NoId;
+	if(len a == 0)
 		return IcView->NoId;
+
+	if(t.focusid == IcView->NoId){
+		t.focusid = a[0];
+		return t.focusid;
 	}
 
-	n = len a;
-	cur = -1;
-
-	for(i = 0; i < n; i++){
+	for(i = 0; i < len a; i++){
 		if(a[i] == t.focusid){
-			cur = i;
-			break;
+			if(i == 0)
+				t.focusid = a[len a - 1];
+			else
+				t.focusid = a[i - 1];
+			return t.focusid;
 		}
 	}
 
-	if(cur < 0)
-		setfocus(t, a[0]);
-	else if(cur == 0)
-		setfocus(t, a[n - 1]);
-	else
-		setfocus(t, a[cur - 1]);
-
+	t.focusid = a[0];
 	return t.focusid;
 }
 
@@ -1183,25 +1182,28 @@ findhotkeynode(t: ref IcView->Tree, id: int, hotkey: string): ref IcView->Node
 	n, r: ref IcView->Node;
 	i: int;
 
-	n = find(t, id);
-	if(n == nil)
+	if(t == nil || hotkey == "")
 		return nil;
 
-	for(i = len n.children - 1; i >= 0; i--){
+	n = find(t, id);
+	if(n == nil || !isvisibletree(t, id) || !n.enabled)
+		return nil;
+
+	if(n.hotkey == hotkey)
+		return n;
+
+	for(i = 0; i < len n.children; i++){
 		r = findhotkeynode(t, n.children[i], hotkey);
 		if(r != nil)
 			return r;
 	}
-
-	if(n.hotkey == hotkey && isvisibletree(t, n.id) && isenabledtree(t, n.id))
-		return n;
 
 	return nil;
 }
 
 findhotkey(t: ref IcView->Tree, hotkey: string): ref IcView->Node
 {
-	if(t == nil || hotkey == "")
+	if(t == nil)
 		return nil;
 
 	return findhotkeynode(t, t.rootid, hotkey);

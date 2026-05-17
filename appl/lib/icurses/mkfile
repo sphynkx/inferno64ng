@@ -5,6 +5,7 @@ TARG=\
 	app.dis\
 	button.dis\
 	canvas.dis\
+	config.dis\
 	control.dis\
 	focus.dis\
 	form.dis\
@@ -19,9 +20,11 @@ TARG=\
 	mouse.dis\
 	msg.dis\
 	paint.dis\
+	panel.dis\
 	slider.dis\
 	task.dis\
 	text.dis\
+	textview.dis\
 	theme.dis\
 	ui.dis\
 	view.dis\
@@ -33,6 +36,7 @@ SYSMODULES=\
 	icurses/app.m\
 	icurses/button.m\
 	icurses/canvas.m\
+	icurses/config.m\
 	icurses/control.m\
 	icurses/focus.m\
 	icurses/form.m\
@@ -47,9 +51,11 @@ SYSMODULES=\
 	icurses/mouse.m\
 	icurses/msg.m\
 	icurses/paint.m\
+	icurses/panel.m\
 	icurses/slider.m\
 	icurses/task.m\
 	icurses/text.m\
+	icurses/textview.m\
 	icurses/theme.m\
 	icurses/ui.m\
 	icurses/view.m\

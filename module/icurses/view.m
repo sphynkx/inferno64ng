@@ -19,6 +19,8 @@ IcView: module
 
 		text:       string;
 		content:    string;
+		code:       string;
+		styles:     array of string;
 
 		hotkey:     string;
 		targetid:   int;
@@ -81,6 +83,9 @@ IcView: module
 
 	setcontent: fn(v: ref Node, content: string);
 	getcontent: fn(v: ref Node): string;
+
+	setcode: fn(v: ref Node, code: string);
+	getcode: fn(v: ref Node): string;
 
 	sethotkey: fn(v: ref Node, hotkey: string);
 	gethotkey: fn(v: ref Node): string;
