@@ -15,6 +15,7 @@ IcCommands: module
 	CmdMove: con 6;
 	CmdMkdir: con 7;
 	CmdDelete: con 8;
+	CmdView: con 9;
 };
 
 IcUiMod: module
@@ -212,6 +213,8 @@ ensurebuttons(state: ref IcState->AppState, bar: ref IcState->BottomBarState)
 			b.text = "Menu";
 		2 =>
 			b.text = "View";
+			b.cmd = IcCommands->CmdView;
+			b.enabled = 1;
 		3 =>
 			b.text = "Edit";
 		4 =>
