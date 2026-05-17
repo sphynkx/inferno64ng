@@ -37,26 +37,26 @@ sgr(attr: int): string
 		if(attr == AttrFrame)
 			return "38;2;230;240;255;48;2;20;45;90";
 		if(attr == AttrTitle)
-			return "38;2;255;230;120;48;2;20;45;90";
+			return "1;38;2;255;230;120;48;2;20;45;90";
 		if(attr == AttrButton)
 			return "38;2;10;25;35;48;2;70;210;230";
 		if(attr == AttrFocus)
-			return "38;2;255;240;120;48;2;170;35;45";
+			return "1;38;2;0;0;0;48;2;170;225;255";
 		if(attr == AttrStatus)
 			return "38;2;20;25;30;48;2;225;225;225";
 		if(attr == AttrScroll)
 			return "38;2;255;220;80;48;2;20;45;90";
-
-		#
-		# Shadow is a compositing effect in paint.b:
-		# Cell.ch is preserved, only Cell.code is replaced.
-		#
-		# Use a neutral dark gray background instead of pure black.
-		# This keeps the shadow visible on common black terminals while
-		# preserving the underlying glyphs.
-		#
 		if(attr == AttrShadow)
 			return "38;2;170;180;190;48;2;45;45;45";
+		if(attr == AttrMarked)
+			return "1;38;2;255;120;210;48;2;20;45;90";
+
+		#
+		# Marked item under cursor:
+		# red foreground on the same light-blue focus background.
+		#
+		if(attr == AttrMarkedFocus)
+			return "1;38;2;220;0;0;48;2;170;225;255";
 
 		if(attr == AttrEffectHead)
 			return "38;2;220;255;220;40";
@@ -83,20 +83,18 @@ sgr(attr: int): string
 	if(attr == AttrButton)
 		return "1;30;46";
 	if(attr == AttrFocus)
-		return "1;33;41";
+		return "1;30;106";
 	if(attr == AttrStatus)
 		return "1;30;47";
 	if(attr == AttrScroll)
 		return "1;33;44";
-
-	#
-	# 16-color fallback shadow.
-	#
-	# Important: this is still compositing shadow, not character shadow.
-	# It preserves glyphs and only changes their style.
-	#
 	if(attr == AttrShadow)
 		return "0;37;100";
+	if(attr == AttrMarked)
+		return "1;31;44";
+
+	if(attr == AttrMarkedFocus)
+		return "1;31;106";
 
 	if(attr == AttrEffectHead)
 		return "1;37;40";

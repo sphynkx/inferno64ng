@@ -16,6 +16,8 @@ IcTheme: module
 	AttrStatus: con 6;
 	AttrScroll: con 7;
 	AttrShadow: con 8;
+	AttrMarked: con 9;
+	AttrMarkedFocus: con 10;
 
 	#
 	# Generic effect attributes for demos/games/animation layers.
@@ -27,20 +29,10 @@ IcTheme: module
 	AttrEffectDim: con 23;
 	AttrEffectDark: con 24;
 
-	#
-	# Initialize theme from terminal capabilities.
-	#
 	init: fn(ci: Icurses->ConsInfo);
 
-	#
-	# Return terminal SGR sequence body for a semantic attribute.
-	# Example result: "1;37;44" or "38;2;220;255;220;40".
-	#
 	sgr: fn(attr: int): string;
 
-	#
-	# Report active color capability selected by init().
-	#
 	colors: fn(): int;
 	truecolor: fn(): int;
 };

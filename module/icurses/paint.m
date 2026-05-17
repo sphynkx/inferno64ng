@@ -1,6 +1,7 @@
 include "icurses/view.m";
 include "icurses/glyph.m";
 include "icurses/canvas.m";
+include "icurses/textview.m";
 
 IcPaint: module
 {

@@ -28,6 +28,9 @@ IcUi: module
 		tickc:     chan of int;
 		tickms:    int;
 		ticks:     int;
+
+		quitkey1:  string;
+		quitkey2:  string;
 	};
 
 	Step: adt
@@ -50,6 +53,7 @@ IcUi: module
 	stop: fn(u: ref Ui);
 
 	settick: fn(u: ref Ui, ms: int);
+	setquitkeys: fn(u: ref Ui, key1, key2: string);
 
 	enablemouse: fn(u: ref Ui, enabled: int): int;
 	ismouseenabled: fn(u: ref Ui): int;
@@ -73,7 +77,9 @@ IcUi: module
 	window: fn(u: ref Ui, parentid, id: int, x, y, w, h: int, title: string): int;
 	shadowwindow: fn(u: ref Ui, parentid, shadowid, id: int, x, y, w, h: int, title: string, dx, dy: int): int;
 	button: fn(u: ref Ui, parentid, id: int, x, y, w, h: int, label, hotkey: string, targetid: int, command: string): int;
+	modal: fn(u: ref Ui, parentid, shadowid, id: int, x, y, w, h: int, title, message, inputlabel, input, checkbox: string, checked, focus, kind: int, button0, button1, button2: string, buttoncount: int, dx, dy: int, styles: array of string): int;
 	canvas: fn(u: ref Ui, parentid, id: int, x, y, w, h: int): int;
+	textview: fn(u: ref Ui, parentid, id: int, x, y, w, h: int): int;
 
 	hbar: fn(u: ref Ui, parentid, id: int, x, y, w, value, total: int): int;
 	vbar: fn(u: ref Ui, parentid, id: int, x, y, h, value, total: int): int;
@@ -84,7 +90,7 @@ IcUi: module
 	progressstyle: fn(u: ref Ui, id: int, style: int): int;
 
 	spinner: fn(u: ref Ui, parentid, id: int, x, y, style: int): int;
-	setspinner: fn(u: ref Ui, id: int, frame: int): int;
+	setspinner: fn(u: ref Ui, id: int, frame: int);
 	tickspinner: fn(u: ref Ui, id: int): int;
 
 	listbox: fn(u: ref Ui, parentid, id: int, x, y, w, h: int, title: string): int;
@@ -100,9 +106,11 @@ IcUi: module
 	settext: fn(u: ref Ui, id: int, text: string): int;
 	setcontent: fn(u: ref Ui, id: int, content: string): int;
 	setscroll: fn(u: ref Ui, id: int, scroll, scrollpos: int): int;
-	setframe: fn(u: ref Ui, id: int, frame: int): int;
+	setframe: fn(u: ref Ui, id: int, frame: int);
 	setargs: fn(u: ref Ui, id: int, sarg: string, iarg0, iarg1, iarg2: int): int;
 	setfocus: fn(u: ref Ui, id: int): int;
+
+	settextview: fn(u: ref Ui, id: int, model: ref IcTextView->Model): int;
 
 	canvasclear: fn(u: ref Ui, id: int, ch, code: string): int;
 	canvasfill: fn(u: ref Ui, id: int, x, y, w, h: int, ch, code: string): int;
