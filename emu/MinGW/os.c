@@ -1104,7 +1104,28 @@ keyeventcode(KEY_EVENT_RECORD *k, int *out)
 {
 	WCHAR wc;
 	DWORD ctrl;
-	int ch;
+	int ch, mod;
+
+	/*
+	 * Modifier bitmask tables indexed by mod (0..7):
+	 *   bit0=Shift, bit1=Alt, bit2=Ctrl
+	 */
+	static const int kftab[8] = {
+		KF, KFShift, KFAlt, KFAltShift,
+		KFCtrl, KFCtrlShift, KFCtrlAlt, KFCtrlAltShift
+	};
+	static const int vwtab[8] = {
+		View, ViewShift, ViewAlt, ViewAltShift,
+		ViewCtrl, ViewCtrlShift, ViewCtrlAlt, ViewCtrlAltShift
+	};
+	static const int instab[8] = {
+		Ins, ShiftIns, AltIns, AltShiftIns,
+		CtrlIns, CtrlShiftIns, CtrlAltIns, CtrlAltShiftIns
+	};
+	static const int deltab[8] = {
+		Del, ShiftDel, AltDel, AltShiftDel,
+		CtrlDel, CtrlShiftDel, CtrlAltDel, CtrlAltShiftDel
+	};
 
 	if(k == nil || out == nil)
 		return 0;
@@ -1114,93 +1135,68 @@ keyeventcode(KEY_EVENT_RECORD *k, int *out)
 
 	ctrl = k->dwControlKeyState;
 
+	/* Compute modifier bitmask: Shift=1, Alt=2, Ctrl=4 */
+	mod = 0;
+	if(ctrl & SHIFT_PRESSED)
+		mod |= 1;
+	if(ctrl & (LEFT_ALT_PRESSED|RIGHT_ALT_PRESSED))
+		mod |= 2;
+	if(ctrl & (LEFT_CTRL_PRESSED|RIGHT_CTRL_PRESSED))
+		mod |= 4;
+
 	switch(k->wVirtualKeyCode){
+	/* Standalone modifier keys - report left/right identity where available */
+	case VK_LSHIFT:
+		*out = LShift;
+		return 1;
+	case VK_RSHIFT:
+		*out = RShift;
+		return 1;
+	case VK_LCONTROL:
+		*out = LCtrl;
+		return 1;
+	case VK_RCONTROL:
+		*out = RCtrl;
+		return 1;
+	case VK_LMENU:
+		*out = LAlt;
+		return 1;
+	case VK_RMENU:
+		*out = RAlt;
+		return 1;
+
+	/* Navigation keys with modifier support */
 	case VK_LEFT:
-		if(ctrl & SHIFT_PRESSED)
-			*out = ShiftLeft;
-		else if(ctrl & (LEFT_CTRL_PRESSED|RIGHT_CTRL_PRESSED))
-			*out = CtrlLeft;
-		else if(ctrl & (LEFT_ALT_PRESSED|RIGHT_ALT_PRESSED))
-			*out = AltLeft;
-		else
-			*out = Left;
+		*out = vwtab[mod] | (Left-View);
 		return 1;
 	case VK_RIGHT:
-		if(ctrl & SHIFT_PRESSED)
-			*out = ShiftRight;
-		else if(ctrl & (LEFT_CTRL_PRESSED|RIGHT_CTRL_PRESSED))
-			*out = CtrlRight;
-		else if(ctrl & (LEFT_ALT_PRESSED|RIGHT_ALT_PRESSED))
-			*out = AltRight;
-		else
-			*out = Right;
+		*out = vwtab[mod] | (Right-View);
 		return 1;
 	case VK_UP:
-		if(ctrl & SHIFT_PRESSED)
-			*out = ShiftUp;
-		else if(ctrl & (LEFT_CTRL_PRESSED|RIGHT_CTRL_PRESSED))
-			*out = CtrlUp;
-		else if(ctrl & (LEFT_ALT_PRESSED|RIGHT_ALT_PRESSED))
-			*out = AltUp;
-		else
-			*out = Up;
+		*out = vwtab[mod] | (Up-View);
 		return 1;
 	case VK_DOWN:
-		if(ctrl & SHIFT_PRESSED)
-			*out = ShiftDown;
-		else if(ctrl & (LEFT_CTRL_PRESSED|RIGHT_CTRL_PRESSED))
-			*out = CtrlDown;
-		else if(ctrl & (LEFT_ALT_PRESSED|RIGHT_ALT_PRESSED))
-			*out = AltDown;
-		else
-			*out = Down;
+		*out = vwtab[mod] | (Down-View);
 		return 1;
 	case VK_HOME:
-		if(ctrl & SHIFT_PRESSED)
-			*out = ShiftHome;
-		else if(ctrl & (LEFT_CTRL_PRESSED|RIGHT_CTRL_PRESSED))
-			*out = CtrlHome;
-		else if(ctrl & (LEFT_ALT_PRESSED|RIGHT_ALT_PRESSED))
-			*out = AltHome;
-		else
-			*out = Home;
+		*out = vwtab[mod] | (Home-View);
 		return 1;
 	case VK_END:
-		if(ctrl & SHIFT_PRESSED)
-			*out = ShiftEnd;
-		else if(ctrl & (LEFT_CTRL_PRESSED|RIGHT_CTRL_PRESSED))
-			*out = CtrlEnd;
-		else if(ctrl & (LEFT_ALT_PRESSED|RIGHT_ALT_PRESSED))
-			*out = AltEnd;
-		else
-			*out = End;
+		*out = vwtab[mod] | (End-View);
 		return 1;
 	case VK_PRIOR:
-		if(ctrl & SHIFT_PRESSED)
-			*out = ShiftPgup;
-		else if(ctrl & (LEFT_CTRL_PRESSED|RIGHT_CTRL_PRESSED))
-			*out = CtrlPgup;
-		else if(ctrl & (LEFT_ALT_PRESSED|RIGHT_ALT_PRESSED))
-			*out = AltPgup;
-		else
-			*out = Pgup;
+		*out = vwtab[mod] | (Pgup-View);
 		return 1;
 	case VK_NEXT:
-		if(ctrl & SHIFT_PRESSED)
-			*out = ShiftPgdown;
-		else if(ctrl & (LEFT_CTRL_PRESSED|RIGHT_CTRL_PRESSED))
-			*out = CtrlPgdown;
-		else if(ctrl & (LEFT_ALT_PRESSED|RIGHT_ALT_PRESSED))
-			*out = AltPgdown;
-		else
-			*out = Pgdown;
+		*out = vwtab[mod] | (Pgdown-View);
 		return 1;
 	case VK_INSERT:
-		*out = Ins;
+		*out = instab[mod];
 		return 1;
 	case VK_DELETE:
-		*out = Del;
+		*out = deltab[mod];
 		return 1;
+
 	case VK_PRINT:
 	case VK_SNAPSHOT:
 		*out = Print;
@@ -1215,41 +1211,42 @@ keyeventcode(KEY_EVENT_RECORD *k, int *out)
 		*out = Break;
 		return 1;
 
+	/* Function keys with modifier support */
 	case VK_F1:
-		*out = KF|1;
+		*out = kftab[mod] | 1;
 		return 1;
 	case VK_F2:
-		*out = KF|2;
+		*out = kftab[mod] | 2;
 		return 1;
 	case VK_F3:
-		*out = KF|3;
+		*out = kftab[mod] | 3;
 		return 1;
 	case VK_F4:
-		*out = KF|4;
+		*out = kftab[mod] | 4;
 		return 1;
 	case VK_F5:
-		*out = KF|5;
+		*out = kftab[mod] | 5;
 		return 1;
 	case VK_F6:
-		*out = KF|6;
+		*out = kftab[mod] | 6;
 		return 1;
 	case VK_F7:
-		*out = KF|7;
+		*out = kftab[mod] | 7;
 		return 1;
 	case VK_F8:
-		*out = KF|8;
+		*out = kftab[mod] | 8;
 		return 1;
 	case VK_F9:
-		*out = KF|9;
+		*out = kftab[mod] | 9;
 		return 1;
 	case VK_F10:
-		*out = KF|10;
+		*out = kftab[mod] | 10;
 		return 1;
 	case VK_F11:
-		*out = KF|11;
+		*out = kftab[mod] | 11;
 		return 1;
 	case VK_F12:
-		*out = KF|12;
+		*out = kftab[mod] | 12;
 		return 1;
 
 	case VK_CAPITAL:
@@ -1660,7 +1657,14 @@ osconsinfo(char *buf, int n)
 		left, top, right, bottom,
 		cursorx, cursory,
 		vtoutputactive,
-		consolecpchanged ? 1 : 0,
+		/*
+		 * Report UTF-8 based on the actual current output code page.
+		 * GetConsoleOutputCP() reflects the real state: either it was
+		 * already UTF-8 before we started, or we successfully switched
+		 * it.  This avoids both false positives (consolecpchanged when
+		 * the switch failed) and false negatives (was already 65001).
+		 */
+		(GetConsoleOutputCP() == UTF8CP) ? 1 : 0,
 		vtoutputactive ? 16777216 : 16,
 		vtoutputactive ? 1 : 0);
 }

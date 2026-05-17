@@ -45,40 +45,42 @@ Keyboard : module {
 	PwrLow: con Spec|16r6e;
 	Latin: con Spec|16r6f;
 
+	# Modified function key groups: KFxxx|1..KFxxx|12
+	# Modifier mask: Shift=1, Alt=2, Ctrl=4 (combined by OR).
+	KFShift: con Spec|16r070;		# Shift+F1..F12
+	KFAlt: con Spec|16r080;			# Alt+F1..F12
+	KFAltShift: con Spec|16r090;		# Alt+Shift+F1..F12
+	KFCtrl: con Spec|16r0A0;		# Ctrl+F1..F12
+	KFCtrlShift: con Spec|16r0B0;		# Ctrl+Shift+F1..F12
+	KFCtrlAlt: con Spec|16r0C0;		# Ctrl+Alt+F1..F12
+	KFCtrlAltShift: con Spec|16r0D0;	# Ctrl+Alt+Shift+F1..F12
+
+	# Modified navigation key groups: ViewXxx|k
+	# k is View sub-index: Home=0,End=1,Up=2,Down=3,Left=4,Right=5,Pgup=6,Pgdown=7
+	ViewShift: con Spec|16r1A0;		# Shift+navigation
+	ViewAlt: con Spec|16r1B0;		# Alt+navigation
+	ViewAltShift: con Spec|16r1C0;		# Alt+Shift+navigation
+	ViewCtrl: con Spec|16r1D0;		# Ctrl+navigation
+	ViewCtrlShift: con Spec|16r1E0;		# Ctrl+Shift+navigation
+	ViewCtrlAlt: con Spec|16r1F0;		# Ctrl+Alt+navigation
+	ViewCtrlAltShift: con Spec|16r300;	# Ctrl+Alt+Shift+navigation (above APP range)
+
+	# Modified Insert/Delete keys
+	ShiftIns: con Spec|16r310;
+	AltIns: con Spec|16r311;
+	AltShiftIns: con Spec|16r312;
+	CtrlIns: con Spec|16r313;
+	CtrlShiftIns: con Spec|16r314;
+	CtrlAltIns: con Spec|16r315;
+	CtrlAltShiftIns: con Spec|16r316;
+	ShiftDel: con Spec|16r317;
+	AltDel: con Spec|16r318;
+	AltShiftDel: con Spec|16r319;
+	CtrlDel: con Spec|16r31A;
+	CtrlShiftDel: con Spec|16r31B;
+	CtrlAltDel: con Spec|16r31C;
+	CtrlAltShiftDel: con Spec|16r31D;
+
 	APP: con Spec|16r200;	# for application use (ALT keys)
-
-	# Modifier prefix ranges for shifted/ctrl/alt navigation key combinations.
-	# These occupy Spec|0x80-0xAF, unused by existing key definitions.
-	# Offsets within each range match View offsets (Home=0,End=1,Up=2,...).
-	KMshift: con Spec|16r80;	# Shift + navigation key base
-	KMctrl: con Spec|16r90;	# Ctrl + navigation key base
-	KMalt: con Spec|16ra0;	# Alt + navigation key base
-
-	ShiftHome: con KMshift|0;
-	ShiftEnd: con KMshift|1;
-	ShiftUp: con KMshift|2;
-	ShiftDown: con KMshift|3;
-	ShiftLeft: con KMshift|4;
-	ShiftRight: con KMshift|5;
-	ShiftPgup: con KMshift|6;
-	ShiftPgdown: con KMshift|7;
-
-	CtrlHome: con KMctrl|0;
-	CtrlEnd: con KMctrl|1;
-	CtrlUp: con KMctrl|2;
-	CtrlDown: con KMctrl|3;
-	CtrlLeft: con KMctrl|4;
-	CtrlRight: con KMctrl|5;
-	CtrlPgup: con KMctrl|6;
-	CtrlPgdown: con KMctrl|7;
-
-	AltHome: con KMalt|0;
-	AltEnd: con KMalt|1;
-	AltUp: con KMalt|2;
-	AltDown: con KMalt|3;
-	AltLeft: con KMalt|4;
-	AltRight: con KMalt|5;
-	AltPgup: con KMalt|6;
-	AltPgdown: con KMalt|7;
 };
 

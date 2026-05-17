@@ -322,73 +322,38 @@ readkbdrune(int c0)
 	return r;
 }
 
-/*
- * Map a VT extended modifier parameter and a base navigation key code
- * to the appropriate modifier+key constant.
- *
- * VT modifier encoding: N-1 encodes bit0=Shift, bit1=Alt, bit2=Ctrl.
- * N==1 means no modifier (plain key).
- * Only the three primary single-modifier cases are mapped to dedicated
- * key codes; combined or unknown modifiers fall back to the base key.
- */
-static int
-applycsikeymod(int vtmod, int basekey)
-{
-	int m;
-
-	m = vtmod - 1;	/* normalise: 0=none, 1=Shift, 2=Alt, 4=Ctrl */
-
-	if(m <= 0)
-		return basekey;
-
-	if(m == 1){	/* Shift only */
-		switch(basekey){
-		case Home:	return ShiftHome;
-		case End:	return ShiftEnd;
-		case Up:	return ShiftUp;
-		case Down:	return ShiftDown;
-		case Left:	return ShiftLeft;
-		case Right:	return ShiftRight;
-		case Pgup:	return ShiftPgup;
-		case Pgdown:	return ShiftPgdown;
-		}
-	}
-
-	if(m == 4){	/* Ctrl only */
-		switch(basekey){
-		case Home:	return CtrlHome;
-		case End:	return CtrlEnd;
-		case Up:	return CtrlUp;
-		case Down:	return CtrlDown;
-		case Left:	return CtrlLeft;
-		case Right:	return CtrlRight;
-		case Pgup:	return CtrlPgup;
-		case Pgdown:	return CtrlPgdown;
-		}
-	}
-
-	if(m == 2){	/* Alt only */
-		switch(basekey){
-		case Home:	return AltHome;
-		case End:	return AltEnd;
-		case Up:	return AltUp;
-		case Down:	return AltDown;
-		case Left:	return AltLeft;
-		case Right:	return AltRight;
-		case Pgup:	return AltPgup;
-		case Pgdown:	return AltPgdown;
-		}
-	}
-
-	/* Combined or unrecognised modifier: return base key unchanged */
-	return basekey;
-}
-
 static int
 parsecsikey(int lead, int first)
 {
-	int c, i, n, num, mod;
+	int c, i, n;
 	char seq[32];
+	int nums[2], nnum, v, have;
+	int mod;
+	char final;
+
+	/*
+	 * Modifier bitmask tables indexed by mod (0..7):
+	 *   mod = vtmod_param - 1, where vtmod_param is the VT modifier parameter:
+	 *     1=none, 2=Shift, 3=Alt, 4=Alt+Shift, 5=Ctrl, 6=Ctrl+Shift,
+	 *     7=Ctrl+Alt, 8=Ctrl+Alt+Shift
+	 *   bit0=Shift, bit1=Alt, bit2=Ctrl
+	 */
+	static const int kftab[8] = {
+		KF, KFShift, KFAlt, KFAltShift,
+		KFCtrl, KFCtrlShift, KFCtrlAlt, KFCtrlAltShift
+	};
+	static const int vwtab[8] = {
+		View, ViewShift, ViewAlt, ViewAltShift,
+		ViewCtrl, ViewCtrlShift, ViewCtrlAlt, ViewCtrlAltShift
+	};
+	static const int instab[8] = {
+		Ins, ShiftIns, AltIns, AltShiftIns,
+		CtrlIns, CtrlShiftIns, CtrlAltIns, CtrlAltShiftIns
+	};
+	static const int deltab[8] = {
+		Del, ShiftDel, AltDel, AltShiftDel,
+		CtrlDel, CtrlShiftDel, CtrlAltDel, CtrlAltShiftDel
+	};
 
 	seq[0] = lead;
 	n = 1;
@@ -407,104 +372,150 @@ parsecsikey(int lead, int first)
 	}
 	seq[n] = 0;
 
-	/*
-	 * Extract VT extended modifier parameter from the sequence.
-	 * Extended sequences carry a ';' separator followed by a modifier digit
-	 * before the final character, e.g. ESC [ 1 ; 5 A for Ctrl+Up.
-	 * VT modifier N encodes: N-1 bits: bit0=Shift, bit1=Alt, bit2=Ctrl.
-	 * mod==1 means no modifier (plain key).
-	 */
-	mod = 1;
+	if(n < 2)
+		return No;
+
+	final = seq[n-1];
+
+	/* Parse up to two semicolon-separated numeric params from seq[1..n-2]. */
+	nnum = 0;
+	v = 0;
+	have = 0;
 	for(i = 1; i < n-1; i++){
-		if(seq[i] == ';'){
-			mod = 0;
-			i++;
-			while(i < n-1 && seq[i] >= '0' && seq[i] <= '9'){
-				mod = mod*10 + seq[i] - '0';
-				i++;
-			}
-			if(mod == 0)
-				mod = 1;
-			break;
+		c = (unsigned char)seq[i];
+		if(c >= '0' && c <= '9'){
+			v = v * 10 + c - '0';
+			have = 1;
+		} else if(c == ';'){
+			if(nnum < 2)
+				nums[nnum++] = have ? v : 1;
+			v = 0;
+			have = 0;
 		}
 	}
+	if(have && nnum < 2)
+		nums[nnum++] = v;
+	/* Ensure both slots are filled with defaults. */
+	if(nnum < 1)
+		nums[0] = 1;
+	if(nnum < 2)
+		nums[1] = 1;
+
+	/*
+	 * VT modifier param nums[1]: 1=none, 2=Shift, 3=Alt, 4=Alt+Shift,
+	 * 5=Ctrl, 6=Ctrl+Shift, 7=Ctrl+Alt, 8=Ctrl+Alt+Shift.
+	 * mod = nums[1] - 1 gives the bitmask index into the tables above.
+	 */
+	mod = (nums[1] >= 1 && nums[1] <= 8) ? (nums[1] - 1) : 0;
 
 	if(lead == '['){
-		switch(seq[n-1]){
+		switch(final){
 		case 'A':
-			return applycsikeymod(mod, Up);
+			return vwtab[mod] | (Up-View);
 		case 'B':
-			return applycsikeymod(mod, Down);
+			return vwtab[mod] | (Down-View);
 		case 'C':
-			return applycsikeymod(mod, Right);
+			return vwtab[mod] | (Right-View);
 		case 'D':
-			return applycsikeymod(mod, Left);
+			return vwtab[mod] | (Left-View);
 		case 'F':
-			return applycsikeymod(mod, End);
+			return vwtab[mod] | (End-View);
 		case 'H':
-			return applycsikeymod(mod, Home);
+			return vwtab[mod] | (Home-View);
 		case 'Z':
 			return BackTab;
+		case 'P':
+			return kftab[mod] | 1;
+		case 'Q':
+			return kftab[mod] | 2;
+		case 'R':
+			return kftab[mod] | 3;
+		case 'S':
+			return kftab[mod] | 4;
 		case '~':
-			num = 0;
-			for(i = 1; i < n-1 && seq[i] >= '0' && seq[i] <= '9'; i++)
-				num = num*10 + seq[i] - '0';
-			switch(num){
+			switch(nums[0]){
 			case 1:
 			case 7:
-				return applycsikeymod(mod, Home);
+				return vwtab[mod] | (Home-View);
 			case 2:
-				return applycsikeymod(mod, Ins);
+				return instab[mod];
 			case 3:
-				return applycsikeymod(mod, Del);
+				return deltab[mod];
 			case 4:
 			case 8:
-				return applycsikeymod(mod, End);
+				return vwtab[mod] | (End-View);
 			case 5:
-				return applycsikeymod(mod, Pgup);
+				return vwtab[mod] | (Pgup-View);
 			case 6:
-				return applycsikeymod(mod, Pgdown);
+				return vwtab[mod] | (Pgdown-View);
 			case 15:
-				return KF|5;
+				return kftab[mod] | 5;
 			case 17:
-				return KF|6;
+				return kftab[mod] | 6;
 			case 18:
-				return KF|7;
+				return kftab[mod] | 7;
 			case 19:
-				return KF|8;
+				return kftab[mod] | 8;
 			case 20:
-				return KF|9;
+				return kftab[mod] | 9;
 			case 21:
-				return KF|10;
+				return kftab[mod] | 10;
 			case 23:
-				return KF|11;
+				return kftab[mod] | 11;
 			case 24:
-				return KF|12;
+				return kftab[mod] | 12;
 			}
 			break;
 		}
 	}else if(lead == 'O'){
-		switch(seq[1]){
-		case 'A':
-			return Up;
-		case 'B':
-			return Down;
-		case 'C':
-			return Right;
-		case 'D':
-			return Left;
-		case 'F':
-			return End;
-		case 'H':
-			return Home;
-		case 'P':
-			return KF|1;
-		case 'Q':
-			return KF|2;
-		case 'R':
-			return KF|3;
-		case 'S':
-			return KF|4;
+		if(nnum <= 1){
+			/* Plain SS3: direct letter final (e.g. ESC O P = F1). */
+			switch(final){
+			case 'A':
+				return Up;
+			case 'B':
+				return Down;
+			case 'C':
+				return Right;
+			case 'D':
+				return Left;
+			case 'F':
+				return End;
+			case 'H':
+				return Home;
+			case 'P':
+				return KF|1;
+			case 'Q':
+				return KF|2;
+			case 'R':
+				return KF|3;
+			case 'S':
+				return KF|4;
+			}
+		}else{
+			/* SS3 with modifier params (e.g. ESC O 1;3P = Alt+F1). */
+			switch(final){
+			case 'A':
+				return vwtab[mod] | (Up-View);
+			case 'B':
+				return vwtab[mod] | (Down-View);
+			case 'C':
+				return vwtab[mod] | (Right-View);
+			case 'D':
+				return vwtab[mod] | (Left-View);
+			case 'F':
+				return vwtab[mod] | (End-View);
+			case 'H':
+				return vwtab[mod] | (Home-View);
+			case 'P':
+				return kftab[mod] | 1;
+			case 'Q':
+				return kftab[mod] | 2;
+			case 'R':
+				return kftab[mod] | 3;
+			case 'S':
+				return kftab[mod] | 4;
+			}
 		}
 	}
 
@@ -766,38 +777,15 @@ osmillisec(void)
 	return (t.tv_sec-sec0)*1000+(t.tv_usec-usec0+500)/1000;
 }
 
-/*
- * Detect whether the host locale advertises UTF-8 encoding.
- * Checks LC_ALL, LC_CTYPE and LANG in priority order.
- * Returns 1 if any of them contains "UTF-8", "UTF8" or "utf8".
- * Returns 0 when no locale variable is set or none advertises UTF-8,
- * so that /dev/consinfo reports a safe fallback rather than lying.
- */
-static int
-isutf8locale(void)
-{
-	char *s;
-
-	s = getenv("LC_ALL");
-	if(s == nil || *s == '\0')
-		s = getenv("LC_CTYPE");
-	if(s == nil || *s == '\0')
-		s = getenv("LANG");
-	if(s == nil || *s == '\0')
-		return 0;
-
-	return strstr(s, "UTF-8") != nil
-		|| strstr(s, "UTF8") != nil
-		|| strstr(s, "utf8") != nil;
-}
-
 int
 osconsinfo(char *buf, int n)
 {
 	struct winsize ws;
 	int cols, rows;
 	int ok;
+	int utf8;
 	char *source;
+	const char *v;
 
 	if(buf == nil || n <= 0)
 		return -1;
@@ -837,6 +825,25 @@ osconsinfo(char *buf, int n)
 	if(rows <= 0)
 		rows = 24;
 
+	/*
+	 * Detect UTF-8 capability from the process locale environment.
+	 * Precedence: LC_ALL > LC_CTYPE > LANG (standard POSIX locale order).
+	 * We look for "UTF-8" or "UTF8" (locale encoding fields always use
+	 * this upper-case form; strstr avoids any pointer arithmetic).
+	 * This reflects actual terminal/locale configuration, not self-set state.
+	 */
+	utf8 = 0;
+	v = getenv("LC_ALL");
+	if(v == nil || *v == '\0')
+		v = getenv("LC_CTYPE");
+	if(v == nil || *v == '\0')
+		v = getenv("LANG");
+	if(v != nil && *v != '\0'){
+		if(strstr(v, "UTF-8") != nil || strstr(v, "UTF8") != nil ||
+		   strstr(v, "utf-8") != nil || strstr(v, "utf8") != nil)
+			utf8 = 1;
+	}
+
 	return snprint(buf, n,
 		"%d %d\n"
 		"cols=%d\n"
@@ -853,7 +860,7 @@ osconsinfo(char *buf, int n)
 		cols, rows,
 		(int)ws.ws_xpixel,
 		(int)ws.ws_ypixel,
-		isutf8locale(),
+		utf8,
 		16777216,
 		1,
 		source,

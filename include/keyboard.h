@@ -46,6 +46,56 @@ enum {
 	PwrLow=		Spec|0x6e,
 	Latin=		Spec|0x6f,
 
+	/*
+	 * Modified function key groups: KFxxx|1..KFxxx|12
+	 * Modifier bitmask (used as table index): Shift=1, Alt=2, Ctrl=4
+	 * kftab[mask] below maps mask -> base constant:
+	 *   0=KF, 1=KFShift, 2=KFAlt, 3=KFAltShift,
+	 *   4=KFCtrl, 5=KFCtrlShift, 6=KFCtrlAlt, 7=KFCtrlAltShift
+	 * Ranges are non-overlapping; each group holds indices 1..12.
+	 */
+	KFShift=	Spec|0x070,	/* Shift+F1..F12 */
+	KFAlt=		Spec|0x080,	/* Alt+F1..F12 */
+	KFAltShift=	Spec|0x090,	/* Alt+Shift+F1..F12 */
+	KFCtrl=		Spec|0x0A0,	/* Ctrl+F1..F12 */
+	KFCtrlShift=	Spec|0x0B0,	/* Ctrl+Shift+F1..F12 */
+	KFCtrlAlt=	Spec|0x0C0,	/* Ctrl+Alt+F1..F12 */
+	KFCtrlAltShift=	Spec|0x0D0,	/* Ctrl+Alt+Shift+F1..F12 */
+
+	/*
+	 * Modified navigation key groups: ViewXxx|k
+	 * k is the View sub-index: Home=0, End=1, Up=2, Down=3,
+	 *   Left=4, Right=5, Pgup=6, Pgdown=7
+	 * vwtab[mask] maps mask -> base constant (same mask encoding as KF above).
+	 * ViewCtrlAltShift is placed above APP range (0xE200..0xE2FF).
+	 */
+	ViewShift=		Spec|0x1A0,	/* Shift+navigation */
+	ViewAlt=		Spec|0x1B0,	/* Alt+navigation */
+	ViewAltShift=		Spec|0x1C0,	/* Alt+Shift+navigation */
+	ViewCtrl=		Spec|0x1D0,	/* Ctrl+navigation */
+	ViewCtrlShift=		Spec|0x1E0,	/* Ctrl+Shift+navigation */
+	ViewCtrlAlt=		Spec|0x1F0,	/* Ctrl+Alt+navigation */
+	ViewCtrlAltShift=	Spec|0x300,	/* Ctrl+Alt+Shift+navigation */
+
+	/*
+	 * Modified Insert/Delete keys.
+	 * instab[mask] / deltab[mask] below map modifier mask -> key code.
+	 */
+	ShiftIns=	Spec|0x310,
+	AltIns=		Spec|0x311,
+	AltShiftIns=	Spec|0x312,
+	CtrlIns=	Spec|0x313,
+	CtrlShiftIns=	Spec|0x314,
+	CtrlAltIns=	Spec|0x315,
+	CtrlAltShiftIns=Spec|0x316,
+	ShiftDel=	Spec|0x317,
+	AltDel=		Spec|0x318,
+	AltShiftDel=	Spec|0x319,
+	CtrlDel=	Spec|0x31A,
+	CtrlShiftDel=	Spec|0x31B,
+	CtrlAltDel=	Spec|0x31C,
+	CtrlAltShiftDel=Spec|0x31D,
+
 	/* for German keyboard */
 	German=		Spec|0xf00,
 
@@ -54,42 +104,6 @@ enum {
 	Circumflex=	German|0x3,
 
 	APP=		Spec|0x200,		/* for ALT application keys */
-
-	/*
-	 * Modifier prefix ranges for shifted/ctrl/alt navigation key combinations.
-	 * These occupy Spec|0x80-0xAF, unused by existing key definitions.
-	 * Offsets within each range match View offsets (Home=0,End=1,Up=2,...,BackTab=8).
-	 */
-	KMshift=	Spec|0x80,		/* Shift + navigation key base */
-	KMctrl=		Spec|0x90,		/* Ctrl + navigation key base */
-	KMalt=		Spec|0xa0,		/* Alt + navigation key base */
-
-	ShiftHome=	KMshift|0,
-	ShiftEnd=	KMshift|1,
-	ShiftUp=	KMshift|2,
-	ShiftDown=	KMshift|3,
-	ShiftLeft=	KMshift|4,
-	ShiftRight=	KMshift|5,
-	ShiftPgup=	KMshift|6,
-	ShiftPgdown=	KMshift|7,
-
-	CtrlHome=	KMctrl|0,
-	CtrlEnd=	KMctrl|1,
-	CtrlUp=		KMctrl|2,
-	CtrlDown=	KMctrl|3,
-	CtrlLeft=	KMctrl|4,
-	CtrlRight=	KMctrl|5,
-	CtrlPgup=	KMctrl|6,
-	CtrlPgdown=	KMctrl|7,
-
-	AltHome=	KMalt|0,
-	AltEnd=		KMalt|1,
-	AltUp=		KMalt|2,
-	AltDown=	KMalt|3,
-	AltLeft=	KMalt|4,
-	AltRight=	KMalt|5,
-	AltPgup=	KMalt|6,
-	AltPgdown=	KMalt|7,
 
 	No=			-1,			/* peter */
 };
