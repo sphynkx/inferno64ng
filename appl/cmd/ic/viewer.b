@@ -60,6 +60,7 @@ IcUiMod: module
 	rootid: fn(u: ref IcUi->Ui): int;
 	setstatusrows: fn(u: ref IcUi->Ui, helprow, statusrow: int);
 	label: fn(u: ref IcUi->Ui, parentid, id: int, x, y, w: int, text: string): int;
+	textview: fn(u: ref IcUi->Ui, parentid, id: int, x, y, w, h: int): int;
 };
 
 IcViewMod: module
@@ -70,7 +71,9 @@ IcViewMod: module
 	find: fn(t: ref IcView->Tree, id: int): ref IcView->Node;
 	setbounds: fn(v: ref IcView->Node, x, y, w, h: int);
 	settext: fn(v: ref IcView->Node, text: string);
+	setcontent: fn(v: ref IcView->Node, content: string);
 	setcode: fn(v: ref IcView->Node, code: string);
+	setargs: fn(v: ref IcView->Node, sarg: string, iarg0, iarg1, iarg2: int);
 	show: fn(v: ref IcView->Node);
 	hide: fn(v: ref IcView->Node);
 	allocid: fn(t: ref IcView->Tree): int;
@@ -86,7 +89,8 @@ BodyCode: con "38;2;220;230;255;48;2;20;45;90";
 BottomCode: con "1;38;2;20;25;30;48;2;170;225;255";
 ErrorCode: con "1;38;2;255;120;120;48;2;20;45;90";
 
-ConsinfoPath: con "/dev/consinfo";
+ReadChunkSize: con 8192;
+MaxRawLineLen: con 4096;
 
 Kesc: con 27;
 Kq: con int 'q';
@@ -100,32 +104,32 @@ Kend: con 57361;
 Kf3: con 57411;
 Kf10: con 57418;
 
-sanitizewide: int;
-
 loadlines: fn(path: string): array of string;
-loadconsinfo: fn(): string;
-detectwideunsafe: fn(): int;
-contains: fn(s, pattern: string): int;
-lowerascii: fn(s: string): string;
-sanitize: fn(text: string): string;
-splitlines: fn(text: string): array of string;
+sanitizechunk: fn(buf: array of byte, n: int): string;
+safecell: fn(c: int): string;
+appendtext: fn(lines: array of string, tail, text: string): (array of string, string);
+flushrawline: fn(lines: array of string, line: string): array of string;
 appendline: fn(a: array of string, s: string): array of string;
 wraplines: fn(lines: array of string, width: int): array of string;
 wrapline: fn(line: string, width: int): array of string;
 appendarray: fn(dst, src: array of string): array of string;
+visiblecontent: fn(lines: array of string, top, rows: int): string;
 
 spaces: fn(n: int): string;
 fittext: fn(s: string, w: int): string;
 bodyh: fn(h: int): int;
+bodyid: fn(v: ref IcState->ViewerState): int;
 
 rewrap: fn(v: ref IcState->ViewerState, w: int);
 clampview: fn(v: ref IcState->ViewerState, h: int);
-ensureids: fn(u: ref IcUi->Ui, v: ref IcState->ViewerState, rows: int);
+ensureids: fn(u: ref IcUi->Ui, v: ref IcState->ViewerState);
 setlabel: fn(u: ref IcUi->Ui, parentid, id, x, y, w: int, text, code: string);
+setbody: fn(u: ref IcUi->Ui, parentid, id, x, y, w, h: int, content, code: string);
 drawviewer: fn(u: ref IcUi->Ui, parentid: int, v: ref IcState->ViewerState, w, h: int);
 
 toptext: fn(v: ref IcState->ViewerState): string;
 bottomtext: fn(w: int): string;
+iserrorline: fn(s: string): int;
 
 init()
 {
@@ -144,8 +148,6 @@ init()
 	view = load IcViewMod IcViewMod->PATH;
 	if(view == nil)
 		raise "fail:load icurses/view";
-
-	sanitizewide = detectwideunsafe();
 
 	appfw->init("icview");
 	ui->init();
@@ -177,116 +179,38 @@ runfile(path: string): int
 	return runfilemode(path, ModeText);
 }
 
-contains(s, pattern: string): int
+safecell(c: int): string
+{
+	if(c == '\t')
+		return " ";
+
+	if(c == '\r')
+		return "\r";
+
+	if(c == '\n')
+		return "\n";
+
+	if(c < 32 || c == 127)
+		return ".";
+
+	#
+	# Keep printable Unicode, including Cyrillic.
+	# Limbo strings are rune strings after byte conversion; printable non-ASCII text
+	# must not be replaced here. If a specific terminal has a broken glyph range,
+	# that should be handled by a narrower console policy, not by dropping all wide chars.
+	#
+	return sys->sprint("%c", c);
+}
+
+sanitizechunk(buf: array of byte, n: int): string
 {
 	i: int;
-
-	if(pattern == "")
-		return 1;
-
-	if(len pattern > len s)
-		return 0;
-
-	for(i = 0; i + len pattern <= len s; i++){
-		if(s[i:i + len pattern] == pattern)
-			return 1;
-	}
-
-	return 0;
-}
-
-lowerascii(s: string): string
-{
 	out: string;
-	i, c: int;
-
-	out = "";
-	for(i = 0; i < len s; i++){
-		c = s[i];
-		if(c >= 'A' && c <= 'Z')
-			c += 'a' - 'A';
-		out += sys->sprint("%c", c);
-	}
-
-	return out;
-}
-
-loadconsinfo(): string
-{
-	fd: ref Sys->FD;
-	buf: array of byte;
-	n: int;
-
-	fd = sys->open(ConsinfoPath, Sys->OREAD);
-	if(fd == nil)
-		return "";
-
-	buf = array[1024] of byte;
-	n = sys->read(fd, buf, len buf);
-	if(n <= 0)
-		return "";
-
-	return string buf[0:n];
-}
-
-detectwideunsafe(): int
-{
-	info: string;
-
-	info = lowerascii(loadconsinfo());
-
-	if(contains(info, "mingw"))
-		return 1;
-
-	if(contains(info, "windows"))
-		return 1;
-
-	if(contains(info, "win-console"))
-		return 1;
-
-	if(contains(info, "source=win"))
-		return 1;
-
-	return 0;
-}
-
-sanitize(text: string): string
-{
-	out: string;
-	i, c: int;
 
 	out = "";
 
-	for(i = 0; i < len text; i++){
-		c = text[i];
-
-		if(c == '\n'){
-			out += "\n";
-			continue;
-		}
-
-		if(c == '\r'){
-			out += "\r";
-			continue;
-		}
-
-		if(c == '\t'){
-			out += " ";
-			continue;
-		}
-
-		if(c < 32 || c == 127){
-			out += ".";
-			continue;
-		}
-
-		if(sanitizewide && c > 126){
-			out += ".";
-			continue;
-		}
-
-		out += sys->sprint("%c", c);
-	}
+	for(i = 0; i < n; i++)
+		out += safecell(int buf[i]);
 
 	return out;
 }
@@ -311,49 +235,46 @@ appendline(a: array of string, s: string): array of string
 	return b;
 }
 
-appendarray(dst, src: array of string): array of string
+flushrawline(lines: array of string, line: string): array of string
 {
-	i: int;
+	if(line == nil)
+		line = "";
 
-	if(src == nil)
-		return dst;
+	while(len line > MaxRawLineLen){
+		lines = appendline(lines, line[0:MaxRawLineLen]);
+		line = line[MaxRawLineLen:];
+	}
 
-	for(i = 0; i < len src; i++)
-		dst = appendline(dst, src[i]);
-
-	return dst;
+	return appendline(lines, line);
 }
 
-splitlines(text: string): array of string
+appendtext(lines: array of string, tail, text: string): (array of string, string)
 {
-	lines: array of string;
 	i, start: int;
-	line: string;
+	part: string;
 
-	lines = array[0] of string;
 	start = 0;
-
 	for(i = 0; i < len text; i++){
 		if(text[i] == '\n'){
-			line = text[start:i];
-			if(len line > 0 && line[len line - 1] == '\r')
-				line = line[0:len line - 1];
-			lines = appendline(lines, line);
+			part = tail + text[start:i];
+			if(len part > 0 && part[len part - 1] == '\r')
+				part = part[0:len part - 1];
+
+			lines = flushrawline(lines, part);
+			tail = "";
 			start = i + 1;
 		}
 	}
 
-	if(start < len text){
-		line = text[start:];
-		if(len line > 0 && line[len line - 1] == '\r')
-			line = line[0:len line - 1];
-		lines = appendline(lines, line);
+	if(start < len text)
+		tail += text[start:];
+
+	while(len tail > MaxRawLineLen){
+		lines = appendline(lines, tail[0:MaxRawLineLen]);
+		tail = tail[MaxRawLineLen:];
 	}
 
-	if(lines == nil || len lines == 0)
-		lines = appendline(lines, "");
-
-	return lines;
+	return (lines, tail);
 }
 
 loadlines(path: string): array of string
@@ -361,8 +282,8 @@ loadlines(path: string): array of string
 	fd: ref Sys->FD;
 	buf: array of byte;
 	n: int;
-	text: string;
-	err: string;
+	lines: array of string;
+	tail, text, err: string;
 
 	fd = sys->open(path, Sys->OREAD);
 	if(fd == nil){
@@ -370,8 +291,9 @@ loadlines(path: string): array of string
 		return appendline(array[0] of string, err);
 	}
 
-	buf = array[Sys->ATOMICIO] of byte;
-	text = "";
+	buf = array[ReadChunkSize] of byte;
+	lines = array[0] of string;
+	tail = "";
 
 	for(;;){
 		n = sys->read(fd, buf, len buf);
@@ -383,10 +305,27 @@ loadlines(path: string): array of string
 		if(n == 0)
 			break;
 
-		text += string buf[0:n];
+		text = sanitizechunk(buf, n);
+		(lines, tail) = appendtext(lines, tail, text);
 	}
 
-	return splitlines(sanitize(text));
+	if(tail != "" || len lines == 0)
+		lines = flushrawline(lines, tail);
+
+	return lines;
+}
+
+appendarray(dst, src: array of string): array of string
+{
+	i: int;
+
+	if(src == nil)
+		return dst;
+
+	for(i = 0; i < len src; i++)
+		dst = appendline(dst, src[i]);
+
+	return dst;
 }
 
 spaces(n: int): string
@@ -494,6 +433,28 @@ wraplines(lines: array of string, width: int): array of string
 	return out;
 }
 
+visiblecontent(lines: array of string, top, rows: int): string
+{
+	i, idx: int;
+	s: string;
+
+	if(lines == nil || rows <= 0)
+		return "";
+
+	s = "";
+
+	for(i = 0; i < rows; i++){
+		idx = top + i;
+		if(idx >= 0 && idx < len lines)
+			s += lines[idx];
+
+		if(i < rows - 1)
+			s += "\n";
+	}
+
+	return s;
+}
+
 bodyh(h: int): int
 {
 	n: int;
@@ -503,6 +464,17 @@ bodyh(h: int): int
 		n = 1;
 
 	return n;
+}
+
+bodyid(v: ref IcState->ViewerState): int
+{
+	if(v == nil)
+		return -1;
+
+	if(v.bodyids == nil || len v.bodyids == 0)
+		return -1;
+
+	return v.bodyids[0];
 }
 
 rewrap(v: ref IcState->ViewerState, w: int)
@@ -538,12 +510,8 @@ clampview(v: ref IcState->ViewerState, h: int)
 		v.topline = max;
 }
 
-ensureids(u: ref IcUi->Ui, v: ref IcState->ViewerState, rows: int)
+ensureids(u: ref IcUi->Ui, v: ref IcState->ViewerState)
 {
-	i: int;
-	body: array of int;
-	n: ref IcView->Node;
-
 	if(u == nil || u.tree == nil || v == nil)
 		return;
 
@@ -553,26 +521,8 @@ ensureids(u: ref IcUi->Ui, v: ref IcState->ViewerState, rows: int)
 	if(v.bottomid <= 0)
 		v.bottomid = view->allocid(u.tree);
 
-	if(v.bodyids != nil && len v.bodyids > rows){
-		for(i = rows; i < len v.bodyids; i++){
-			n = view->find(u.tree, v.bodyids[i]);
-			if(n != nil)
-				view->hide(n);
-		}
-	}
-
-	if(v.bodyids != nil && len v.bodyids == rows)
-		return;
-
-	body = array[rows] of int;
-	for(i = 0; i < rows; i++){
-		if(v.bodyids != nil && i < len v.bodyids && v.bodyids[i] > 0)
-			body[i] = v.bodyids[i];
-		else
-			body[i] = view->allocid(u.tree);
-	}
-
-	v.bodyids = body;
+	if(v.bodyids == nil || len v.bodyids == 0)
+		v.bodyids = array[] of { view->allocid(u.tree) };
 }
 
 setlabel(u: ref IcUi->Ui, parentid, id, x, y, w: int, text, code: string)
@@ -595,6 +545,27 @@ setlabel(u: ref IcUi->Ui, parentid, id, x, y, w: int, text, code: string)
 	view->show(n);
 }
 
+setbody(u: ref IcUi->Ui, parentid, id, x, y, w, h: int, content, code: string)
+{
+	n: ref IcView->Node;
+
+	if(u == nil || u.tree == nil)
+		return;
+
+	if(view->find(u.tree, id) == nil)
+		ui->textview(u, parentid, id, x, y, w, h);
+
+	n = view->find(u.tree, id);
+	if(n == nil)
+		return;
+
+	view->setbounds(n, x, y, w, h);
+	view->setcontent(n, content);
+	view->setcode(n, code);
+	view->setargs(n, "", 0, 0, 0);
+	view->show(n);
+}
+
 toptext(v: ref IcState->ViewerState): string
 {
 	if(v == nil)
@@ -608,16 +579,27 @@ bottomtext(w: int): string
 	return fittext(" F1 Help  F2 Wrap  F3 Quit  F4 Hex  F7 Search  F10 Quit ", w);
 }
 
+iserrorline(s: string): int
+{
+	if(len s >= 17 && s[0:17] == "Cannot open file")
+		return 1;
+
+	if(len s >= 17 && s[0:17] == "Cannot read file")
+		return 1;
+
+	return 0;
+}
+
 drawviewer(u: ref IcUi->Ui, parentid: int, v: ref IcState->ViewerState, w, h: int)
 {
-	i, rows, idx: int;
-	text, code: string;
+	rows, id: int;
+	bodycode, content: string;
 
 	if(u == nil || v == nil)
 		return;
 
 	rows = bodyh(h);
-	ensureids(u, v, rows);
+	ensureids(u, v);
 
 	rewrap(v, w);
 	clampview(v, h);
@@ -626,20 +608,14 @@ drawviewer(u: ref IcUi->Ui, parentid: int, v: ref IcState->ViewerState, w, h: in
 
 	setlabel(u, parentid, v.topid, 0, 0, w, toptext(v), TopCode);
 
-	for(i = 0; i < rows; i++){
-		idx = v.topline + i;
-		if(idx >= 0 && idx < v.nlines)
-			text = v.wrapped[idx];
-		else
-			text = "";
+	bodycode = BodyCode;
+	if(v.lines != nil && len v.lines > 0 && iserrorline(v.lines[0]))
+		bodycode = ErrorCode;
 
-		code = BodyCode;
-		if(len text >= 17 && text[0:17] == "Cannot open file")
-			code = ErrorCode;
-		else if(len text >= 17 && text[0:17] == "Cannot read file")
-			code = ErrorCode;
-
-		setlabel(u, parentid, v.bodyids[i], 0, 1 + i, w, text, code);
+	id = bodyid(v);
+	if(id >= 0){
+		content = visiblecontent(v.wrapped, v.topline, rows);
+		setbody(u, parentid, id, 0, 1, w, rows, content, bodycode);
 	}
 
 	setlabel(u, parentid, v.bottomid, 0, h - 1, w, bottomtext(w), BottomCode);

@@ -87,8 +87,10 @@ IcScreenMod: module
 
 	init: fn();
 	rebuild: fn(state: ref IcState->AppState): int;
+	redraw: fn(state: ref IcState->AppState): int;
 };
 
+sys: Sys;
 commands: IcCommands;
 appanel: IcAppPanel;
 copycmd: IcCopyCmd;
@@ -109,10 +111,17 @@ F8Key: con 57416;
 F10Key: con 57418;
 InsKey: con 57443;
 
+ViewFlashDelayMs: con 80;
+
 flashfkey: fn(state: ref IcState->AppState, fkey: int);
+flashviewkey: fn(state: ref IcState->AppState);
 
 init()
 {
+	sys = load Sys Sys->PATH;
+	if(sys == nil)
+		raise "fail:load sys";
+
 	commands = load IcCommands IcCommands->PATH;
 	if(commands == nil)
 		raise "fail:load ic/commands";
@@ -168,6 +177,18 @@ flashfkey(state: ref IcState->AppState, fkey: int)
 	bottombar->activatefkey(state, fkey);
 }
 
+flashviewkey(state: ref IcState->AppState)
+{
+	if(state == nil)
+		return;
+
+	flashfkey(state, 3);
+	screen->redraw(state);
+
+	if(sys != nil && ViewFlashDelayMs > 0)
+		sys->sleep(ViewFlashDelayMs);
+}
+
 handlekey(state: ref IcState->AppState, k: int): int
 {
 	r: int;
@@ -201,7 +222,7 @@ handlekey(state: ref IcState->AppState, k: int): int
 		return commands->exec(state, IcCommands->CmdToggleSelection);
 
 	if(k == F3Key){
-		flashfkey(state, 3);
+		flashviewkey(state);
 		return commands->exec(state, IcCommands->CmdView);
 	}
 
