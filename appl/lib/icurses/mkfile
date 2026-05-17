@@ -24,6 +24,7 @@ TARG=\
 	slider.dis\
 	task.dis\
 	text.dis\
+	textview.dis\
 	theme.dis\
 	ui.dis\
 	view.dis\
@@ -54,6 +55,7 @@ SYSMODULES=\
 	icurses/slider.m\
 	icurses/task.m\
 	icurses/text.m\
+	icurses/textview.m\
 	icurses/theme.m\
 	icurses/ui.m\
 	icurses/view.m\
