@@ -21,8 +21,12 @@ extern	int	mflag;
 	int	vflag;
 	Procs	procs;
 	char	*eve;
+/*
 	int	Xsize	= 640;
 	int	Ysize	= 480;
+*/
+	int	Xsize	= 1024;
+	int	Ysize	= 768;
 	int	bflag = 1;
 	int	sflag;
 	int	qflag;
