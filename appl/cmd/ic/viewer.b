@@ -106,6 +106,7 @@ Kf3: con 57411;
 Kf10: con 57418;
 
 loadlines: fn(path: string): array of string;
+decodechunk: fn(buf: array of byte, n: int): string;
 sanitizechunk: fn(text: string): string;
 needsanitize: fn(text: string): int;
 safecell: fn(c: int): string;
@@ -179,6 +180,69 @@ newstate(): ref IcState->ViewerState
 runfile(path: string): int
 {
 	return runfilemode(path, ModeText);
+}
+
+decodechunk(buf: array of byte, n: int): string
+{
+	i, b0, b1, b2, b3, c: int;
+	out: string;
+
+	out = "";
+	i = 0;
+
+	while(i < n){
+		b0 = int buf[i] & 16rFF;
+
+		if(b0 < 16r80){
+			out += sys->sprint("%c", b0);
+			i++;
+			continue;
+		}
+
+		if((b0 & 16rE0) == 16rC0 && i + 1 < n){
+			b1 = int buf[i + 1] & 16rFF;
+			if((b1 & 16rC0) == 16r80){
+				c = ((b0 & 16r1F) << 6) | (b1 & 16r3F);
+				if(c >= 16r80){
+					out += sys->sprint("%c", c);
+					i += 2;
+					continue;
+				}
+			}
+		}
+
+		if((b0 & 16rF0) == 16rE0 && i + 2 < n){
+			b1 = int buf[i + 1] & 16rFF;
+			b2 = int buf[i + 2] & 16rFF;
+			if((b1 & 16rC0) == 16r80 && (b2 & 16rC0) == 16r80){
+				c = ((b0 & 16r0F) << 12) | ((b1 & 16r3F) << 6) | (b2 & 16r3F);
+				if(c >= 16r800 && (c < 16rD800 || c > 16rDFFF)){
+					out += sys->sprint("%c", c);
+					i += 3;
+					continue;
+				}
+			}
+		}
+
+		if((b0 & 16rF8) == 16rF0 && i + 3 < n){
+			b1 = int buf[i + 1] & 16rFF;
+			b2 = int buf[i + 2] & 16rFF;
+			b3 = int buf[i + 3] & 16rFF;
+			if((b1 & 16rC0) == 16r80 && (b2 & 16rC0) == 16r80 && (b3 & 16rC0) == 16r80){
+				c = ((b0 & 16r07) << 18) | ((b1 & 16r3F) << 12) | ((b2 & 16r3F) << 6) | (b3 & 16r3F);
+				if(c >= 16r10000 && c <= 16r10FFFF){
+					out += sys->sprint("%c", c);
+					i += 4;
+					continue;
+				}
+			}
+		}
+
+		out += sys->sprint("%c", ReplacementChar);
+		i++;
+	}
+
+	return out;
 }
 
 safecell(c: int): string
@@ -338,7 +402,7 @@ loadlines(path: string): array of string
 		if(n == 0)
 			break;
 
-		text = sanitizechunk(string buf[0:n]);
+		text = sanitizechunk(decodechunk(buf, n));
 		(lines, tail) = appendtext(lines, tail, text);
 	}
 
