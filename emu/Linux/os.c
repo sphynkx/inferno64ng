@@ -327,7 +327,7 @@ parsecsikey(int lead, int first)
 {
 	int c, i, n;
 	char seq[32];
-	int nums[2], nnum, v, have;
+	int nums[2], nnum, rawnnum, v, have;
 	int mod;
 	char final;
 
@@ -377,36 +377,63 @@ parsecsikey(int lead, int first)
 
 	final = seq[n-1];
 
-	/* Parse up to two semicolon-separated numeric params from seq[1..n-2]. */
+	/*
+	 * Parse up to two semicolon-separated numeric params from seq[1..n-2].
+	 *
+	 * Supported forms include:
+	 *   CSI: ESC [ 1 ; 2 A
+	 *   CSI: ESC [ 15 ; 5 ~
+	 *   SS3: ESC O P
+	 *   SS3: ESC O 2 P
+	 *   SS3: ESC O 1 ; 2 P
+	 */
+	nums[0] = 1;
+	nums[1] = 1;
 	nnum = 0;
 	v = 0;
 	have = 0;
+
 	for(i = 1; i < n-1; i++){
 		c = (unsigned char)seq[i];
 		if(c >= '0' && c <= '9'){
 			v = v * 10 + c - '0';
 			have = 1;
-		} else if(c == ';'){
+		}else if(c == ';'){
 			if(nnum < 2)
 				nums[nnum++] = have ? v : 1;
 			v = 0;
 			have = 0;
 		}
 	}
+
 	if(have && nnum < 2)
 		nums[nnum++] = v;
-	/* Ensure both slots are filled with defaults. */
+
+	rawnnum = nnum;
+
 	if(nnum < 1)
 		nums[0] = 1;
 	if(nnum < 2)
 		nums[1] = 1;
 
 	/*
-	 * VT modifier param nums[1]: 1=none, 2=Shift, 3=Alt, 4=Alt+Shift,
-	 * 5=Ctrl, 6=Ctrl+Shift, 7=Ctrl+Alt, 8=Ctrl+Alt+Shift.
-	 * mod = nums[1] - 1 gives the bitmask index into the tables above.
+	 * VT modifier param:
+	 *   1=none, 2=Shift, 3=Alt, 4=Alt+Shift,
+	 *   5=Ctrl, 6=Ctrl+Shift, 7=Ctrl+Alt, 8=Ctrl+Alt+Shift.
+	 *
+	 * CSI normally uses the second parameter as modifier:
+	 *   ESC [ 1 ; 2 A
+	 *   ESC [ 15 ; 5 ~
+	 *
+	 * SS3 also has a compact form used by xterm/Konsole for F1-F4:
+	 *   ESC O 2 P
+	 * In that form the single numeric parameter is the modifier.
 	 */
-	mod = (nums[1] >= 1 && nums[1] <= 8) ? (nums[1] - 1) : 0;
+	mod = 0;
+	if(lead == 'O' && rawnnum == 1 && nums[0] >= 1 && nums[0] <= 8)
+		mod = nums[0] - 1;
+	else if(nums[1] >= 1 && nums[1] <= 8)
+		mod = nums[1] - 1;
 
 	if(lead == '['){
 		switch(final){
@@ -468,60 +495,32 @@ parsecsikey(int lead, int first)
 			break;
 		}
 	}else if(lead == 'O'){
-		if(nnum <= 1){
-			/* Plain SS3: direct letter final (e.g. ESC O P = F1). */
-			switch(final){
-			case 'A':
-				return Up;
-			case 'B':
-				return Down;
-			case 'C':
-				return Right;
-			case 'D':
-				return Left;
-			case 'F':
-				return End;
-			case 'H':
-				return Home;
-			case 'P':
-				return KF|1;
-			case 'Q':
-				return KF|2;
-			case 'R':
-				return KF|3;
-			case 'S':
-				return KF|4;
-			}
-		}else{
-			/* SS3 with modifier params (e.g. ESC O 1;3P = Alt+F1). */
-			switch(final){
-			case 'A':
-				return vwtab[mod] | (Up-View);
-			case 'B':
-				return vwtab[mod] | (Down-View);
-			case 'C':
-				return vwtab[mod] | (Right-View);
-			case 'D':
-				return vwtab[mod] | (Left-View);
-			case 'F':
-				return vwtab[mod] | (End-View);
-			case 'H':
-				return vwtab[mod] | (Home-View);
-			case 'P':
-				return kftab[mod] | 1;
-			case 'Q':
-				return kftab[mod] | 2;
-			case 'R':
-				return kftab[mod] | 3;
-			case 'S':
-				return kftab[mod] | 4;
-			}
+		switch(final){
+		case 'A':
+			return vwtab[mod] | (Up-View);
+		case 'B':
+			return vwtab[mod] | (Down-View);
+		case 'C':
+			return vwtab[mod] | (Right-View);
+		case 'D':
+			return vwtab[mod] | (Left-View);
+		case 'F':
+			return vwtab[mod] | (End-View);
+		case 'H':
+			return vwtab[mod] | (Home-View);
+		case 'P':
+			return kftab[mod] | 1;
+		case 'Q':
+			return kftab[mod] | 2;
+		case 'R':
+			return kftab[mod] | 3;
+		case 'S':
+			return kftab[mod] | 4;
 		}
 	}
 
 	return No;
 }
-
 static int
 mousemods(int cb)
 {
