@@ -1,8 +1,11 @@
-include "icurses/view.m";
-
 IcTextView: module
 {
 	PATH: con "/dis/lib/icurses/textview.dis";
+
+	SpanSanitized: con 1;
+	SpanSelect: con 2;
+	SpanSearch: con 3;
+	SpanCustom: con 4;
 
 	Span: adt
 	{
@@ -10,6 +13,7 @@ IcTextView: module
 		start: int;
 		end: int;
 		code: string;
+		kind: int;
 	};
 
 	Model: adt

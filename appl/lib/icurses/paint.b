@@ -8,6 +8,7 @@ view: IcView;
 canvas: IcCanvas;
 theme: IcTheme;
 glyph: IcGlyph;
+textviewmod: IcTextView;
 
 idx: fn(r: ref IcPaint->Renderer, x, y: int): int;
 inrange: fn(r: ref IcPaint->Renderer, x, y: int): int;
@@ -26,6 +27,7 @@ drawprogress: fn(r: ref IcPaint->Renderer, t: ref IcView->Tree, n: ref IcView->N
 drawspinner: fn(r: ref IcPaint->Renderer, t: ref IcView->Tree, n: ref IcView->Node);
 drawcontent: fn(r: ref IcPaint->Renderer, t: ref IcView->Tree, n: ref IcView->Node);
 drawcanvas: fn(r: ref IcPaint->Renderer, t: ref IcView->Tree, n: ref IcView->Node);
+drawtextview: fn(r: ref IcPaint->Renderer, t: ref IcView->Tree, n: ref IcView->Node);
 drawmodal: fn(r: ref IcPaint->Renderer, t: ref IcView->Tree, n: ref IcView->Node);
 split3: fn(s: string): (string, string, string);
 modalbuttonlabel: fn(s: string): string;
@@ -101,9 +103,14 @@ init()
 	if(glyph == nil)
 		raise "fail:load icglyph";
 
+	textviewmod = load IcTextView IcTextView->PATH;
+	if(textviewmod == nil)
+		raise "fail:load ictextview";
+
 	ic->init();
 	view->init();
 	canvas->init();
+	textviewmod->init();
 
 	ci = ic->consinfo();
 
@@ -803,6 +810,44 @@ drawcanvas(r: ref IcPaint->Renderer, t: ref IcView->Tree, n: ref IcView->Node)
 	}
 }
 
+drawtextview(r: ref IcPaint->Renderer, t: ref IcView->Tree, n: ref IcView->Node)
+{
+	x, y, w, h, row, lineidx, leftcol: int;
+	content: string;
+	lines: array of string;
+
+	if(r == nil || t == nil || n == nil)
+		return;
+
+	x = view->absx(t, n);
+	y = view->absy(t, n);
+	w = n.w;
+	h = n.h;
+
+	if(w <= 0 || h <= 0)
+		return;
+
+	content = view->getcontent(n);
+	lines = wraptext(content, w);
+
+	fillrect(r, x, y, w, h, " ", view->getcode(n));
+
+	lineidx = n.iarg0;
+	leftcol = n.iarg1;
+	if(lineidx < 0)
+		lineidx = 0;
+	if(leftcol < 0)
+		leftcol = 0;
+
+	for(row = 0; row < h; row++){
+		if(lineidx + row >= len lines)
+			break;
+
+		if(leftcol < len lines[lineidx + row])
+			putslimit(r, x, y + row, w, lines[lineidx + row][leftcol:], view->getcode(n));
+	}
+}
+
 drawshadow(r: ref IcPaint->Renderer, t: ref IcView->Tree, n: ref IcView->Node)
 {
 	x, y, w, h: int;
@@ -1000,53 +1045,59 @@ drawprogress(r: ref IcPaint->Renderer, t: ref IcView->Tree, n: ref IcView->Node)
 	if(total <= 0)
 		total = 100;
 
+	fillrect(r, x, y, w, 1, " ", CodeWindow);
+
 	barw = w;
-	p = "";
-	tailw = 0;
-
-	if(style == IcPaint->ProgressTail){
-		p = " " + percentstr(value, total);
-		tailw = len p;
-
-		if(w - tailw >= 3)
-			barw = w - tailw;
-		else{
-			barw = w;
-			style = IcPaint->ProgressPercent;
-			p = percentstr(value, total);
-			tailw = 0;
-		}
-	}
-
-	inner = barw - 2;
-	if(inner <= 0)
-		return;
-
-	putc(r, x, y, "[", CodeFrame);
-	putc(r, x + barw - 1, y, "]", CodeFrame);
-
-	if(style == IcPaint->ProgressSolid){
-		hbar(r, x + 1, y, inner, value, total, CodeScroll);
-	}else{
+	inner = w - 2;
+	fill = 0;
+	if(inner > 0)
 		fill = barfill(inner, value, total);
 
-		for(i = 0; i < inner; i++){
-			if(i < fill)
-				ch = "#";
-			else
-				ch = ".";
-			putc(r, x + 1 + i, y, ch, CodeScroll);
-		}
+	if(glyph != nil)
+		ch = glyph->block(1);
+	else
+		ch = "#";
 
-		if(style == IcPaint->ProgressPercent){
-			p = percentstr(value, total);
+	if(style == IcPaint->ProgressSolid){
+		if(w >= 2){
+			putc(r, x, y, "[", CodeFrame);
+			putc(r, x + w - 1, y, "]", CodeFrame);
+			for(i = 0; i < inner; i++){
+				if(i < fill)
+					putc(r, x + 1 + i, y, ch, CodeFocus);
+				else
+					putc(r, x + 1 + i, y, " ", CodeWindow);
+			}
+		}
+		return;
+	}
+
+	p = percentstr(value, total);
+
+	if(style == IcPaint->ProgressText){
+		putslimit(r, x, y, w, p, CodeTitle);
+		return;
+	}
+
+	if(style == IcPaint->ProgressPercent){
+		if(w >= 2){
+			putc(r, x, y, "[", CodeFrame);
+			putc(r, x + w - 1, y, "]", CodeFrame);
+			for(i = 0; i < inner; i++){
+				if(i < fill)
+					putc(r, x + 1 + i, y, ch, CodeFocus);
+				else
+					putc(r, x + 1 + i, y, " ", CodeWindow);
+			}
 			pstart = x + 1 + (inner - len p) / 2;
 			if(pstart < x + 1)
 				pstart = x + 1;
 			putslimit(r, pstart, y, inner, p, CodeTitle);
 		}
+		return;
 	}
 
+	tailw = w - barw;
 	if(style == IcPaint->ProgressTail && tailw > 0)
 		putslimit(r, x + barw, y, tailw, p, CodeTitle);
 }
@@ -1072,33 +1123,28 @@ drawspinner(r: ref IcPaint->Renderer, t: ref IcView->Tree, n: ref IcView->Node)
 
 split3(s: string): (string, string, string)
 {
-	i, start, part: int;
+	i, j: int;
 	a, b, c: string;
 
-	start = 0;
-	part = 0;
-	a = "";
+	a = s;
 	b = "";
 	c = "";
 
-	for(i = 0; i <= len s; i++){
-		if(i == len s || s[i] == '\n'){
-			if(part == 0)
-				a = s[start:i];
-			else if(part == 1)
-				b = s[start:i];
-			else if(part == 2){
-				c = s[start:i];
-				break;
+	for(i = 0; i < len s; i++){
+		if(s[i] == '\n'){
+			a = s[0:i];
+			j = i + 1;
+			b = s[j:];
+			for(; j < len s; j++){
+				if(s[j] == '\n'){
+					b = s[i + 1:j];
+					c = s[j + 1:];
+					return (a, b, c);
+				}
 			}
-
-			part++;
-			start = i + 1;
+			return (a, b, c);
 		}
 	}
-
-	if(part == 0)
-		a = s;
 
 	return (a, b, c);
 }
@@ -1110,7 +1156,7 @@ modalbuttonlabel(s: string): string
 
 modalbuttonw(s: string): int
 {
-	return len modalbuttonlabel(s) + 2;
+	return len modalbuttonlabel(s);
 }
 
 modalbuttonstotalw(button0, button1, button2: string, buttoncount: int): int
@@ -1118,7 +1164,6 @@ modalbuttonstotalw(button0, button1, button2: string, buttoncount: int): int
 	w: int;
 
 	w = 0;
-
 	if(buttoncount > 0)
 		w += modalbuttonw(button0);
 	if(buttoncount > 1)
@@ -1131,17 +1176,19 @@ modalbuttonstotalw(button0, button1, button2: string, buttoncount: int): int
 
 styleat(n: ref IcView->Node, i: int, def: string): string
 {
-	if(n != nil && n.styles != nil && i >= 0 && i < len n.styles && n.styles[i] != "")
-		return n.styles[i];
-
-	return def;
+	if(n == nil || n.styles == nil)
+		return def;
+	if(i < 0 || i >= len n.styles)
+		return def;
+	if(n.styles[i] == "")
+		return def;
+	return n.styles[i];
 }
 
 modalcode(n: ref IcView->Node, kind: int): string
 {
 	if(kind == 2)
 		return styleat(n, 1, CodeModalOverwrite);
-
 	return styleat(n, 0, CodeModalCopy);
 }
 
@@ -1152,7 +1199,16 @@ modalframecode(n: ref IcView->Node): string
 
 modaltextcode(n: ref IcView->Node, bg: string): string
 {
-	return styleat(n, 3, bg);
+	code: string;
+
+	code = styleat(n, 3, "");
+	if(code != "")
+		return code;
+
+	if(bg != "")
+		return bg;
+
+	return CodeWindow;
 }
 
 modalfieldcode(n: ref IcView->Node): string
@@ -1177,11 +1233,13 @@ modalbuttonfocuscode(n: ref IcView->Node): string
 
 drawmodal(r: ref IcPaint->Renderer, t: ref IcView->Tree, n: ref IcView->Node)
 {
-	x, y, w, h, style, row, inputx, inputw, checked, focus, kind, buttoncount: int;
+	x, y, w, h, kind, checked, focus, buttoncount, liney, bx, bw, totalw: int;
 	title, message, inputlabel, input, checkbox, button0, button1, button2: string;
-	bg, fc, tc, code, s: string;
-	frame: array of string;
-	bw, bx, tw: int;
+	bg, framecode, textcode, fieldcode, fcode, bcode, bfcode: string;
+	parts: array of string;
+	lines: array of string;
+	i: int;
+	fc: array of string;
 
 	if(r == nil || t == nil || n == nil)
 		return;
@@ -1194,124 +1252,107 @@ drawmodal(r: ref IcPaint->Renderer, t: ref IcView->Tree, n: ref IcView->Node)
 	if(w < 4 || h < 3)
 		return;
 
-	title = view->gettext(n);
-	message = view->getcontent(n);
-	inputlabel = view->getcode(n);
-	input = view->gethotkey(n);
+	title = n.text;
+	message = n.content;
+	inputlabel = n.code;
+	input = n.hotkey;
 	checkbox = n.command;
-	(button0, button1, button2) = split3(n.sarg);
-
 	buttoncount = n.targetid;
 	checked = n.iarg0;
 	focus = n.iarg1;
 	kind = n.iarg2;
 
+	(button0, button1, button2) = split3(n.sarg);
+
 	bg = modalcode(n, kind);
-	fc = modalframecode(n);
-	tc = modaltextcode(n, bg);
-
-	style = r.framestyle;
-	if(n.frame != IcView->FrameDefault)
-		style = n.frame;
-
-	frame = framechars(style);
+	framecode = modalframecode(n);
+	textcode = modaltextcode(n, bg);
+	fieldcode = modalfieldcode(n);
+	fcode = modalfocuscode(n);
+	bcode = modalbuttoncode(n);
+	bfcode = modalbuttonfocuscode(n);
 
 	fillrect(r, x, y, w, h, " ", bg);
 
-	hline(r, x, y, w, frame[0], fc);
-	hline(r, x, y + h - 1, w, frame[0], fc);
-	vline(r, x, y, h, frame[1], fc);
-	vline(r, x + w - 1, y, h, frame[1], fc);
+	fc = framechars(IcPaint->FrameSingle);
+	hline(r, x, y, w, fc[0], framecode);
+	hline(r, x, y + h - 1, w, fc[0], framecode);
+	vline(r, x, y, h, fc[1], framecode);
+	vline(r, x + w - 1, y, h, fc[1], framecode);
+	putc(r, x, y, fc[2], framecode);
+	putc(r, x + w - 1, y, fc[3], framecode);
+	putc(r, x, y + h - 1, fc[4], framecode);
+	putc(r, x + w - 1, y + h - 1, fc[5], framecode);
 
-	putc(r, x, y, frame[2], fc);
-	putc(r, x + w - 1, y, frame[3], fc);
-	putc(r, x, y + h - 1, frame[4], fc);
-	putc(r, x + w - 1, y + h - 1, frame[5], fc);
+	if(title != "")
+		putslimit(r, x + 2, y, w - 4, " " + title + " ", CodeTitle);
 
-	if(title != ""){
-		s = " " + title + " ";
-		putslimit(r, x + 2, y, w - 4, s, fc);
+	liney = y + 2;
+	lines = wraptext(message, w - 4);
+	for(i = 0; i < len lines && liney < y + h - 2; i++){
+		putslimit(r, x + 2, liney, w - 4, lines[i], textcode);
+		liney++;
 	}
 
-	row = y + 2;
-	putslimit(r, x + 2, row, w - 4, message, tc);
-	row += 2;
-
-	if(inputlabel != ""){
-		s = inputlabel + " ";
-		putslimit(r, x + 2, row, w - 4, s, tc);
-
-		inputx = x + 2 + len s;
-		inputw = w - (inputx - x) - 2;
-		if(inputw < 1)
-			inputw = 1;
-
-		if(focus == 4)
-			code = modalfocuscode(n);
-		else
-			code = modalfieldcode(n);
-
-		fillrect(r, inputx, row, inputw, 1, " ", code);
-		putslimit(r, inputx, row, inputw, input, code);
-		row += 2;
+	if(inputlabel != "" && liney < y + h - 2){
+		putslimit(r, x + 2, liney, w - 4, inputlabel, textcode);
+		liney++;
+		if(liney < y + h - 2){
+			fillrect(r, x + 2, liney, w - 4, 1, " ", fieldcode);
+			if(focus == 4)
+				putslimit(r, x + 2, liney, w - 4, input, fcode);
+			else
+				putslimit(r, x + 2, liney, w - 4, input, fieldcode);
+			liney++;
+		}
 	}
 
-	if(checkbox != ""){
+	if(checkbox != "" && liney < y + h - 2){
 		if(checked)
-			s = "[x] " + checkbox;
+			checkbox = "[x] " + checkbox;
 		else
-			s = "[ ] " + checkbox;
+			checkbox = "[ ] " + checkbox;
 
 		if(focus == 0)
-			code = modalfocuscode(n);
+			putslimit(r, x + 2, liney, w - 4, checkbox, fcode);
 		else
-			code = bg;
+			putslimit(r, x + 2, liney, w - 4, checkbox, textcode);
 
-		fillrect(r, x + 2, row, w - 4, 1, " ", code);
-		putslimit(r, x + 2, row, w - 4, s, code);
-		row += 2;
+		liney++;
 	}
 
-	tw = modalbuttonstotalw(button0, button1, button2, buttoncount);
-	bx = x + (w - tw) / 2;
+	totalw = modalbuttonstotalw(button0, button1, button2, buttoncount);
+	bx = x + (w - totalw) / 2;
 	if(bx < x + 2)
 		bx = x + 2;
 
-	row = y + h - 2;
-
 	if(buttoncount > 0){
 		bw = modalbuttonw(button0);
+		parts = array[] of { modalbuttonlabel(button0) };
 		if(focus == 1)
-			code = modalbuttonfocuscode(n);
+			putslimit(r, bx, y + h - 2, bw, parts[0], bfcode);
 		else
-			code = modalbuttoncode(n);
-
-		fillrect(r, bx, row, bw, 1, " ", code);
-		putslimit(r, bx + 1, row, bw - 2, modalbuttonlabel(button0), code);
+			putslimit(r, bx, y + h - 2, bw, parts[0], bcode);
 		bx += bw + 2;
 	}
 
 	if(buttoncount > 1){
 		bw = modalbuttonw(button1);
+		parts = array[] of { modalbuttonlabel(button1) };
 		if(focus == 2)
-			code = modalbuttonfocuscode(n);
+			putslimit(r, bx, y + h - 2, bw, parts[0], bfcode);
 		else
-			code = modalbuttoncode(n);
-
-		fillrect(r, bx, row, bw, 1, " ", code);
-		putslimit(r, bx + 1, row, bw - 2, modalbuttonlabel(button1), code);
+			putslimit(r, bx, y + h - 2, bw, parts[0], bcode);
 		bx += bw + 2;
 	}
 
 	if(buttoncount > 2){
 		bw = modalbuttonw(button2);
+		parts = array[] of { modalbuttonlabel(button2) };
 		if(focus == 3)
-			code = modalbuttonfocuscode(n);
+			putslimit(r, bx, y + h - 2, bw, parts[0], bfcode);
 		else
-			code = modalbuttoncode(n);
-
-		fillrect(r, bx, row, bw, 1, " ", code);
-		putslimit(r, bx + 1, row, bw - 2, modalbuttonlabel(button2), code);
+			putslimit(r, bx, y + h - 2, bw, parts[0], bcode);
 	}
 }
 
@@ -1330,14 +1371,14 @@ drawnode(r: ref IcPaint->Renderer, t: ref IcView->Tree, n: ref IcView->Node)
 		drawshadow(r, t, n);
 	else if(n.kind == "canvas")
 		drawcanvas(r, t, n);
+	else if(n.kind == "textview")
+		drawtextview(r, t, n);
 	else if(n.kind == "window")
 		drawwindow(r, t, n);
 	else if(n.kind == "button")
 		drawbutton(r, t, n);
 	else if(n.kind == "label")
 		drawlabel(r, t, n);
-	else if(n.kind == "modal")
-		drawmodal(r, t, n);
 	else if(n.kind == "hbar")
 		drawhbar(r, t, n);
 	else if(n.kind == "vbar")
@@ -1346,6 +1387,8 @@ drawnode(r: ref IcPaint->Renderer, t: ref IcView->Tree, n: ref IcView->Node)
 		drawprogress(r, t, n);
 	else if(n.kind == "spinner")
 		drawspinner(r, t, n);
+	else if(n.kind == "modal")
+		drawmodal(r, t, n);
 
 	for(i = 0; i < len n.children; i++){
 		c = view->find(t, n.children[i]);
@@ -1397,10 +1440,8 @@ flush(r: ref IcPaint->Renderer)
 
 			while(x < r.w){
 				j = idx(r, x, y);
-
 				if(samecell(r.front[j], r.back[j]))
 					break;
-
 				if(r.back[j].code != code)
 					break;
 
@@ -1409,9 +1450,7 @@ flush(r: ref IcPaint->Renderer)
 				x++;
 			}
 
-			ic->cup(r.out, y + 1, start + 1);
-			ic->sgr(r.out, code);
-			sys->fprint(r.out, "%s", s);
+			ic->emitrun(r.out, y + 1, start + 1, code, s);
 		}
 	}
 
@@ -1420,10 +1459,13 @@ flush(r: ref IcPaint->Renderer)
 
 canvasnew(id: int, w, h: int): int
 {
+	c: ref IcCanvas->Canvas;
+
 	if(canvas == nil)
 		return -1;
 
-	if(canvas->newcanvas(id, w, h) == nil)
+	c = canvas->newcanvas(id, w, h);
+	if(c == nil)
 		return -1;
 
 	return 0;
