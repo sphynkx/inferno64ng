@@ -828,7 +828,8 @@ osconsinfo(char *buf, int n)
 	/*
 	 * Detect UTF-8 capability from the process locale environment.
 	 * Precedence: LC_ALL > LC_CTYPE > LANG (standard POSIX locale order).
-	 * We look for a "UTF-8" or "UTF8" substring (case-insensitive).
+	 * We look for "UTF-8" or "UTF8" (locale encoding fields always use
+	 * this upper-case form; strstr avoids any pointer arithmetic).
 	 * This reflects actual terminal/locale configuration, not self-set state.
 	 */
 	utf8 = 0;
@@ -838,19 +839,9 @@ osconsinfo(char *buf, int n)
 	if(v == nil || *v == '\0')
 		v = getenv("LANG");
 	if(v != nil && *v != '\0'){
-		const char *p;
-		for(p = v; *p; p++){
-			if((*p == 'u' || *p == 'U') &&
-			   (*(p+1) == 't' || *(p+1) == 'T') &&
-			   (*(p+2) == 'f' || *(p+2) == 'F')){
-				const char *q = p+3;
-				if(*q == '-') q++;
-				if(*q == '8'){
-					utf8 = 1;
-					break;
-				}
-			}
-		}
+		if(strstr(v, "UTF-8") != nil || strstr(v, "UTF8") != nil ||
+		   strstr(v, "utf-8") != nil || strstr(v, "utf8") != nil)
+			utf8 = 1;
 	}
 
 	return snprint(buf, n,
