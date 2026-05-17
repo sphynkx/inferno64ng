@@ -322,10 +322,72 @@ readkbdrune(int c0)
 	return r;
 }
 
+/*
+ * Map a VT extended modifier parameter and a base navigation key code
+ * to the appropriate modifier+key constant.
+ *
+ * VT modifier encoding: N-1 encodes bit0=Shift, bit1=Alt, bit2=Ctrl.
+ * N==1 means no modifier (plain key).
+ * Only the three primary single-modifier cases are mapped to dedicated
+ * key codes; combined or unknown modifiers fall back to the base key.
+ */
+static int
+applycsikeymod(int vtmod, int basekey)
+{
+	int m;
+
+	m = vtmod - 1;	/* normalise: 0=none, 1=Shift, 2=Alt, 4=Ctrl */
+
+	if(m <= 0)
+		return basekey;
+
+	if(m == 1){	/* Shift only */
+		switch(basekey){
+		case Home:	return ShiftHome;
+		case End:	return ShiftEnd;
+		case Up:	return ShiftUp;
+		case Down:	return ShiftDown;
+		case Left:	return ShiftLeft;
+		case Right:	return ShiftRight;
+		case Pgup:	return ShiftPgup;
+		case Pgdown:	return ShiftPgdown;
+		}
+	}
+
+	if(m == 4){	/* Ctrl only */
+		switch(basekey){
+		case Home:	return CtrlHome;
+		case End:	return CtrlEnd;
+		case Up:	return CtrlUp;
+		case Down:	return CtrlDown;
+		case Left:	return CtrlLeft;
+		case Right:	return CtrlRight;
+		case Pgup:	return CtrlPgup;
+		case Pgdown:	return CtrlPgdown;
+		}
+	}
+
+	if(m == 2){	/* Alt only */
+		switch(basekey){
+		case Home:	return AltHome;
+		case End:	return AltEnd;
+		case Up:	return AltUp;
+		case Down:	return AltDown;
+		case Left:	return AltLeft;
+		case Right:	return AltRight;
+		case Pgup:	return AltPgup;
+		case Pgdown:	return AltPgdown;
+		}
+	}
+
+	/* Combined or unrecognised modifier: return base key unchanged */
+	return basekey;
+}
+
 static int
 parsecsikey(int lead, int first)
 {
-	int c, i, n, num;
+	int c, i, n, num, mod;
 	char seq[32];
 
 	seq[0] = lead;
@@ -345,20 +407,42 @@ parsecsikey(int lead, int first)
 	}
 	seq[n] = 0;
 
+	/*
+	 * Extract VT extended modifier parameter from the sequence.
+	 * Extended sequences carry a ';' separator followed by a modifier digit
+	 * before the final character, e.g. ESC [ 1 ; 5 A for Ctrl+Up.
+	 * VT modifier N encodes: N-1 bits: bit0=Shift, bit1=Alt, bit2=Ctrl.
+	 * mod==1 means no modifier (plain key).
+	 */
+	mod = 1;
+	for(i = 1; i < n-1; i++){
+		if(seq[i] == ';'){
+			mod = 0;
+			i++;
+			while(i < n-1 && seq[i] >= '0' && seq[i] <= '9'){
+				mod = mod*10 + seq[i] - '0';
+				i++;
+			}
+			if(mod == 0)
+				mod = 1;
+			break;
+		}
+	}
+
 	if(lead == '['){
 		switch(seq[n-1]){
 		case 'A':
-			return Up;
+			return applycsikeymod(mod, Up);
 		case 'B':
-			return Down;
+			return applycsikeymod(mod, Down);
 		case 'C':
-			return Right;
+			return applycsikeymod(mod, Right);
 		case 'D':
-			return Left;
+			return applycsikeymod(mod, Left);
 		case 'F':
-			return End;
+			return applycsikeymod(mod, End);
 		case 'H':
-			return Home;
+			return applycsikeymod(mod, Home);
 		case 'Z':
 			return BackTab;
 		case '~':
@@ -368,18 +452,18 @@ parsecsikey(int lead, int first)
 			switch(num){
 			case 1:
 			case 7:
-				return Home;
+				return applycsikeymod(mod, Home);
 			case 2:
-				return Ins;
+				return applycsikeymod(mod, Ins);
 			case 3:
-				return Del;
+				return applycsikeymod(mod, Del);
 			case 4:
 			case 8:
-				return End;
+				return applycsikeymod(mod, End);
 			case 5:
-				return Pgup;
+				return applycsikeymod(mod, Pgup);
 			case 6:
-				return Pgdown;
+				return applycsikeymod(mod, Pgdown);
 			case 15:
 				return KF|5;
 			case 17:
@@ -682,6 +766,31 @@ osmillisec(void)
 	return (t.tv_sec-sec0)*1000+(t.tv_usec-usec0+500)/1000;
 }
 
+/*
+ * Detect whether the host locale advertises UTF-8 encoding.
+ * Checks LC_ALL, LC_CTYPE and LANG in priority order.
+ * Returns 1 if any of them contains "UTF-8", "UTF8" or "utf8".
+ * Returns 0 when no locale variable is set or none advertises UTF-8,
+ * so that /dev/consinfo reports a safe fallback rather than lying.
+ */
+static int
+isutf8locale(void)
+{
+	char *s;
+
+	s = getenv("LC_ALL");
+	if(s == nil || *s == '\0')
+		s = getenv("LC_CTYPE");
+	if(s == nil || *s == '\0')
+		s = getenv("LANG");
+	if(s == nil || *s == '\0')
+		return 0;
+
+	return strstr(s, "UTF-8") != nil
+		|| strstr(s, "UTF8") != nil
+		|| strstr(s, "utf8") != nil;
+}
+
 int
 osconsinfo(char *buf, int n)
 {
@@ -735,7 +844,7 @@ osconsinfo(char *buf, int n)
 		"pixelwidth=%d\n"
 		"pixelheight=%d\n"
 		"vt=1\n"
-		"utf8=1\n"
+		"utf8=%d\n"
 		"colors=%d\n"
 		"truecolor=%d\n"
 		"source=%s\n"
@@ -744,6 +853,7 @@ osconsinfo(char *buf, int n)
 		cols, rows,
 		(int)ws.ws_xpixel,
 		(int)ws.ws_ypixel,
+		isutf8locale(),
 		16777216,
 		1,
 		source,

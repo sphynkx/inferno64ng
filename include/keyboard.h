@@ -55,6 +55,42 @@ enum {
 
 	APP=		Spec|0x200,		/* for ALT application keys */
 
+	/*
+	 * Modifier prefix ranges for shifted/ctrl/alt navigation key combinations.
+	 * These occupy Spec|0x80-0xAF, unused by existing key definitions.
+	 * Offsets within each range match View offsets (Home=0,End=1,Up=2,...,BackTab=8).
+	 */
+	KMshift=	Spec|0x80,		/* Shift + navigation key base */
+	KMctrl=		Spec|0x90,		/* Ctrl + navigation key base */
+	KMalt=		Spec|0xa0,		/* Alt + navigation key base */
+
+	ShiftHome=	KMshift|0,
+	ShiftEnd=	KMshift|1,
+	ShiftUp=	KMshift|2,
+	ShiftDown=	KMshift|3,
+	ShiftLeft=	KMshift|4,
+	ShiftRight=	KMshift|5,
+	ShiftPgup=	KMshift|6,
+	ShiftPgdown=	KMshift|7,
+
+	CtrlHome=	KMctrl|0,
+	CtrlEnd=	KMctrl|1,
+	CtrlUp=		KMctrl|2,
+	CtrlDown=	KMctrl|3,
+	CtrlLeft=	KMctrl|4,
+	CtrlRight=	KMctrl|5,
+	CtrlPgup=	KMctrl|6,
+	CtrlPgdown=	KMctrl|7,
+
+	AltHome=	KMalt|0,
+	AltEnd=		KMalt|1,
+	AltUp=		KMalt|2,
+	AltDown=	KMalt|3,
+	AltLeft=	KMalt|4,
+	AltRight=	KMalt|5,
+	AltPgup=	KMalt|6,
+	AltPgdown=	KMalt|7,
+
 	No=			-1,			/* peter */
 };
 
