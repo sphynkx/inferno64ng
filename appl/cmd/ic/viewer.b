@@ -91,6 +91,7 @@ ErrorCode: con "1;38;2;255;120;120;48;2;20;45;90";
 
 ReadChunkSize: con 8192;
 MaxRawLineLen: con 4096;
+ReplacementChar: con 16rFFFD;
 
 Kesc: con 27;
 Kq: con int 'q';
@@ -105,7 +106,8 @@ Kf3: con 57411;
 Kf10: con 57418;
 
 loadlines: fn(path: string): array of string;
-sanitizechunk: fn(buf: array of byte, n: int): string;
+sanitizechunk: fn(text: string): string;
+needsanitize: fn(text: string): int;
 safecell: fn(c: int): string;
 appendtext: fn(lines: array of string, tail, text: string): (array of string, string);
 flushrawline: fn(lines: array of string, line: string): array of string;
@@ -193,24 +195,55 @@ safecell(c: int): string
 	if(c < 32 || c == 127)
 		return ".";
 
-	#
-	# Keep printable Unicode, including Cyrillic.
-	# Limbo strings are rune strings after byte conversion; printable non-ASCII text
-	# must not be replaced here. If a specific terminal has a broken glyph range,
-	# that should be handled by a narrower console policy, not by dropping all wide chars.
-	#
+	if(c >= 16r80 && c < 16rA0)
+		return ".";
+
+	if(c == ReplacementChar)
+		return ".";
+
 	return sys->sprint("%c", c);
 }
 
-sanitizechunk(buf: array of byte, n: int): string
+needsanitize(text: string): int
+{
+	i, c: int;
+
+	for(i = 0; i < len text; i++){
+		c = text[i];
+
+		if(c == '\t')
+			return 1;
+
+		if(c < 32 && c != '\n' && c != '\r')
+			return 1;
+
+		if(c == 127)
+			return 1;
+
+		if(c >= 16r80 && c < 16rA0)
+			return 1;
+
+		if(c == ReplacementChar)
+			return 1;
+	}
+
+	return 0;
+}
+
+sanitizechunk(text: string): string
 {
 	i: int;
 	out: string;
 
-	out = "";
+	if(text == "")
+		return "";
 
-	for(i = 0; i < n; i++)
-		out += safecell(int buf[i]);
+	if(!needsanitize(text))
+		return text;
+
+	out = "";
+	for(i = 0; i < len text; i++)
+		out += safecell(text[i]);
 
 	return out;
 }
@@ -305,7 +338,7 @@ loadlines(path: string): array of string
 		if(n == 0)
 			break;
 
-		text = sanitizechunk(buf, n);
+		text = sanitizechunk(string buf[0:n]);
 		(lines, tail) = appendtext(lines, tail, text);
 	}
 

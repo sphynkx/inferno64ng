@@ -1116,28 +1116,84 @@ keyeventcode(KEY_EVENT_RECORD *k, int *out)
 
 	switch(k->wVirtualKeyCode){
 	case VK_LEFT:
-		*out = Left;
+		if(ctrl & SHIFT_PRESSED)
+			*out = ShiftLeft;
+		else if(ctrl & (LEFT_CTRL_PRESSED|RIGHT_CTRL_PRESSED))
+			*out = CtrlLeft;
+		else if(ctrl & (LEFT_ALT_PRESSED|RIGHT_ALT_PRESSED))
+			*out = AltLeft;
+		else
+			*out = Left;
 		return 1;
 	case VK_RIGHT:
-		*out = Right;
+		if(ctrl & SHIFT_PRESSED)
+			*out = ShiftRight;
+		else if(ctrl & (LEFT_CTRL_PRESSED|RIGHT_CTRL_PRESSED))
+			*out = CtrlRight;
+		else if(ctrl & (LEFT_ALT_PRESSED|RIGHT_ALT_PRESSED))
+			*out = AltRight;
+		else
+			*out = Right;
 		return 1;
 	case VK_UP:
-		*out = Up;
+		if(ctrl & SHIFT_PRESSED)
+			*out = ShiftUp;
+		else if(ctrl & (LEFT_CTRL_PRESSED|RIGHT_CTRL_PRESSED))
+			*out = CtrlUp;
+		else if(ctrl & (LEFT_ALT_PRESSED|RIGHT_ALT_PRESSED))
+			*out = AltUp;
+		else
+			*out = Up;
 		return 1;
 	case VK_DOWN:
-		*out = Down;
+		if(ctrl & SHIFT_PRESSED)
+			*out = ShiftDown;
+		else if(ctrl & (LEFT_CTRL_PRESSED|RIGHT_CTRL_PRESSED))
+			*out = CtrlDown;
+		else if(ctrl & (LEFT_ALT_PRESSED|RIGHT_ALT_PRESSED))
+			*out = AltDown;
+		else
+			*out = Down;
 		return 1;
 	case VK_HOME:
-		*out = Home;
+		if(ctrl & SHIFT_PRESSED)
+			*out = ShiftHome;
+		else if(ctrl & (LEFT_CTRL_PRESSED|RIGHT_CTRL_PRESSED))
+			*out = CtrlHome;
+		else if(ctrl & (LEFT_ALT_PRESSED|RIGHT_ALT_PRESSED))
+			*out = AltHome;
+		else
+			*out = Home;
 		return 1;
 	case VK_END:
-		*out = End;
+		if(ctrl & SHIFT_PRESSED)
+			*out = ShiftEnd;
+		else if(ctrl & (LEFT_CTRL_PRESSED|RIGHT_CTRL_PRESSED))
+			*out = CtrlEnd;
+		else if(ctrl & (LEFT_ALT_PRESSED|RIGHT_ALT_PRESSED))
+			*out = AltEnd;
+		else
+			*out = End;
 		return 1;
 	case VK_PRIOR:
-		*out = Pgup;
+		if(ctrl & SHIFT_PRESSED)
+			*out = ShiftPgup;
+		else if(ctrl & (LEFT_CTRL_PRESSED|RIGHT_CTRL_PRESSED))
+			*out = CtrlPgup;
+		else if(ctrl & (LEFT_ALT_PRESSED|RIGHT_ALT_PRESSED))
+			*out = AltPgup;
+		else
+			*out = Pgup;
 		return 1;
 	case VK_NEXT:
-		*out = Pgdown;
+		if(ctrl & SHIFT_PRESSED)
+			*out = ShiftPgdown;
+		else if(ctrl & (LEFT_CTRL_PRESSED|RIGHT_CTRL_PRESSED))
+			*out = CtrlPgdown;
+		else if(ctrl & (LEFT_ALT_PRESSED|RIGHT_ALT_PRESSED))
+			*out = AltPgdown;
+		else
+			*out = Pgdown;
 		return 1;
 	case VK_INSERT:
 		*out = Ins;

@@ -24,6 +24,16 @@ init(ci: Icurses->ConsInfo)
 	#
 	if(ci.source == "ascii" || ci.source == "dumb")
 		_profile = ProfileAscii;
+
+	#
+	# Respect the UTF-8 capability flag from /dev/consinfo.
+	# When the terminal does not advertise UTF-8 support, fall back to
+	# ASCII frame characters to avoid mojibake and visual artifacts.
+	# This check runs after the source-name check so that explicit
+	# ASCII overrides are not accidentally reverted.
+	#
+	if(ci.ok != 0 && ci.utf8 == 0)
+		_profile = ProfileAscii;
 }
 
 profile(): int

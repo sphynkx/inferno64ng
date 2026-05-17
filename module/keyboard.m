@@ -46,5 +46,39 @@ Keyboard : module {
 	Latin: con Spec|16r6f;
 
 	APP: con Spec|16r200;	# for application use (ALT keys)
+
+	# Modifier prefix ranges for shifted/ctrl/alt navigation key combinations.
+	# These occupy Spec|0x80-0xAF, unused by existing key definitions.
+	# Offsets within each range match View offsets (Home=0,End=1,Up=2,...).
+	KMshift: con Spec|16r80;	# Shift + navigation key base
+	KMctrl: con Spec|16r90;	# Ctrl + navigation key base
+	KMalt: con Spec|16ra0;	# Alt + navigation key base
+
+	ShiftHome: con KMshift|0;
+	ShiftEnd: con KMshift|1;
+	ShiftUp: con KMshift|2;
+	ShiftDown: con KMshift|3;
+	ShiftLeft: con KMshift|4;
+	ShiftRight: con KMshift|5;
+	ShiftPgup: con KMshift|6;
+	ShiftPgdown: con KMshift|7;
+
+	CtrlHome: con KMctrl|0;
+	CtrlEnd: con KMctrl|1;
+	CtrlUp: con KMctrl|2;
+	CtrlDown: con KMctrl|3;
+	CtrlLeft: con KMctrl|4;
+	CtrlRight: con KMctrl|5;
+	CtrlPgup: con KMctrl|6;
+	CtrlPgdown: con KMctrl|7;
+
+	AltHome: con KMalt|0;
+	AltEnd: con KMalt|1;
+	AltUp: con KMalt|2;
+	AltDown: con KMalt|3;
+	AltLeft: con KMalt|4;
+	AltRight: con KMalt|5;
+	AltPgup: con KMalt|6;
+	AltPgdown: con KMalt|7;
 };
 
