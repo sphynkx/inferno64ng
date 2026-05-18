@@ -106,7 +106,6 @@ BodyCode: con "38;2;220;230;255;48;2;20;45;90";
 BottomCode: con "1;38;2;20;25;30;48;2;170;225;255";
 ErrorCode: con "1;38;2;255;120;120;48;2;20;45;90";
 
-ReadChunkSize: con 8192;
 ScanChunkSize: con 32768;
 InitialOffsetCap: con 1024;
 InitialPrefetchScreens: con 6;
@@ -127,6 +126,7 @@ Kf3: con 57411;
 Kf10: con 57418;
 
 newsource: fn(path: string): ref ViewerSource;
+ensuresource: fn(v: ref IcState->ViewerState, rows: int);
 closefile: fn(s: ref ViewerSource);
 appendoffset: fn(s: ref ViewerSource, off: big);
 ensureindexed: fn(s: ref ViewerSource, line: int): int;
@@ -162,7 +162,6 @@ drawviewer: fn(u: ref IcUi->Ui, parentid: int, v: ref IcState->ViewerState, w, h
 toptext: fn(v: ref IcState->ViewerState): string;
 bottomtext: fn(w: int): string;
 iserrorline: fn(s: string): int;
-hasvisible: fn(s: string): int;
 
 rewrap: fn(v: ref IcState->ViewerState, w: int);
 
@@ -245,6 +244,30 @@ newsource(path: string): ref ViewerSource
 		s.length = d.length;
 
 	return s;
+}
+
+ensuresource(v: ref IcState->ViewerState, rows: int)
+{
+	if(v == nil)
+		return;
+
+	if(v.path == "")
+		return;
+
+	if(rows < 1)
+		rows = 1;
+
+	if(source != nil && source.path == v.path)
+		return;
+
+	closefile(source);
+	source = newsource(v.path);
+
+	v.lines = array[0] of string;
+	v.wrapped = array[0] of string;
+	v.lastw = 0;
+
+	ensureindexed(source, InitialPrefetchScreens * rows + 1);
 }
 
 closefile(s: ref ViewerSource)
@@ -468,7 +491,9 @@ refreshwindow(v: ref IcState->ViewerState, rows: int)
 
 	if(source == nil){
 		v.lines = array[0] of string;
+		v.wrapped = array[0] of string;
 		v.nlines = 0;
+		v.lastw = 0;
 		return;
 	}
 
@@ -497,6 +522,7 @@ refreshwindow(v: ref IcState->ViewerState, rows: int)
 		lines = appendline(lines, "");
 
 	v.lines = lines;
+	v.wrapped = array[0] of string;
 	v.nlines = linecount(source);
 	v.lastw = 0;
 }
@@ -822,6 +848,8 @@ clampview(v: ref IcState->ViewerState, h: int)
 
 	rows = bodyh(h);
 
+	ensuresource(v, rows);
+
 	if(source != nil){
 		prefetch(v, rows);
 
@@ -940,22 +968,17 @@ iserrorline(s: string): int
 	return 0;
 }
 
-
 drawviewer(u: ref IcUi->Ui, parentid: int, v: ref IcState->ViewerState, w, h: int)
 {
 	rows, id: int;
-	bodycode, content, first: string;
+	bodycode, content: string;
 
 	if(u == nil || v == nil)
 		return;
 
 	rows = bodyh(h);
 	ensureids(u, v);
-
-	if(source == nil && v.path != ""){
-		source = newsource(v.path);
-		ensureindexed(source, InitialPrefetchScreens * rows + 1);
-	}
+	ensuresource(v, rows);
 
 	clampview(v, h);
 	refreshwindow(v, rows);
@@ -974,19 +997,11 @@ drawviewer(u: ref IcUi->Ui, parentid: int, v: ref IcState->ViewerState, w, h: in
 	id = bodyid(v);
 	if(id >= 0){
 		content = visiblecontent(v.wrapped, 0, rows);
-
-		if(!hasvisible(content)){
-			first = "";
-			if(v.lines != nil && len v.lines > 0)
-				first = v.lines[0];
-		}
-
 		setbody(u, parentid, id, 0, 1, w, rows, content, bodycode);
 	}
 
 	setlabel(u, parentid, v.bottomid, 0, h - 1, w, bottomtext(w), BottomCode);
 }
-
 
 active(state: ref IcState->AppState): int
 {
@@ -1107,6 +1122,10 @@ runfilemode(path: string, mode: int): int
 	v.path = path;
 	v.mode = mode;
 	v.nlines = linecount(source);
+	v.lines = array[0] of string;
+	v.wrapped = array[0] of string;
+	v.topline = 0;
+	v.lastw = 0;
 
 	if(source.error != "")
 		v.lines = array[] of { source.error };
@@ -1180,19 +1199,6 @@ runfilemode(path: string, mode: int): int
 	source = nil;
 
 	appfw->close(ctx);
-	return 0;
-}
-
-hasvisible(s: string): int
-{
-	i, c: int;
-
-	for(i = 0; i < len s; i++){
-		c = s[i];
-		if(c != ' ' && c != '\n' && c != '\r' && c != '\t')
-			return 1;
-	}
-
 	return 0;
 }
 
