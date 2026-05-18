@@ -174,6 +174,8 @@ IcState: module
 		mode: int;
 
 		path: string;
+		source: ref Sys->FD;
+
 
 		lines: array of string;
 		wrapped: array of string;
