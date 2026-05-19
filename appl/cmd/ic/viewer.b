@@ -94,6 +94,14 @@ ViewerSource: adt
 	error: string;
 };
 
+ViewerButton: adt
+{
+	labelid: int;
+	fkey: int;
+	text: string;
+	enabled: int;
+};
+
 sys: Sys;
 appfw: IcursesApp;
 ui: IcUiMod;
@@ -101,9 +109,15 @@ view: IcViewMod;
 
 source: ref ViewerSource;
 
+viewerbuttons: array of ViewerButton;
+vieweractivefkey: int;
+vieweractivewait: int;
+
 TopCode: con "1;38;2;20;25;30;48;2;225;225;225";
 BodyCode: con "38;2;220;230;255;48;2;20;45;90";
 BottomCode: con "1;38;2;20;25;30;48;2;170;225;255";
+BottomActiveCode: con "1;38;2;255;120;210;48;2;170;225;255";
+BottomDisabledCode: con "38;2;120;120;120;48;2;170;225;255";
 ErrorCode: con "1;38;2;255;120;120;48;2;20;45;90";
 
 ScanChunkSize: con 32768;
@@ -112,6 +126,10 @@ InitialPrefetchScreens: con 6;
 ScrollPrefetchScreens: con 8;
 MaxRawLineLen: con 4096;
 ReplacementChar: con 16rFFFD;
+
+ViewerButtonCount: con 10;
+ViewerButtonGap: con 1;
+ViewerFlashTicks: con 2;
 
 Kesc: con 27;
 Kq: con int 'q';
@@ -122,7 +140,11 @@ Kpgup: con 57366;
 Kpgdown: con 57367;
 Khome: con 57360;
 Kend: con 57361;
+Kf1: con 57409;
+Kf2: con 57410;
 Kf3: con 57411;
+Kf4: con 57412;
+Kf7: con 57415;
 Kf10: con 57418;
 
 newsource: fn(path: string): ref ViewerSource;
@@ -160,8 +182,22 @@ setbody: fn(u: ref IcUi->Ui, parentid, id, x, y, w, h: int, content, code: strin
 drawviewer: fn(u: ref IcUi->Ui, parentid: int, v: ref IcState->ViewerState, w, h: int);
 
 toptext: fn(v: ref IcState->ViewerState): string;
-bottomtext: fn(w: int): string;
 iserrorline: fn(s: string): int;
+
+humanbytes: fn(n: big): string;
+knownoffset: fn(v: ref IcState->ViewerState): big;
+viewpercent: fn(v: ref IcState->ViewerState): string;
+linestat: fn(): string;
+charstat: fn(): string;
+
+initbuttons: fn(u: ref IcUi->Ui);
+buttonx: fn(w, idx: int): int;
+buttonw: fn(w, idx: int): int;
+buttontext: fn(fkey: int, text: string, w: int): string;
+buttoncode: fn(b: ViewerButton): string;
+drawbuttonbar: fn(u: ref IcUi->Ui, parentid: int, v: ref IcState->ViewerState, w, h: int);
+activatebutton: fn(fkey: int);
+viewerhandletick: fn(): int;
 
 rewrap: fn(v: ref IcState->ViewerState, w: int);
 
@@ -184,6 +220,9 @@ init()
 		raise "fail:load icurses/view";
 
 	source = nil;
+	viewerbuttons = array[0] of ViewerButton;
+	vieweractivefkey = 0;
+	vieweractivewait = 0;
 
 	appfw->init("icview");
 	ui->init();
@@ -890,6 +929,8 @@ ensureids(u: ref IcUi->Ui, v: ref IcState->ViewerState)
 
 	if(v.bodyids == nil || len v.bodyids == 0)
 		v.bodyids = array[] of { view->allocid(u.tree) };
+
+	initbuttons(u);
 }
 
 setlabel(u: ref IcUi->Ui, parentid, id, x, y, w: int, text, code: string)
@@ -933,28 +974,113 @@ setbody(u: ref IcUi->Ui, parentid, id, x, y, w, h: int, content, code: string)
 	view->show(n);
 }
 
+humanbytes(n: big): string
+{
+	if(n < big 0)
+		n = big 0;
+
+	if(n >= big 1073741824)
+		return string int (n / big 1073741824) + "G";
+
+	if(n >= big 1048576)
+		return string int (n / big 1048576) + "M";
+
+	if(n >= big 1024)
+		return string int (n / big 1024) + "K";
+
+	return string n + "B";
+}
+
+knownoffset(v: ref IcState->ViewerState): big
+{
+	if(v == nil || source == nil)
+		return big 0;
+
+	if(v.topline < 0)
+		return big 0;
+
+	if(v.topline < source.noffsets)
+		return source.offsets[v.topline];
+
+	return source.scanoff;
+}
+
+viewpercent(v: ref IcState->ViewerState): string
+{
+	off: big;
+	p: int;
+
+	if(v == nil || source == nil)
+		return "?%";
+
+	if(source.length <= big 0)
+		return "?%";
+
+	off = knownoffset(v);
+	if(off < big 0)
+		off = big 0;
+	if(off > source.length)
+		off = source.length;
+
+	p = int ((off * big 100) / source.length);
+	if(p < 0)
+		p = 0;
+	if(p > 100)
+		p = 100;
+
+	return string p + "%";
+}
+
+linestat(): string
+{
+	if(source == nil)
+		return "0";
+
+	if(source.eof)
+		return string linecount(source);
+
+	return "~" + string linecount(source);
+}
+
+charstat(): string
+{
+	n: big;
+
+	if(source == nil)
+		return "~0B";
+
+	n = source.length;
+	if(n <= big 0)
+		n = source.scanoff;
+
+	return "~" + humanbytes(n);
+}
+
 toptext(v: ref IcState->ViewerState): string
 {
-	total: string;
+	size, lines, chars, pos: string;
 
 	if(v == nil)
 		return "";
 
-	if(source != nil){
-		if(source.eof)
-			total = string linecount(source);
-		else
-			total = "~" + string linecount(source);
+	if(source == nil)
+		return " " + v.path + "  size:? lines:? chars:? pos:? enc:?";
 
-		return " " + v.path + "  [" + string (v.topline + 1) + "/" + total + "]";
-	}
+	if(source.length > big 0)
+		size = humanbytes(source.length);
+	else
+		size = "~" + humanbytes(source.scanoff);
 
-	return " " + v.path + "  [" + string (v.topline + 1) + "/" + string v.nlines + "]";
-}
+	lines = linestat();
+	chars = charstat();
+	pos = viewpercent(v);
 
-bottomtext(w: int): string
-{
-	return fittext(" F1 Help  F2 Wrap  F3 Quit  F4 Hex  F7 Search  F10 Quit ", w);
+	return " " + v.path
+		+ "  size:" + size
+		+ "  lines:" + lines
+		+ "  chars:" + chars
+		+ "  pos:" + pos
+		+ "  enc:?";
 }
 
 iserrorline(s: string): int
@@ -966,6 +1092,143 @@ iserrorline(s: string): int
 		return 1;
 
 	return 0;
+}
+
+initbuttons(u: ref IcUi->Ui)
+{
+	i: int;
+	b: ViewerButton;
+
+	if(u == nil || u.tree == nil)
+		return;
+
+	if(viewerbuttons != nil && len viewerbuttons == ViewerButtonCount)
+		return;
+
+	viewerbuttons = array[ViewerButtonCount] of ViewerButton;
+
+	for(i = 0; i < ViewerButtonCount; i++){
+		b.labelid = view->allocid(u.tree);
+		b.fkey = i + 1;
+		b.text = "";
+		b.enabled = 0;
+
+		case i {
+		0 =>
+			b.text = "Help";
+		1 =>
+			b.text = "Wrap";
+		2 =>
+			b.text = "Quit";
+			b.enabled = 1;
+		3 =>
+			b.text = "Hex";
+		4 =>
+			b.text = "";
+		5 =>
+			b.text = "";
+		6 =>
+			b.text = "Search";
+		7 =>
+			b.text = "";
+		8 =>
+			b.text = "";
+		9 =>
+			b.text = "Quit";
+			b.enabled = 1;
+		}
+
+		viewerbuttons[i] = b;
+	}
+}
+
+buttonx(w, idx: int): int
+{
+	return (w * idx) / ViewerButtonCount;
+}
+
+buttonw(w, idx: int): int
+{
+	x0, x1, bw: int;
+
+	x0 = buttonx(w, idx);
+	x1 = (w * (idx + 1)) / ViewerButtonCount;
+
+	bw = x1 - x0;
+	if(idx < ViewerButtonCount - 1)
+		bw -= ViewerButtonGap;
+
+	if(bw < 1)
+		bw = 1;
+
+	return bw;
+}
+
+buttontext(fkey: int, text: string, w: int): string
+{
+	if(text == "")
+		return fittext("F" + string fkey, w);
+
+	return fittext("F" + string fkey + " " + text, w);
+}
+
+buttoncode(b: ViewerButton): string
+{
+	if(!b.enabled)
+		return BottomDisabledCode;
+
+	if(b.fkey == vieweractivefkey)
+		return BottomActiveCode;
+
+	return BottomCode;
+}
+
+drawbuttonbar(u: ref IcUi->Ui, parentid: int, v: ref IcState->ViewerState, w, h: int)
+{
+	i, x, bw: int;
+
+	if(u == nil || v == nil)
+		return;
+
+	setlabel(u, parentid, v.bottomid, 0, h - 1, w, spaces(w), BottomCode);
+
+	if(viewerbuttons == nil || len viewerbuttons != ViewerButtonCount)
+		initbuttons(u);
+
+	for(i = 0; i < len viewerbuttons; i++){
+		x = buttonx(w, i);
+		bw = buttonw(w, i);
+
+		setlabel(
+			u,
+			parentid,
+			viewerbuttons[i].labelid,
+			x,
+			h - 1,
+			bw,
+			buttontext(viewerbuttons[i].fkey, viewerbuttons[i].text, bw),
+			buttoncode(viewerbuttons[i])
+		);
+	}
+}
+
+activatebutton(fkey: int)
+{
+	vieweractivefkey = fkey;
+	vieweractivewait = ViewerFlashTicks;
+}
+
+viewerhandletick(): int
+{
+	if(vieweractivewait <= 0)
+		return 0;
+
+	vieweractivewait--;
+	if(vieweractivewait > 0)
+		return 0;
+
+	vieweractivefkey = 0;
+	return 1;
 }
 
 drawviewer(u: ref IcUi->Ui, parentid: int, v: ref IcState->ViewerState, w, h: int)
@@ -1000,7 +1263,7 @@ drawviewer(u: ref IcUi->Ui, parentid: int, v: ref IcState->ViewerState, w, h: in
 		setbody(u, parentid, id, 0, 1, w, rows, content, bodycode);
 	}
 
-	setlabel(u, parentid, v.bottomid, 0, h - 1, w, bottomtext(w), BottomCode);
+	drawbuttonbar(u, parentid, v, w, h);
 }
 
 active(state: ref IcState->AppState): int
@@ -1027,6 +1290,9 @@ start(state: ref IcState->AppState, path: string, mode: int): int
 	state.viewer.topline = 0;
 	state.viewer.nlines = linecount(source);
 	state.viewer.lastw = 0;
+
+	vieweractivefkey = 0;
+	vieweractivewait = 0;
 
 	if(source.error != "")
 		state.viewer.lines = array[] of { source.error };
@@ -1058,11 +1324,29 @@ handlekey(state: ref IcState->AppState, k: int): int
 	r = 1;
 
 	case k {
-	Kq or Kesc or Kf3 or Kf10 =>
+	Kq or Kesc =>
+		activatebutton(10);
 		v.active = 0;
 		closefile(source);
 		source = nil;
 		return 2;
+
+	Kf3 =>
+		activatebutton(3);
+		v.active = 0;
+		closefile(source);
+		source = nil;
+		return 2;
+
+	Kf10 =>
+		activatebutton(10);
+		v.active = 0;
+		closefile(source);
+		source = nil;
+		return 2;
+
+	Kf1 or Kf2 or Kf4 or Kf7 =>
+		r = 0;
 
 	Kup =>
 		v.topline--;
@@ -1127,6 +1411,10 @@ runfilemode(path: string, mode: int): int
 	v.topline = 0;
 	v.lastw = 0;
 
+	viewerbuttons = array[0] of ViewerButton;
+	vieweractivefkey = 0;
+	vieweractivewait = 0;
+
 	if(source.error != "")
 		v.lines = array[] of { source.error };
 
@@ -1180,6 +1468,9 @@ runfilemode(path: string, mode: int): int
 
 		if(step.kind == IcUi->StepTick){
 			changed = prefetch(v, bodyh(st.height));
+
+			if(viewerhandletick())
+				changed = 1;
 
 			(nw, nh, resized) = appfw->pollresize(ctx, st.width, st.height);
 			if(resized){

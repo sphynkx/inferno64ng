@@ -174,7 +174,7 @@ IcState: module
 		mode: int;
 
 		path: string;
-		source: ref Sys->FD;
+		##source: ref Sys->FD;
 
 
 		lines: array of string;
