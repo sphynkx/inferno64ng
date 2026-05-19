@@ -1210,11 +1210,6 @@ runsearch(state: ref IcState->AppState, direction: int, fromcurrent: int): int
 	resetsearchifneeded(v, opts);
 	lastsearchpattern = opts.pattern;
 
-	if(opts.regex){
-		showsearchalert(state, "Regex search is not implemented yet");
-		return 1;
-	}
-
 	if(opts.anyencoding){
 		showsearchalert(state, "Any encoding search is not implemented yet");
 		return 1;

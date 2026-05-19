@@ -1,19 +1,50 @@
 implement IcSearch;
 
 include "ic/search.m";
+include "regex.m";
+
+RegexSpec: adt
+{
+	pattern: string;
+	casefold: int;
+	ok: int;
+	err: string;
+};
 
 sys: Sys;
+regex: Regex;
+
+cachedpattern: string;
+cachedcasefold: int;
+cachedre: Regex->Re;
+cachederr: string;
 
 appendmatch: fn(a: array of IcViewCommon->SearchMatch, m: IcViewCommon->SearchMatch): array of IcViewCommon->SearchMatch;
 lowerchar: fn(c: int): int;
 findforward: fn(text, pattern: string, startcol: int): int;
 findbackward: fn(text, pattern: string, startcol: int): int;
 
+parseregex: fn(pattern: string, casefold: int): RegexSpec;
+lastunescapedslash: fn(s: string): int;
+compilere: fn(pattern: string, casefold: int): (Regex->Re, string);
+findregexforward: fn(text, pattern: string, casefold, startcol: int): (int, int, string);
+findregexbackward: fn(text, pattern: string, casefold, startcol: int): (int, int, string);
+findregex: fn(text, pattern: string, casefold, startcol, backward: int): (int, int, string);
+
 init()
 {
 	sys = load Sys Sys->PATH;
 	if(sys == nil)
 		raise "fail:load sys";
+
+	regex = load Regex Regex->PATH;
+	if(regex == nil)
+		raise "fail:load regex";
+
+	cachedpattern = "";
+	cachedcasefold = -1;
+	cachedre = nil;
+	cachederr = "";
 }
 
 defaultopts(): IcViewCommon->SearchOptions
@@ -208,15 +239,216 @@ findplain(text, pattern: string, casefold, startcol, backward: int): (int, int)
 	return (col, len pattern);
 }
 
-matchline(text, pattern: string, casefold, regex, startcol, backward: int): (int, int, string)
+lastunescapedslash(s: string): int
+{
+	i, slash, bs: int;
+
+	slash = -1;
+	for(i = 1; i < len s; i++){
+		if(s[i] != '/')
+			continue;
+
+		bs = 0;
+		while(i - bs - 1 >= 0 && s[i - bs - 1] == '\\')
+			bs++;
+
+		if((bs % 2) == 0)
+			slash = i;
+	}
+
+	return slash;
+}
+
+parseregex(pattern: string, casefold: int): RegexSpec
+{
+	r: RegexSpec;
+	i, slash: int;
+	flags: string;
+
+	r.pattern = pattern;
+	r.casefold = casefold;
+	r.ok = 1;
+	r.err = "";
+
+	if(pattern == ""){
+		r.ok = 0;
+		r.err = "Empty search pattern";
+		return r;
+	}
+
+	if(pattern[0] != '/')
+		return r;
+
+	slash = lastunescapedslash(pattern);
+	if(slash <= 0){
+		r.ok = 0;
+		r.err = "Bad regex delimiter";
+		return r;
+	}
+
+	r.pattern = pattern[1:slash];
+	flags = pattern[slash + 1:];
+
+	for(i = 0; i < len flags; i++){
+		case flags[i] {
+		'i' =>
+			r.casefold = 1;
+
+		* =>
+			r.ok = 0;
+			r.err = "Unsupported regex flag: " + sys->sprint("%c", flags[i]);
+			return r;
+		}
+	}
+
+	if(r.pattern == ""){
+		r.ok = 0;
+		r.err = "Empty regex pattern";
+		return r;
+	}
+
+	return r;
+}
+
+compilere(pattern: string, casefold: int): (Regex->Re, string)
+{
+	re: Regex->Re;
+	err: string;
+
+	if(cachedre != nil && cachedpattern == pattern && cachedcasefold == casefold)
+		return (cachedre, cachederr);
+
+	if(casefold)
+		pattern = lowerstr(pattern);
+
+	(re, err) = regex->compile(pattern, 0);
+
+	cachedpattern = pattern;
+	cachedcasefold = casefold;
+	cachedre = re;
+	cachederr = err;
+
+	if(re == nil){
+		if(err == "")
+			err = "Bad regex";
+		return (nil, err);
+	}
+
+	return (re, "");
+}
+
+findregexforward(text, pattern: string, casefold, startcol: int): (int, int, string)
+{
+	re: Regex->Re;
+	matches: array of (int, int);
+	err, t: string;
+	beg, end: int;
+
+	if(startcol < 0)
+		startcol = 0;
+
+	if(startcol > len text)
+		return (-1, 0, "");
+
+	t = text;
+	if(casefold)
+		t = lowerstr(text);
+
+	(re, err) = compilere(pattern, casefold);
+	if(re == nil)
+		return (-1, 0, err);
+
+	matches = regex->executese(re, t, (startcol, len t), startcol == 0, 1);
+	if(matches == nil)
+		return (-1, 0, "");
+
+	(beg, end) = matches[0];
+	if(beg < 0 || end < beg)
+		return (-1, 0, "");
+
+	return (beg, end - beg, "");
+}
+
+findregexbackward(text, pattern: string, casefold, startcol: int): (int, int, string)
+{
+	re: Regex->Re;
+	matches: array of (int, int);
+	err, t: string;
+	pos, limit, beg, end, bestbeg, bestend: int;
+
+	t = text;
+	if(casefold)
+		t = lowerstr(text);
+
+	if(startcol < 0 || startcol > len t)
+		limit = len t;
+	else
+		limit = startcol;
+
+	(re, err) = compilere(pattern, casefold);
+	if(re == nil)
+		return (-1, 0, err);
+
+	bestbeg = -1;
+	bestend = -1;
+	pos = 0;
+
+	for(;;){
+		if(pos > len t)
+			break;
+
+		matches = regex->executese(re, t, (pos, len t), pos == 0, 1);
+		if(matches == nil)
+			break;
+
+		(beg, end) = matches[0];
+		if(beg < 0 || end < beg)
+			break;
+
+		if(beg > limit)
+			break;
+
+		bestbeg = beg;
+		bestend = end;
+
+		if(end <= pos)
+			pos++;
+		else
+			pos = end;
+	}
+
+	if(bestbeg < 0)
+		return (-1, 0, "");
+
+	return (bestbeg, bestend - bestbeg, "");
+}
+
+findregex(text, pattern: string, casefold, startcol, backward: int): (int, int, string)
+{
+	spec: RegexSpec;
+
+	spec = parseregex(pattern, casefold);
+	if(!spec.ok)
+		return (-1, 0, spec.err);
+
+	if(backward)
+		return findregexbackward(text, spec.pattern, spec.casefold, startcol);
+
+	return findregexforward(text, spec.pattern, spec.casefold, startcol);
+}
+
+matchline(text, pattern: string, casefold, regexmode, startcol, backward: int): (int, int, string)
 {
 	col, n: int;
+	err: string;
 
 	if(pattern == "")
 		return (-1, 0, "Empty search pattern");
 
-	if(regex)
-		return (-1, 0, "Regex search is not implemented yet");
+	if(regexmode){
+		(col, n, err) = findregex(text, pattern, casefold, startcol, backward);
+		return (col, n, err);
+	}
 
 	(col, n) = findplain(text, pattern, casefold, startcol, backward);
 	return (col, n, "");
