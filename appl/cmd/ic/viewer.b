@@ -1,6 +1,7 @@
 implement IcViewer;
 
 include "ic/viewer.m";
+include "ic/viewcommon.m";
 
 IcursesApp: module
 {
@@ -75,23 +76,62 @@ IcViewMod: module
 	setcode: fn(v: ref IcView->Node, code: string);
 	setargs: fn(v: ref IcView->Node, sarg: string, iarg0, iarg1, iarg2: int);
 	show: fn(v: ref IcView->Node);
-	hide: fn(v: ref IcView->Node);
 	allocid: fn(t: ref IcView->Tree): int;
 };
 
-ViewerSource: adt
+IcViewSourceMod: module
 {
-	path: string;
-	fd: ref Sys->FD;
-	length: big;
+	PATH: con "/dis/ic/viewsource.dis";
 
-	offsets: array of big;
-	noffsets: int;
-	offsetcap: int;
+	init: fn();
 
-	scanoff: big;
-	eof: int;
-	error: string;
+	newsource: fn(path: string): ref IcViewCommon->ViewerSource;
+	closefile: fn(s: ref IcViewCommon->ViewerSource);
+
+	ensureindexed: fn(s: ref IcViewCommon->ViewerSource, line: int): int;
+	ensureeof: fn(s: ref IcViewCommon->ViewerSource): int;
+	ensureoffset: fn(s: ref IcViewCommon->ViewerSource, off: big): int;
+
+	linecount: fn(s: ref IcViewCommon->ViewerSource): int;
+	lineforoffset: fn(s: ref IcViewCommon->ViewerSource, off: big): int;
+
+	getline: fn(s: ref IcViewCommon->ViewerSource, line: int): string;
+
+	wraplines: fn(lines: array of string, width: int): array of string;
+	visiblecontent: fn(lines: array of string, top, rows: int): string;
+	spaces: fn(n: int): string;
+	fittext: fn(s: string, w: int): string;
+};
+
+IcViewStatsMod: module
+{
+	PATH: con "/dis/ic/viewstats.dis";
+
+	init: fn();
+
+	start: fn(path: string, knownbytes: big);
+	stop: fn();
+
+	get: fn(): IcViewCommon->ViewerStats;
+	cleardirty: fn();
+};
+
+IcViewGotoMod: module
+{
+	PATH: con "/dis/ic/viewgoto.dis";
+
+	init: fn();
+
+	open: fn(u: ref IcUi->Ui, parentid, w, h: int);
+	close: fn(u: ref IcUi->Ui);
+
+	active: fn(): int;
+	draw: fn(u: ref IcUi->Ui, parentid, w, h: int): int;
+	handlekey: fn(u: ref IcUi->Ui, parentid, w, h, k: int): int;
+	handletick: fn(u: ref IcUi->Ui, parentid, w, h: int): int;
+
+	mode: fn(): int;
+	input: fn(): string;
 };
 
 ViewerButton: adt
@@ -106,21 +146,16 @@ sys: Sys;
 appfw: IcursesApp;
 ui: IcUiMod;
 view: IcViewMod;
+srcmod: IcViewSourceMod;
+statsmod: IcViewStatsMod;
+gotomod: IcViewGotoMod;
 
-source: ref ViewerSource;
+source: ref IcViewCommon->ViewerSource;
 
 viewerbuttons: array of ViewerButton;
 vieweractivefkey: int;
 vieweractivewait: int;
 viewerbodyrows: int;
-
-statstoken: int;
-statspath: string;
-statsready: int;
-statsdirty: int;
-statsbytes: big;
-statslines: big;
-statschars: big;
 
 TopCode: con "1;38;2;20;25;30;48;2;225;225;225";
 BodyCode: con "38;2;220;230;255;48;2;20;45;90";
@@ -129,12 +164,8 @@ BottomActiveCode: con "1;38;2;255;120;210;48;2;170;225;255";
 BottomDisabledCode: con "38;2;120;120;120;48;2;170;225;255";
 ErrorCode: con "1;38;2;255;120;120;48;2;20;45;90";
 
-ScanChunkSize: con 32768;
-InitialOffsetCap: con 1024;
 InitialPrefetchScreens: con 6;
 ScrollPrefetchScreens: con 8;
-MaxRawLineLen: con 4096;
-ReplacementChar: con 16rFFFD;
 
 ViewerButtonCount: con 10;
 ViewerButtonGap: con 1;
@@ -160,28 +191,13 @@ Kf8: con 57416;
 Kf9: con 57417;
 Kf10: con 57418;
 
-newsource: fn(path: string): ref ViewerSource;
+newsource: fn(path: string): ref IcViewCommon->ViewerSource;
+closefile: fn(s: ref IcViewCommon->ViewerSource);
 ensuresource: fn(v: ref IcState->ViewerState, rows: int);
-closefile: fn(s: ref ViewerSource);
-appendoffset: fn(s: ref ViewerSource, off: big);
-ensureindexed: fn(s: ref ViewerSource, line: int): int;
-ensureeof: fn(s: ref ViewerSource): int;
-linecount: fn(s: ref ViewerSource): int;
-getline: fn(s: ref ViewerSource, line: int): string;
-readlinebytes: fn(s: ref ViewerSource, line: int): (array of byte, int);
 prefetch: fn(v: ref IcState->ViewerState, rows: int): int;
 refreshwindow: fn(v: ref IcState->ViewerState, rows: int);
 
-decodechunk: fn(buf: array of byte, n: int): string;
-sanitizechunk: fn(text: string): string;
-needsanitize: fn(text: string): int;
-safecell: fn(c: int): string;
-
 appendline: fn(a: array of string, s: string): array of string;
-wraplines: fn(lines: array of string, width: int): array of string;
-wrapline: fn(line: string, width: int): array of string;
-appendarray: fn(dst, src: array of string): array of string;
-visiblecontent: fn(lines: array of string, top, rows: int): string;
 
 spaces: fn(n: int): string;
 fittext: fn(s: string, w: int): string;
@@ -203,10 +219,6 @@ viewpercent: fn(v: ref IcState->ViewerState): string;
 linestat: fn(): string;
 charstat: fn(): string;
 
-startstats: fn(path: string);
-stopstats: fn();
-statworker: fn(path: string, token: int);
-
 initbuttons: fn(u: ref IcUi->Ui);
 buttonx: fn(w, idx: int): int;
 buttonw: fn(w, idx: int): int;
@@ -215,6 +227,10 @@ buttoncode: fn(b: ViewerButton): string;
 drawbuttonbar: fn(u: ref IcUi->Ui, parentid: int, v: ref IcState->ViewerState, w, h: int);
 activatebutton: fn(fkey: int);
 viewerhandletick: fn(): int;
+
+parsebigdec: fn(s: string): (big, int);
+parsebighex: fn(s: string): (big, int);
+applygoto: fn(v: ref IcState->ViewerState): int;
 
 rewrap: fn(v: ref IcState->ViewerState, w: int);
 
@@ -236,23 +252,30 @@ init()
 	if(view == nil)
 		raise "fail:load icurses/view";
 
+	srcmod = load IcViewSourceMod IcViewSourceMod->PATH;
+	if(srcmod == nil)
+		raise "fail:load ic/viewsource";
+
+	statsmod = load IcViewStatsMod IcViewStatsMod->PATH;
+	if(statsmod == nil)
+		raise "fail:load ic/viewstats";
+
+	gotomod = load IcViewGotoMod IcViewGotoMod->PATH;
+	if(gotomod == nil)
+		raise "fail:load ic/viewgoto";
+
 	source = nil;
 	viewerbuttons = array[0] of ViewerButton;
 	vieweractivefkey = 0;
 	vieweractivewait = 0;
 	viewerbodyrows = 1;
 
-	statstoken = 0;
-	statspath = "";
-	statsready = 0;
-	statsdirty = 0;
-	statsbytes = big 0;
-	statslines = big 0;
-	statschars = big 0;
-
 	appfw->init("icview");
 	ui->init();
 	view->init();
+	srcmod->init();
+	statsmod->init();
+	gotomod->init();
 }
 
 newstate(): ref IcState->ViewerState
@@ -280,35 +303,14 @@ runfile(path: string): int
 	return runfilemode(path, ModeText);
 }
 
-newsource(path: string): ref ViewerSource
+newsource(path: string): ref IcViewCommon->ViewerSource
 {
-	s: ref ViewerSource;
-	rc: int;
-	d: Sys->Dir;
+	return srcmod->newsource(path);
+}
 
-	s = ref ViewerSource;
-	s.path = path;
-	s.fd = sys->open(path, Sys->OREAD);
-	s.length = big 0;
-	s.offsetcap = InitialOffsetCap;
-	s.offsets = array[s.offsetcap] of big;
-	s.noffsets = 1;
-	s.offsets[0] = big 0;
-	s.scanoff = big 0;
-	s.eof = 0;
-	s.error = "";
-
-	if(s.fd == nil){
-		s.error = "Cannot open file: " + path;
-		s.eof = 1;
-		return s;
-	}
-
-	(rc, d) = sys->fstat(s.fd);
-	if(rc >= 0)
-		s.length = d.length;
-
-	return s;
+closefile(s: ref IcViewCommon->ViewerSource)
+{
+	srcmod->closefile(s);
 }
 
 ensuresource(v: ref IcState->ViewerState, rows: int)
@@ -332,201 +334,13 @@ ensuresource(v: ref IcState->ViewerState, rows: int)
 	v.wrapped = array[0] of string;
 	v.lastw = 0;
 
-	ensureindexed(source, InitialPrefetchScreens * rows + 1);
-	v.nlines = linecount(source);
-	startstats(v.path);
-}
+	srcmod->ensureindexed(source, InitialPrefetchScreens * rows + 1);
+	v.nlines = srcmod->linecount(source);
 
-closefile(s: ref ViewerSource)
-{
-	if(s == nil)
-		return;
-
-	s.fd = nil;
-}
-
-appendoffset(s: ref ViewerSource, off: big)
-{
-	a: array of big;
-	i, ncap: int;
-
-	if(s == nil)
-		return;
-
-	if(off < big 0)
-		return;
-
-	if(s.length > big 0 && off >= s.length)
-		return;
-
-	if(s.noffsets > 0 && s.offsets[s.noffsets - 1] == off)
-		return;
-
-	if(s.noffsets >= s.offsetcap){
-		ncap = s.offsetcap * 2;
-		if(ncap < InitialOffsetCap)
-			ncap = InitialOffsetCap;
-
-		a = array[ncap] of big;
-		for(i = 0; i < s.noffsets; i++)
-			a[i] = s.offsets[i];
-
-		s.offsets = a;
-		s.offsetcap = ncap;
-	}
-
-	s.offsets[s.noffsets] = off;
-	s.noffsets++;
-}
-
-ensureindexed(s: ref ViewerSource, line: int): int
-{
-	buf: array of byte;
-	n, i: int;
-	off: big;
-
-	if(s == nil)
-		return 0;
-
-	if(line < 0)
-		line = 0;
-
-	if(s.error != "")
-		return 0;
-
-	if(line < s.noffsets)
-		return 1;
-
-	if(s.eof)
-		return line < s.noffsets;
-
-	buf = array[ScanChunkSize] of byte;
-
-	while(!s.eof && s.noffsets <= line){
-		n = sys->pread(s.fd, buf, len buf, s.scanoff);
-		if(n < 0){
-			s.error = "Cannot read file: " + s.path;
-			s.eof = 1;
-			break;
-		}
-
-		if(n == 0){
-			s.eof = 1;
-			s.length = s.scanoff;
-			break;
-		}
-
-		for(i = 0; i < n; i++){
-			if(int buf[i] == '\n'){
-				off = s.scanoff + big (i + 1);
-				appendoffset(s, off);
-			}
-		}
-
-		s.scanoff += big n;
-
-		if(s.length > big 0 && s.scanoff >= s.length){
-			s.eof = 1;
-			s.length = s.scanoff;
-		}
-	}
-
-	return line < s.noffsets;
-}
-
-ensureeof(s: ref ViewerSource): int
-{
-	if(s == nil)
-		return 0;
-
-	while(!s.eof)
-		ensureindexed(s, s.noffsets);
-
-	return s.eof;
-}
-
-linecount(s: ref ViewerSource): int
-{
-	if(s == nil)
-		return 0;
-
-	if(s.error != "")
-		return 1;
-
-	if(s.noffsets <= 0)
-		return 0;
-
-	return s.noffsets;
-}
-
-readlinebytes(s: ref ViewerSource, line: int): (array of byte, int)
-{
-	start, end, span: big;
-	n, want: int;
-	buf: array of byte;
-
-	if(s == nil || s.fd == nil || line < 0)
-		return (array[0] of byte, 0);
-
-	if(!ensureindexed(s, line))
-		return (array[0] of byte, 0);
-
-	start = s.offsets[line];
-
-	#
-	# Ensure the next line offset if possible. Do not scan the whole file here:
-	# visible rendering must stay bounded and lazy.
-	#
-	ensureindexed(s, line + 1);
-
-	if(line + 1 < s.noffsets)
-		end = s.offsets[line + 1];
-	else if(s.eof && s.length > big 0)
-		end = s.length;
+	if(source != nil)
+		statsmod->start(v.path, source.length);
 	else
-		end = s.scanoff;
-
-	if(end < start)
-		end = start;
-
-	span = end - start;
-	if(span > big MaxRawLineLen)
-		span = big MaxRawLineLen;
-
-	want = int span;
-	if(want < 0)
-		want = 0;
-
-	buf = array[want] of byte;
-	if(want == 0)
-		return (buf, 0);
-
-	n = sys->pread(s.fd, buf, want, start);
-	if(n < 0)
-		return (array[0] of byte, 0);
-
-	while(n > 0 && (int buf[n - 1] == '\n' || int buf[n - 1] == '\r'))
-		n--;
-
-	return (buf, n);
-}
-
-getline(s: ref ViewerSource, line: int): string
-{
-	buf: array of byte;
-	n: int;
-
-	if(s == nil)
-		return "";
-
-	if(s.error != "")
-		return s.error;
-
-	(buf, n) = readlinebytes(s, line);
-	if(n <= 0)
-		return "";
-
-	return sanitizechunk(decodechunk(buf, n));
+		statsmod->start(v.path, big 0);
 }
 
 prefetch(v: ref IcState->ViewerState, rows: int): int
@@ -541,11 +355,31 @@ prefetch(v: ref IcState->ViewerState, rows: int): int
 
 	before = source.noffsets;
 	target = v.topline + rows * ScrollPrefetchScreens;
-	ensureindexed(source, target);
+	srcmod->ensureindexed(source, target);
 
-	v.nlines = linecount(source);
+	v.nlines = srcmod->linecount(source);
 
 	return source.noffsets != before;
+}
+
+appendline(a: array of string, s: string): array of string
+{
+	b: array of string;
+	i, n: int;
+
+	if(a == nil){
+		b = array[1] of string;
+		b[0] = s;
+		return b;
+	}
+
+	n = len a;
+	b = array[n + 1] of string;
+	for(i = 0; i < n; i++)
+		b[i] = a[i];
+	b[n] = s;
+
+	return b;
 }
 
 refreshwindow(v: ref IcState->ViewerState, rows: int)
@@ -576,13 +410,13 @@ refreshwindow(v: ref IcState->ViewerState, rows: int)
 	lines = array[0] of string;
 	for(i = 0; i < need; i++){
 		idx = v.topline + i;
-		if(source.eof && idx >= linecount(source))
+		if(source.eof && idx >= srcmod->linecount(source))
 			break;
 
-		if(!ensureindexed(source, idx))
+		if(!srcmod->ensureindexed(source, idx))
 			break;
 
-		lines = appendline(lines, getline(source, idx));
+		lines = appendline(lines, srcmod->getline(source, idx));
 	}
 
 	if(len lines == 0)
@@ -590,298 +424,18 @@ refreshwindow(v: ref IcState->ViewerState, rows: int)
 
 	v.lines = lines;
 	v.wrapped = array[0] of string;
-	v.nlines = linecount(source);
+	v.nlines = srcmod->linecount(source);
 	v.lastw = 0;
-}
-
-decodechunk(buf: array of byte, n: int): string
-{
-	i, b0, b1, b2, b3, c: int;
-	out: string;
-
-	out = "";
-	i = 0;
-
-	while(i < n){
-		b0 = int buf[i] & 16rFF;
-
-		if(b0 < 16r80){
-			out += sys->sprint("%c", b0);
-			i++;
-			continue;
-		}
-
-		if((b0 & 16rE0) == 16rC0 && i + 1 < n){
-			b1 = int buf[i + 1] & 16rFF;
-			if((b1 & 16rC0) == 16r80){
-				c = ((b0 & 16r1F) << 6) | (b1 & 16r3F);
-				if(c >= 16r80){
-					out += sys->sprint("%c", c);
-					i += 2;
-					continue;
-				}
-			}
-		}
-
-		if((b0 & 16rF0) == 16rE0 && i + 2 < n){
-			b1 = int buf[i + 1] & 16rFF;
-			b2 = int buf[i + 2] & 16rFF;
-			if((b1 & 16rC0) == 16r80 && (b2 & 16rC0) == 16r80){
-				c = ((b0 & 16r0F) << 12) | ((b1 & 16r3F) << 6) | (b2 & 16r3F);
-				if(c >= 16r800 && (c < 16rD800 || c > 16rDFFF)){
-					out += sys->sprint("%c", c);
-					i += 3;
-					continue;
-				}
-			}
-		}
-
-		if((b0 & 16rF8) == 16rF0 && i + 3 < n){
-			b1 = int buf[i + 1] & 16rFF;
-			b2 = int buf[i + 2] & 16rFF;
-			b3 = int buf[i + 3] & 16rFF;
-			if((b1 & 16rC0) == 16r80 && (b2 & 16rC0) == 16r80 && (b3 & 16rC0) == 16r80){
-				c = ((b0 & 16r07) << 18) | ((b1 & 16r3F) << 12) | ((b2 & 16r3F) << 6) | (b3 & 16r3F);
-				if(c >= 16r10000 && c <= 16r10FFFF){
-					out += sys->sprint("%c", c);
-					i += 4;
-					continue;
-				}
-			}
-		}
-
-		out += sys->sprint("%c", ReplacementChar);
-		i++;
-	}
-
-	return out;
-}
-
-safecell(c: int): string
-{
-	if(c == '\t')
-		return " ";
-
-	if(c == '\r')
-		return "\r";
-
-	if(c == '\n')
-		return "\n";
-
-	if(c < 32 || c == 127)
-		return ".";
-
-	if(c >= 16r80 && c < 16rA0)
-		return ".";
-
-	if(c == ReplacementChar)
-		return ".";
-
-	return sys->sprint("%c", c);
-}
-
-needsanitize(text: string): int
-{
-	i, c: int;
-
-	for(i = 0; i < len text; i++){
-		c = text[i];
-
-		if(c == '\t')
-			return 1;
-
-		if(c < 32 && c != '\n' && c != '\r')
-			return 1;
-
-		if(c == 127)
-			return 1;
-
-		if(c >= 16r80 && c < 16rA0)
-			return 1;
-
-		if(c == ReplacementChar)
-			return 1;
-	}
-
-	return 0;
-}
-
-sanitizechunk(text: string): string
-{
-	i: int;
-	out: string;
-
-	if(text == "")
-		return "";
-
-	if(!needsanitize(text))
-		return text;
-
-	out = "";
-	for(i = 0; i < len text; i++)
-		out += safecell(text[i]);
-
-	return out;
-}
-
-appendline(a: array of string, s: string): array of string
-{
-	b: array of string;
-	i, n: int;
-
-	if(a == nil){
-		b = array[1] of string;
-		b[0] = s;
-		return b;
-	}
-
-	n = len a;
-	b = array[n + 1] of string;
-	for(i = 0; i < n; i++)
-		b[i] = a[i];
-	b[n] = s;
-
-	return b;
-}
-
-appendarray(dst, src: array of string): array of string
-{
-	i: int;
-
-	if(src == nil)
-		return dst;
-
-	for(i = 0; i < len src; i++)
-		dst = appendline(dst, src[i]);
-
-	return dst;
 }
 
 spaces(n: int): string
 {
-	s: string;
-	i: int;
-
-	s = "";
-	for(i = 0; i < n; i++)
-		s += " ";
-
-	return s;
+	return srcmod->spaces(n);
 }
 
 fittext(s: string, w: int): string
 {
-	if(w <= 0)
-		return "";
-
-	if(len s > w)
-		return s[0:w];
-
-	if(len s < w)
-		return s + spaces(w - len s);
-
-	return s;
-}
-
-wrapline(line: string, width: int): array of string
-{
-	out: array of string;
-	current, word: string;
-	i, start, cut: int;
-
-	if(width < 1)
-		width = 1;
-
-	out = array[0] of string;
-	current = "";
-
-	for(i = 0; i < len line; i++){
-		if(line[i] == ' ' || line[i] == '\t' || line[i] == '\r')
-			continue;
-
-		start = i;
-		while(i < len line && line[i] != ' ' && line[i] != '\t' && line[i] != '\r')
-			i++;
-
-		word = line[start:i];
-		i--;
-
-		if(len word > width){
-			if(current != ""){
-				out = appendline(out, current);
-				current = "";
-			}
-
-			start = 0;
-			while(start < len word){
-				cut = start + width;
-				if(cut > len word)
-					cut = len word;
-				out = appendline(out, word[start:cut]);
-				start = cut;
-			}
-
-			continue;
-		}
-
-		if(current == "")
-			current = word;
-		else if(len current + 1 + len word <= width)
-			current += " " + word;
-		else{
-			out = appendline(out, current);
-			current = word;
-		}
-	}
-
-	if(current != "")
-		out = appendline(out, current);
-
-	if(out == nil || len out == 0)
-		out = appendline(out, "");
-
-	return out;
-}
-
-wraplines(lines: array of string, width: int): array of string
-{
-	out: array of string;
-	i: int;
-
-	out = array[0] of string;
-
-	if(lines == nil)
-		return appendline(out, "");
-
-	for(i = 0; i < len lines; i++)
-		out = appendarray(out, wrapline(lines[i], width));
-
-	if(out == nil || len out == 0)
-		out = appendline(out, "");
-
-	return out;
-}
-
-visiblecontent(lines: array of string, top, rows: int): string
-{
-	i, idx: int;
-	s: string;
-
-	if(lines == nil || rows <= 0)
-		return "";
-
-	s = "";
-
-	for(i = 0; i < rows; i++){
-		idx = top + i;
-		if(idx >= 0 && idx < len lines)
-			s += lines[idx];
-
-		if(i < rows - 1)
-			s += "\n";
-	}
-
-	return s;
+	return srcmod->fittext(s, w);
 }
 
 bodyh(h: int): int
@@ -921,7 +475,7 @@ clampview(v: ref IcState->ViewerState, h: int)
 		prefetch(v, rows);
 
 		if(source.eof){
-			max = linecount(source) - 1;
+			max = srcmod->linecount(source) - 1;
 			if(max < 0)
 				max = 0;
 			if(v.topline > max)
@@ -931,7 +485,7 @@ clampview(v: ref IcState->ViewerState, h: int)
 				v.topline = 0;
 		}
 
-		v.nlines = linecount(source);
+		v.nlines = srcmod->linecount(source);
 	}else{
 		max = v.nlines - 1;
 		if(max < 0)
@@ -1044,7 +598,7 @@ viewpercent(v: ref IcState->ViewerState): string
 	if(source.length <= big 0)
 		return "?%";
 
-	if(source.eof && viewerbodyrows > 0 && v.topline + viewerbodyrows >= linecount(source))
+	if(source.eof && viewerbodyrows > 0 && v.topline + viewerbodyrows >= srcmod->linecount(source))
 		return "100%";
 
 	off = knownoffset(v);
@@ -1064,24 +618,29 @@ viewpercent(v: ref IcState->ViewerState): string
 
 linestat(): string
 {
-	if(statsready)
-		return string statslines;
+	st: IcViewCommon->ViewerStats;
+
+	st = statsmod->get();
+	if(st.ready)
+		return string st.lines;
 
 	if(source == nil)
 		return "0";
 
 	if(source.eof)
-		return string linecount(source);
+		return string srcmod->linecount(source);
 
-	return "~" + string linecount(source);
+	return "~" + string srcmod->linecount(source);
 }
 
 charstat(): string
 {
 	n: big;
+	st: IcViewCommon->ViewerStats;
 
-	if(statsready)
-		return "~" + string statschars;
+	st = statsmod->get();
+	if(st.ready)
+		return "~" + string st.chars;
 
 	if(source == nil)
 		return "~0";
@@ -1096,6 +655,7 @@ charstat(): string
 toptext(v: ref IcState->ViewerState): string
 {
 	size, lines, chars, pos: string;
+	st: IcViewCommon->ViewerStats;
 
 	if(v == nil)
 		return "";
@@ -1103,8 +663,10 @@ toptext(v: ref IcState->ViewerState): string
 	if(source == nil)
 		return " " + v.path + "  size:? lines:? chars:? pos:? enc:?";
 
-	if(statsready && statsbytes > big 0)
-		size = humanbytes(statsbytes);
+	st = statsmod->get();
+
+	if(st.ready && st.bytes > big 0)
+		size = humanbytes(st.bytes);
 	else if(source.length > big 0)
 		size = humanbytes(source.length);
 	else
@@ -1131,83 +693,6 @@ iserrorline(s: string): int
 		return 1;
 
 	return 0;
-}
-
-startstats(path: string)
-{
-	statstoken++;
-	statspath = path;
-	statsready = 0;
-	statsdirty = 1;
-	statsbytes = big 0;
-	statslines = big 0;
-	statschars = big 0;
-
-	if(path == "")
-		return;
-
-	if(source != nil && source.length > big 0){
-		statsbytes = source.length;
-		statschars = source.length;
-	}
-
-	spawn statworker(path, statstoken);
-}
-
-stopstats()
-{
-	statstoken++;
-	statspath = "";
-	statsready = 0;
-	statsdirty = 0;
-	statsbytes = big 0;
-	statslines = big 0;
-	statschars = big 0;
-}
-
-statworker(path: string, token: int)
-{
-	fd: ref Sys->FD;
-	buf: array of byte;
-	n, i: int;
-	bytes, lines, chars: big;
-
-	fd = sys->open(path, Sys->OREAD);
-	if(fd == nil)
-		return;
-
-	buf = array[ScanChunkSize] of byte;
-	bytes = big 0;
-	lines = big 0;
-	chars = big 0;
-
-	for(;;){
-		n = sys->read(fd, buf, len buf);
-		if(n <= 0)
-			break;
-
-		bytes += big n;
-		chars += big n;
-
-		for(i = 0; i < n; i++){
-			if(int buf[i] == '\n')
-				lines++;
-		}
-	}
-
-	fd = nil;
-
-	if(token != statstoken)
-		return;
-
-	if(path != statspath)
-		return;
-
-	statsbytes = bytes;
-	statslines = lines;
-	statschars = chars;
-	statsready = 1;
-	statsdirty = 1;
 }
 
 initbuttons(u: ref IcUi->Ui)
@@ -1241,6 +726,7 @@ initbuttons(u: ref IcUi->Ui)
 			b.text = "Edit";
 		4 =>
 			b.text = "GoTo";
+			b.enabled = 1;
 		5 =>
 			b.text = "Hex";
 		6 =>
@@ -1377,11 +863,14 @@ drawviewer(u: ref IcUi->Ui, parentid: int, v: ref IcState->ViewerState, w, h: in
 
 	id = bodyid(v);
 	if(id >= 0){
-		content = visiblecontent(v.wrapped, 0, rows);
+		content = srcmod->visiblecontent(v.wrapped, 0, rows);
 		setbody(u, parentid, id, 0, 1, w, rows, content, bodycode);
 	}
 
 	drawbuttonbar(u, parentid, v, w, h);
+
+	if(gotomod->active())
+		gotomod->draw(u, parentid, w, h);
 }
 
 active(state: ref IcState->AppState): int
@@ -1414,10 +903,10 @@ start(state: ref IcState->AppState, path: string, mode: int): int
 	if(source.error != "")
 		state.viewer.lines = array[] of { source.error };
 
-	ensureindexed(source, InitialPrefetchScreens * bodyh(state.height) + 1);
-	state.viewer.nlines = linecount(source);
+	srcmod->ensureindexed(source, InitialPrefetchScreens * bodyh(state.height) + 1);
+	state.viewer.nlines = srcmod->linecount(source);
 
-	startstats(path);
+	statsmod->start(path, source.length);
 
 	return 0;
 }
@@ -1431,16 +920,162 @@ build(state: ref IcState->AppState, parentid, w, h: int): int
 	return 0;
 }
 
+parsebigdec(s: string): (big, int)
+{
+	i, ok, c: int;
+	v: big;
+
+	v = big 0;
+	ok = 0;
+
+	for(i = 0; i < len s; i++){
+		c = s[i];
+		if(c < '0' || c > '9')
+			return (v, 0);
+
+		v = v * big 10 + big (c - '0');
+		ok = 1;
+	}
+
+	return (v, ok);
+}
+
+parsebighex(s: string): (big, int)
+{
+	i, ok, c, d: int;
+	v: big;
+
+	v = big 0;
+	ok = 0;
+
+	for(i = 0; i < len s; i++){
+		c = s[i];
+		d = -1;
+
+		if(c >= '0' && c <= '9')
+			d = c - '0';
+		else if(c >= 'a' && c <= 'f')
+			d = c - 'a' + 10;
+		else if(c >= 'A' && c <= 'F')
+			d = c - 'A' + 10;
+
+		if(d < 0)
+			return (v, 0);
+
+		v = v * big 16 + big d;
+		ok = 1;
+	}
+
+	return (v, ok);
+}
+
+applygoto(v: ref IcState->ViewerState): int
+{
+	s: string;
+	value, off: big;
+	ok, mode, target, maxline: int;
+	st: IcViewCommon->ViewerStats;
+
+	if(v == nil || source == nil)
+		return 0;
+
+	s = gotomod->input();
+	mode = gotomod->mode();
+
+	if(mode == IcViewCommon->GotoOffsetHex)
+		(value, ok) = parsebighex(s);
+	else
+		(value, ok) = parsebigdec(s);
+
+	if(!ok)
+		return 0;
+
+	case mode {
+	IcViewCommon->GotoLine =>
+		target = int value - 1;
+		if(target < 0)
+			target = 0;
+		srcmod->ensureindexed(source, target);
+		v.topline = target;
+
+	IcViewCommon->GotoPercent =>
+		if(value < big 0)
+			value = big 0;
+		if(value > big 100)
+			value = big 100;
+
+		if(source.length > big 0){
+			off = (source.length * value) / big 100;
+			target = srcmod->lineforoffset(source, off);
+			v.topline = target;
+		}else{
+			st = statsmod->get();
+			if(st.ready && st.lines > big 0){
+				target = int ((st.lines * value) / big 100);
+				if(target < 0)
+					target = 0;
+				srcmod->ensureindexed(source, target);
+				v.topline = target;
+			}
+		}
+
+	IcViewCommon->GotoOffsetDec or IcViewCommon->GotoOffsetHex =>
+		if(value < big 0)
+			value = big 0;
+		if(source.length > big 0 && value > source.length)
+			value = source.length;
+
+		target = srcmod->lineforoffset(source, value);
+		v.topline = target;
+	}
+
+	if(source.eof){
+		maxline = srcmod->linecount(source) - viewerbodyrows;
+		if(maxline < 0)
+			maxline = 0;
+		if(v.topline > maxline)
+			v.topline = maxline;
+	}
+
+	if(v.topline < 0)
+		v.topline = 0;
+
+	v.lastw = 0;
+	return 1;
+}
+
 handlekey(state: ref IcState->AppState, k: int): int
 {
 	v: ref IcState->ViewerState;
-	rows, r: int;
+	rows, r, gr: int;
 
 	if(state == nil || state.viewer == nil || !state.viewer.active)
 		return 0;
 
 	v = state.viewer;
 	rows = bodyh(state.height);
+
+	if(gotomod->active()){
+		gr = gotomod->handlekey(state.ui, state.toolid, state.width, state.height, k);
+
+		if(gr == IcViewCommon->GotoCancel){
+			gotomod->close(state.ui);
+			build(state, state.toolid, state.width, state.height);
+			return 1;
+		}
+
+		if(gr == IcViewCommon->GotoOk){
+			applygoto(v);
+			gotomod->close(state.ui);
+			clampview(v, state.height);
+			build(state, state.toolid, state.width, state.height);
+			return 1;
+		}
+
+		build(state, state.toolid, state.width, state.height);
+		return 1;
+	}
+
 	r = 1;
 
 	case k {
@@ -1449,7 +1084,8 @@ handlekey(state: ref IcState->AppState, k: int): int
 		v.active = 0;
 		closefile(source);
 		source = nil;
-		stopstats();
+		statsmod->stop();
+		gotomod->close(state.ui);
 		return 2;
 
 	Kf3 =>
@@ -1457,18 +1093,24 @@ handlekey(state: ref IcState->AppState, k: int): int
 		v.active = 0;
 		closefile(source);
 		source = nil;
-		stopstats();
+		statsmod->stop();
+		gotomod->close(state.ui);
 		return 2;
+
+	Kf5 =>
+		activatebutton(5);
+		gotomod->open(state.ui, state.toolid, state.width, state.height);
 
 	Kf10 =>
 		activatebutton(10);
 		v.active = 0;
 		closefile(source);
 		source = nil;
-		stopstats();
+		statsmod->stop();
+		gotomod->close(state.ui);
 		return 2;
 
-	Kf1 or Kf2 or Kf4 or Kf5 or Kf6 or Kf7 or Kf8 or Kf9 =>
+	Kf1 or Kf2 or Kf4 or Kf6 or Kf7 or Kf8 or Kf9 =>
 		r = 0;
 
 	Kup =>
@@ -1477,7 +1119,7 @@ handlekey(state: ref IcState->AppState, k: int): int
 	Kdown =>
 		v.topline++;
 		if(source != nil)
-			ensureindexed(source, v.topline + rows * ScrollPrefetchScreens);
+			srcmod->ensureindexed(source, v.topline + rows * ScrollPrefetchScreens);
 
 	Kpgup =>
 		v.topline -= rows;
@@ -1485,15 +1127,15 @@ handlekey(state: ref IcState->AppState, k: int): int
 	Kpgdown =>
 		v.topline += rows;
 		if(source != nil)
-			ensureindexed(source, v.topline + rows * ScrollPrefetchScreens);
+			srcmod->ensureindexed(source, v.topline + rows * ScrollPrefetchScreens);
 
 	Khome =>
 		v.topline = 0;
 
 	Kend =>
 		if(source != nil){
-			ensureeof(source);
-			v.nlines = linecount(source);
+			srcmod->ensureeof(source);
+			v.nlines = srcmod->linecount(source);
 			v.topline = v.nlines - rows;
 		}else
 			v.topline = v.nlines - rows;
@@ -1514,6 +1156,7 @@ handlekey(state: ref IcState->AppState, k: int): int
 handletick(state: ref IcState->AppState): int
 {
 	changed: int;
+	st: IcViewCommon->ViewerStats;
 
 	if(state == nil || state.viewer == nil || !state.viewer.active)
 		return 0;
@@ -1523,8 +1166,12 @@ handletick(state: ref IcState->AppState): int
 	if(viewerhandletick())
 		changed = 1;
 
-	if(statsdirty){
-		statsdirty = 0;
+	if(gotomod->handletick(state.ui, state.toolid, state.width, state.height))
+		changed = 1;
+
+	st = statsmod->get();
+	if(st.dirty){
+		statsmod->cleardirty();
 		changed = 1;
 	}
 
@@ -1591,10 +1238,10 @@ runfilemode(path: string, mode: int): int
 
 	v.active = 1;
 
-	ensureindexed(source, InitialPrefetchScreens * bodyh(st.height) + 1);
-	v.nlines = linecount(source);
+	srcmod->ensureindexed(source, InitialPrefetchScreens * bodyh(st.height) + 1);
+	v.nlines = srcmod->linecount(source);
 
-	startstats(path);
+	statsmod->start(path, source.length);
 
 	build(st, st.rootid, st.width, st.height);
 	appfw->draw(ctx);
@@ -1636,7 +1283,8 @@ runfilemode(path: string, mode: int): int
 
 	closefile(source);
 	source = nil;
-	stopstats();
+	statsmod->stop();
+	gotomod->close(u);
 
 	appfw->close(ctx);
 	return 0;
@@ -1653,6 +1301,6 @@ rewrap(v: ref IcState->ViewerState, w: int)
 	if(v.lastw == w && v.wrapped != nil && len v.wrapped > 0)
 		return;
 
-	v.wrapped = wraplines(v.lines, w);
+	v.wrapped = srcmod->wraplines(v.lines, w);
 	v.lastw = w;
 }

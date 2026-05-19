@@ -20,6 +20,9 @@ TARG=\
 	topbar.dis\
 	viewcmd.dis\
 	viewer.dis\
+	viewgoto.dis\
+	viewsource.dis\
+	viewstats.dis\
 
 MODULES=\
 
@@ -41,7 +44,11 @@ SYSMODULES=\
 	ic/theme.m\
 	ic/topbar.m\
 	ic/viewcmd.m\
+	ic/viewcommon.m\
 	ic/viewer.m\
+	ic/viewgoto.m\
+	ic/viewsource.m\
+	ic/viewstats.m\
 
 DISBIN=$ROOT/dis/ic
 
