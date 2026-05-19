@@ -195,6 +195,7 @@ source: ref IcViewCommon->ViewerSource;
 
 searchsession: ref IcViewCommon->SearchSession;
 lastsearchpattern: string;
+searchmatchcode: string;
 
 viewerbuttons: array of ViewerButton;
 vieweractivefkey: int;
@@ -258,7 +259,7 @@ bodyid: fn(v: ref IcState->ViewerState): int;
 clampview: fn(v: ref IcState->ViewerState, h: int);
 ensureids: fn(u: ref IcUi->Ui, v: ref IcState->ViewerState);
 setlabel: fn(u: ref IcUi->Ui, parentid, id, x, y, w: int, text, code: string);
-setbody: fn(u: ref IcUi->Ui, parentid, id, x, y, w, h: int, content, code: string);
+setbody: fn(u: ref IcUi->Ui, parentid, id, x, y, w, h: int, v: ref IcState->ViewerState, content, code: string);
 drawviewer: fn(u: ref IcUi->Ui, parentid: int, v: ref IcState->ViewerState, w, h: int);
 
 toptext: fn(v: ref IcState->ViewerState): string;
@@ -290,6 +291,11 @@ resetsearchifneeded: fn(v: ref IcState->ViewerState, opts: IcViewCommon->SearchO
 searchstartline: fn(v: ref IcState->ViewerState, direction, fromcurrent: int): (int, int);
 
 rewrap: fn(v: ref IcState->ViewerState, w: int);
+
+readfile: fn(path: string): string;
+trim: fn(s: string): string;
+loadthemevalue: fn(key, def: string): string;
+searchsarg: fn(v: ref IcState->ViewerState, h: int): string;
 
 init()
 {
@@ -329,15 +335,6 @@ init()
 	if(statsmod == nil)
 		raise "fail:load ic/viewstats";
 
-	source = nil;
-	searchsession = nil;
-	lastsearchpattern = "";
-
-	viewerbuttons = array[0] of ViewerButton;
-	vieweractivefkey = 0;
-	vieweractivewait = 0;
-	viewerbodyrows = 1;
-
 	appfw->init("icview");
 	ui->init();
 	view->init();
@@ -346,6 +343,16 @@ init()
 	viewsearch->init();
 	srcmod->init();
 	statsmod->init();
+
+	source = nil;
+	searchsession = nil;
+	lastsearchpattern = "";
+	searchmatchcode = loadthemevalue("viewer_search_match_code", "1;38;2;0;0;0;48;2;170;225;255");
+
+	viewerbuttons = array[0] of ViewerButton;
+	vieweractivefkey = 0;
+	vieweractivewait = 0;
+	viewerbodyrows = 1;
 }
 
 newstate(): ref IcState->ViewerState
@@ -605,9 +612,10 @@ setlabel(u: ref IcUi->Ui, parentid, id, x, y, w: int, text, code: string)
 	view->show(n);
 }
 
-setbody(u: ref IcUi->Ui, parentid, id, x, y, w, h: int, content, code: string)
+setbody(u: ref IcUi->Ui, parentid, id, x, y, w, h: int, v: ref IcState->ViewerState, content, code: string)
 {
 	n: ref IcView->Node;
+	sarg: string;
 
 	if(u == nil || u.tree == nil)
 		return;
@@ -619,10 +627,12 @@ setbody(u: ref IcUi->Ui, parentid, id, x, y, w, h: int, content, code: string)
 	if(n == nil)
 		return;
 
+	sarg = searchsarg(v, h);
+
 	view->setbounds(n, x, y, w, h);
 	view->setcontent(n, content);
 	view->setcode(n, code);
-	view->setargs(n, "", 0, 0, 0);
+	view->setargs(n, sarg, 0, 0, 0);
 	view->show(n);
 }
 
@@ -920,7 +930,9 @@ drawviewer(u: ref IcUi->Ui, parentid: int, v: ref IcState->ViewerState, w, h: in
 
 	clampview(v, h);
 	refreshwindow(v, rows);
-	rewrap(v, w);
+
+	v.wrapped = v.lines;
+	v.lastw = w;
 
 	ui->setstatusrows(u, -1, -1);
 
@@ -934,16 +946,16 @@ drawviewer(u: ref IcUi->Ui, parentid: int, v: ref IcState->ViewerState, w, h: in
 
 	id = bodyid(v);
 	if(id >= 0){
-		content = srcmod->visiblecontent(v.wrapped, 0, rows);
-		setbody(u, parentid, id, 0, 1, w, rows, content, bodycode);
+		content = srcmod->visiblecontent(v.lines, 0, rows);
+		setbody(u, parentid, id, 0, 1, w, rows, v, content, bodycode);
 	}
 
 	drawbuttonbar(u, parentid, v, w, h);
 
-	if(gotomod->active())
+	if(gotomod != nil && gotomod->active())
 		gotomod->draw(u, parentid, w, h);
 
-	if(viewsearch->active())
+	if(viewsearch != nil && viewsearch->active())
 		viewsearch->draw(u, parentid, w, h);
 }
 
@@ -1329,7 +1341,7 @@ handlekey(state: ref IcState->AppState, k: int): int
 	v = state.viewer;
 	rows = bodyh(state.height);
 
-	if(gotomod->active()){
+	if(gotomod != nil && gotomod->active()){
 		gr = gotomod->handlekey(state.ui, state.toolid, state.width, state.height, k);
 
 		if(gr == IcViewCommon->GotoCancel){
@@ -1350,7 +1362,7 @@ handlekey(state: ref IcState->AppState, k: int): int
 		return 1;
 	}
 
-	if(viewsearch->active()){
+	if(viewsearch != nil && viewsearch->active()){
 		gr = viewsearch->handlekey(state.ui, state.toolid, state.width, state.height, k);
 
 		if(gr == IcViewCommon->SearchCancel || gr == IcViewCommon->SearchAlertClosed){
@@ -1383,9 +1395,12 @@ handlekey(state: ref IcState->AppState, k: int): int
 		v.active = 0;
 		closefile(source);
 		source = nil;
-		statsmod->stop();
-		gotomod->close(state.ui);
-		viewsearch->close(state.ui);
+		if(statsmod != nil)
+			statsmod->stop();
+		if(gotomod != nil)
+			gotomod->close(state.ui);
+		if(viewsearch != nil)
+			viewsearch->close(state.ui);
 		searchsession = nil;
 		return 2;
 
@@ -1394,32 +1409,39 @@ handlekey(state: ref IcState->AppState, k: int): int
 		v.active = 0;
 		closefile(source);
 		source = nil;
-		statsmod->stop();
-		gotomod->close(state.ui);
-		viewsearch->close(state.ui);
+		if(statsmod != nil)
+			statsmod->stop();
+		if(gotomod != nil)
+			gotomod->close(state.ui);
+		if(viewsearch != nil)
+			viewsearch->close(state.ui);
 		searchsession = nil;
 		return 2;
 
 	Kf5 =>
 		activatebutton(5);
-		gotomod->open(state.ui, state.toolid, state.width, state.height);
+		if(gotomod != nil)
+			gotomod->open(state.ui, state.toolid, state.width, state.height);
 
 	Kf7 or Ks =>
 		activatebutton(7);
-		viewsearch->open(state.ui, state.toolid, state.width, state.height, lastsearchpattern);
+		if(viewsearch != nil)
+			viewsearch->open(state.ui, state.toolid, state.width, state.height, lastsearchpattern);
 
 	Kshiftf7 or Kn =>
 		activatebutton(7);
-		if(lastsearchpattern == "")
-			viewsearch->open(state.ui, state.toolid, state.width, state.height, lastsearchpattern);
-		else
+		if(lastsearchpattern == ""){
+			if(viewsearch != nil)
+				viewsearch->open(state.ui, state.toolid, state.width, state.height, lastsearchpattern);
+		}else
 			runsearch(state, IcViewCommon->SearchDirForward, 1);
 
 	Kctrlf7 or Kaltf7 or Kp =>
 		activatebutton(7);
-		if(lastsearchpattern == "")
-			viewsearch->open(state.ui, state.toolid, state.width, state.height, lastsearchpattern);
-		else
+		if(lastsearchpattern == ""){
+			if(viewsearch != nil)
+				viewsearch->open(state.ui, state.toolid, state.width, state.height, lastsearchpattern);
+		}else
 			runsearch(state, IcViewCommon->SearchDirBackward, 1);
 
 	Kf10 =>
@@ -1427,9 +1449,12 @@ handlekey(state: ref IcState->AppState, k: int): int
 		v.active = 0;
 		closefile(source);
 		source = nil;
-		statsmod->stop();
-		gotomod->close(state.ui);
-		viewsearch->close(state.ui);
+		if(statsmod != nil)
+			statsmod->stop();
+		if(gotomod != nil)
+			gotomod->close(state.ui);
+		if(viewsearch != nil)
+			viewsearch->close(state.ui);
 		searchsession = nil;
 		return 2;
 
@@ -1489,16 +1514,18 @@ handletick(state: ref IcState->AppState): int
 	if(viewerhandletick())
 		changed = 1;
 
-	if(gotomod->handletick(state.ui, state.toolid, state.width, state.height))
+	if(gotomod != nil && gotomod->handletick(state.ui, state.toolid, state.width, state.height))
 		changed = 1;
 
-	if(viewsearch->handletick(state.ui, state.toolid, state.width, state.height))
+	if(viewsearch != nil && viewsearch->handletick(state.ui, state.toolid, state.width, state.height))
 		changed = 1;
 
-	st = statsmod->get();
-	if(st.dirty){
-		statsmod->cleardirty();
-		changed = 1;
+	if(statsmod != nil){
+		st = statsmod->get();
+		if(st.dirty){
+			statsmod->cleardirty();
+			changed = 1;
+		}
 	}
 
 	if(changed)
@@ -1612,9 +1639,16 @@ runfilemode(path: string, mode: int): int
 
 	closefile(source);
 	source = nil;
-	statsmod->stop();
-	gotomod->close(u);
-	viewsearch->close(u);
+
+	if(statsmod != nil)
+		statsmod->stop();
+
+	if(gotomod != nil)
+		gotomod->close(u);
+
+	if(viewsearch != nil)
+		viewsearch->close(u);
+
 	searchsession = nil;
 
 	appfw->close(ctx);
@@ -1634,4 +1668,154 @@ rewrap(v: ref IcState->ViewerState, w: int)
 
 	v.wrapped = srcmod->wraplines(v.lines, w);
 	v.lastw = w;
+}
+
+readfile(path: string): string
+{
+	fd: ref Sys->FD;
+	buf: array of byte;
+	n: int;
+	text: string;
+
+	fd = sys->open(path, Sys->OREAD);
+	if(fd == nil)
+		return "";
+
+	buf = array[4096] of byte;
+	text = "";
+
+	for(;;){
+		n = sys->read(fd, buf, len buf);
+		if(n <= 0)
+			break;
+
+		text += string buf[0:n];
+	}
+
+	fd = nil;
+	return text;
+}
+
+trim(s: string): string
+{
+	a, b: int;
+
+	a = 0;
+	b = len s;
+
+	while(a < b && (s[a] == ' ' || s[a] == '\t' || s[a] == '\n' || s[a] == '\r'))
+		a++;
+
+	while(b > a && (s[b - 1] == ' ' || s[b - 1] == '\t' || s[b - 1] == '\n' || s[b - 1] == '\r'))
+		b--;
+
+	if(a >= b)
+		return "";
+
+	return s[a:b];
+}
+
+loadthemevalue(key, def: string): string
+{
+	text, prefix, line: string;
+	i, start: int;
+
+	text = readfile("/lib/ic/theme.cfg");
+	if(text == "")
+		return def;
+
+	prefix = key + "=";
+	start = 0;
+
+	for(i = 0; i <= len text; i++){
+		if(i < len text && text[i] != '\n')
+			continue;
+
+		line = trim(text[start:i]);
+		start = i + 1;
+
+		if(line == "")
+			continue;
+
+		if(line[0] == '#')
+			continue;
+
+		if(len line >= len prefix && line[0:len prefix] == prefix)
+			return trim(line[len prefix:]);
+	}
+
+	return def;
+}
+
+searchsarg(v: ref IcState->ViewerState, h: int): string
+{
+	m: IcViewCommon->SearchMatch;
+	row, line, start, end: int;
+	lineoff, nextoff: big;
+
+	if(v == nil || source == nil)
+		return "";
+
+	if(searchsession == nil)
+		return "";
+
+	if(searchsession.current < 0)
+		return "";
+
+	if(searchsession.matches == nil)
+		return "";
+
+	if(searchsession.current >= len searchsession.matches)
+		return "";
+
+	m = searchsession.matches[searchsession.current];
+
+	if(m.length <= 0)
+		return "";
+
+	for(row = 0; row < h; row++){
+		line = v.topline + row;
+
+		if(line < 0)
+			continue;
+
+		if(line >= source.noffsets)
+			continue;
+
+		lineoff = source.offsets[line];
+
+		if(line + 1 < source.noffsets)
+			nextoff = source.offsets[line + 1];
+		else if(source.eof)
+			nextoff = source.length;
+		else
+			nextoff = source.scanoff;
+
+		if(nextoff < lineoff)
+			nextoff = lineoff;
+
+		if(m.offset < lineoff || m.offset >= nextoff)
+			continue;
+
+		#
+		# The match is anchored by file offset, but the visible text is decoded
+		# and sanitized. Use the stored display column after the offset selects
+		# the correct source line.
+		#
+		start = m.col;
+		end = start + m.length;
+
+		if(start < 0)
+			start = 0;
+
+		if(end < start)
+			end = start;
+
+		return "search_line=" + string row + "\n"
+			+ "search_start=" + string start + "\n"
+			+ "search_end=" + string end + "\n"
+			+ "search_code=" + searchmatchcode + "\n";
+	}
+
+	return "";
 }

@@ -27,6 +27,11 @@ drawprogress: fn(r: ref IcPaint->Renderer, t: ref IcView->Tree, n: ref IcView->N
 drawspinner: fn(r: ref IcPaint->Renderer, t: ref IcView->Tree, n: ref IcView->Node);
 drawcontent: fn(r: ref IcPaint->Renderer, t: ref IcView->Tree, n: ref IcView->Node);
 drawcanvas: fn(r: ref IcPaint->Renderer, t: ref IcView->Tree, n: ref IcView->Node);
+
+paramint: fn(s, key: string, def: int): int;
+paramstr: fn(s, key, def: string): string;
+drawtextviewline: fn(r: ref IcPaint->Renderer, x, y, w: int, text, basecode, searchcode: string, hstart, hend: int);
+
 drawtextview: fn(r: ref IcPaint->Renderer, t: ref IcView->Tree, n: ref IcView->Node);
 drawmodal: fn(r: ref IcPaint->Renderer, t: ref IcView->Tree, n: ref IcView->Node);
 split3: fn(s: string): (string, string, string);
@@ -59,6 +64,8 @@ appendline: fn(a: array of string, s: string): array of string;
 addword: fn(a: array of string, line, word: string, width: int): (array of string, string);
 
 framechars: fn(style: int): array of string;
+
+splitlines: fn(text: string): array of string;
 
 CodeNormal: string;
 CodeWindow: string;
@@ -810,10 +817,109 @@ drawcanvas(r: ref IcPaint->Renderer, t: ref IcView->Tree, n: ref IcView->Node)
 	}
 }
 
+paramint(s, key: string, def: int): int
+{
+	i, j, v, ok, sign: int;
+	prefix: string;
+
+	prefix = key + "=";
+
+	for(i = 0; i < len s; i++){
+		if(i > 0 && s[i - 1] != '\n')
+			continue;
+
+		if(i + len prefix > len s)
+			continue;
+
+		if(s[i:i + len prefix] != prefix)
+			continue;
+
+		j = i + len prefix;
+		sign = 1;
+		if(j < len s && s[j] == '-'){
+			sign = -1;
+			j++;
+		}
+
+		v = 0;
+		ok = 0;
+		while(j < len s && s[j] >= '0' && s[j] <= '9'){
+			v = v * 10 + int s[j] - int '0';
+			j++;
+			ok = 1;
+		}
+
+		if(ok)
+			return sign * v;
+
+		return def;
+	}
+
+	return def;
+}
+
+paramstr(s, key, def: string): string
+{
+	i, j: int;
+	prefix: string;
+
+	prefix = key + "=";
+
+	for(i = 0; i < len s; i++){
+		if(i > 0 && s[i - 1] != '\n')
+			continue;
+
+		if(i + len prefix > len s)
+			continue;
+
+		if(s[i:i + len prefix] != prefix)
+			continue;
+
+		j = i + len prefix;
+		while(j < len s && s[j] != '\n' && s[j] != '\r')
+			j++;
+
+		if(j > i + len prefix)
+			return s[i + len prefix:j];
+
+		return def;
+	}
+
+	return def;
+}
+
+drawtextviewline(r: ref IcPaint->Renderer, x, y, w: int, text, basecode, searchcode: string, hstart, hend: int)
+{
+	i, n: int;
+	code: string;
+
+	if(r == nil || w <= 0)
+		return;
+
+	if(basecode == "")
+		basecode = CodeNormal;
+
+	if(searchcode == "")
+		searchcode = basecode;
+
+	n = len text;
+	if(n > w)
+		n = w;
+
+	for(i = 0; i < n; i++){
+		code = basecode;
+		if(i >= hstart && i < hend)
+			code = searchcode;
+
+		putc(r, x + i, y, text[i:i + 1], code);
+	}
+}
+
 drawtextview(r: ref IcPaint->Renderer, t: ref IcView->Tree, n: ref IcView->Node)
 {
 	x, y, w, h, row, lineidx, leftcol: int;
-	content: string;
+	searchline, searchstart, searchend, hstart, hend: int;
+	content, code, searchcode: string;
 	lines: array of string;
 
 	if(r == nil || t == nil || n == nil)
@@ -828,9 +934,13 @@ drawtextview(r: ref IcPaint->Renderer, t: ref IcView->Tree, n: ref IcView->Node)
 		return;
 
 	content = view->getcontent(n);
-	lines = wraptext(content, w);
+	lines = splitlines(content);
 
-	fillrect(r, x, y, w, h, " ", view->getcode(n));
+	code = view->getcode(n);
+	if(code == "")
+		code = CodeWindow;
+
+	fillrect(r, x, y, w, h, " ", code);
 
 	lineidx = n.iarg0;
 	leftcol = n.iarg1;
@@ -839,12 +949,32 @@ drawtextview(r: ref IcPaint->Renderer, t: ref IcView->Tree, n: ref IcView->Node)
 	if(leftcol < 0)
 		leftcol = 0;
 
+	searchline = paramint(n.sarg, "search_line", -1);
+	searchstart = paramint(n.sarg, "search_start", -1);
+	searchend = paramint(n.sarg, "search_end", -1);
+	searchcode = paramstr(n.sarg, "search_code", "");
+
 	for(row = 0; row < h; row++){
 		if(lineidx + row >= len lines)
 			break;
 
-		if(leftcol < len lines[lineidx + row])
-			putslimit(r, x, y + row, w, lines[lineidx + row][leftcol:], view->getcode(n));
+		if(leftcol >= len lines[lineidx + row])
+			continue;
+
+		hstart = -1;
+		hend = -1;
+
+		if(lineidx + row == searchline && searchstart >= 0 && searchend > searchstart){
+			hstart = searchstart - leftcol;
+			hend = searchend - leftcol;
+
+			if(hstart < 0)
+				hstart = 0;
+			if(hend > w)
+				hend = w;
+		}
+
+		drawtextviewline(r, x, y + row, w, lines[lineidx + row][leftcol:], code, searchcode, hstart, hend);
 	}
 }
 
@@ -1537,4 +1667,26 @@ canvasputs(id: int, x, y: int, text, code: string): int
 
 	canvas->puts(c, x, y, text, code);
 	return 0;
+}
+
+splitlines(text: string): array of string
+{
+	a: array of string;
+	i, start: int;
+
+	a = array[0] of string;
+	start = 0;
+
+	for(i = 0; i <= len text; i++){
+		if(i < len text && text[i] != '\n')
+			continue;
+
+		a = appendline(a, text[start:i]);
+		start = i + 1;
+	}
+
+	if(len a == 0)
+		a = appendline(a, "");
+
+	return a;
 }
