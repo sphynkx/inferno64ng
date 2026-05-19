@@ -112,6 +112,15 @@ source: ref ViewerSource;
 viewerbuttons: array of ViewerButton;
 vieweractivefkey: int;
 vieweractivewait: int;
+viewerbodyrows: int;
+
+statstoken: int;
+statspath: string;
+statsready: int;
+statsdirty: int;
+statsbytes: big;
+statslines: big;
+statschars: big;
 
 TopCode: con "1;38;2;20;25;30;48;2;225;225;225";
 BodyCode: con "38;2;220;230;255;48;2;20;45;90";
@@ -144,7 +153,11 @@ Kf1: con 57409;
 Kf2: con 57410;
 Kf3: con 57411;
 Kf4: con 57412;
+Kf5: con 57413;
+Kf6: con 57414;
 Kf7: con 57415;
+Kf8: con 57416;
+Kf9: con 57417;
 Kf10: con 57418;
 
 newsource: fn(path: string): ref ViewerSource;
@@ -190,6 +203,10 @@ viewpercent: fn(v: ref IcState->ViewerState): string;
 linestat: fn(): string;
 charstat: fn(): string;
 
+startstats: fn(path: string);
+stopstats: fn();
+statworker: fn(path: string, token: int);
+
 initbuttons: fn(u: ref IcUi->Ui);
 buttonx: fn(w, idx: int): int;
 buttonw: fn(w, idx: int): int;
@@ -223,6 +240,15 @@ init()
 	viewerbuttons = array[0] of ViewerButton;
 	vieweractivefkey = 0;
 	vieweractivewait = 0;
+	viewerbodyrows = 1;
+
+	statstoken = 0;
+	statspath = "";
+	statsready = 0;
+	statsdirty = 0;
+	statsbytes = big 0;
+	statslines = big 0;
+	statschars = big 0;
 
 	appfw->init("icview");
 	ui->init();
@@ -307,6 +333,8 @@ ensuresource(v: ref IcState->ViewerState, rows: int)
 	v.lastw = 0;
 
 	ensureindexed(source, InitialPrefetchScreens * rows + 1);
+	v.nlines = linecount(source);
+	startstats(v.path);
 }
 
 closefile(s: ref ViewerSource)
@@ -1016,13 +1044,16 @@ viewpercent(v: ref IcState->ViewerState): string
 	if(source.length <= big 0)
 		return "?%";
 
+	if(source.eof && viewerbodyrows > 0 && v.topline + viewerbodyrows >= linecount(source))
+		return "100%";
+
 	off = knownoffset(v);
 	if(off < big 0)
 		off = big 0;
 	if(off > source.length)
 		off = source.length;
 
-	p = int ((off * big 100) / source.length);
+	p = int (((off * big 100) + (source.length / big 2)) / source.length);
 	if(p < 0)
 		p = 0;
 	if(p > 100)
@@ -1033,6 +1064,9 @@ viewpercent(v: ref IcState->ViewerState): string
 
 linestat(): string
 {
+	if(statsready)
+		return string statslines;
+
 	if(source == nil)
 		return "0";
 
@@ -1046,14 +1080,17 @@ charstat(): string
 {
 	n: big;
 
+	if(statsready)
+		return "~" + string statschars;
+
 	if(source == nil)
-		return "~0B";
+		return "~0";
 
 	n = source.length;
 	if(n <= big 0)
 		n = source.scanoff;
 
-	return "~" + humanbytes(n);
+	return "~" + string n;
 }
 
 toptext(v: ref IcState->ViewerState): string
@@ -1066,7 +1103,9 @@ toptext(v: ref IcState->ViewerState): string
 	if(source == nil)
 		return " " + v.path + "  size:? lines:? chars:? pos:? enc:?";
 
-	if(source.length > big 0)
+	if(statsready && statsbytes > big 0)
+		size = humanbytes(statsbytes);
+	else if(source.length > big 0)
 		size = humanbytes(source.length);
 	else
 		size = "~" + humanbytes(source.scanoff);
@@ -1092,6 +1131,83 @@ iserrorline(s: string): int
 		return 1;
 
 	return 0;
+}
+
+startstats(path: string)
+{
+	statstoken++;
+	statspath = path;
+	statsready = 0;
+	statsdirty = 1;
+	statsbytes = big 0;
+	statslines = big 0;
+	statschars = big 0;
+
+	if(path == "")
+		return;
+
+	if(source != nil && source.length > big 0){
+		statsbytes = source.length;
+		statschars = source.length;
+	}
+
+	spawn statworker(path, statstoken);
+}
+
+stopstats()
+{
+	statstoken++;
+	statspath = "";
+	statsready = 0;
+	statsdirty = 0;
+	statsbytes = big 0;
+	statslines = big 0;
+	statschars = big 0;
+}
+
+statworker(path: string, token: int)
+{
+	fd: ref Sys->FD;
+	buf: array of byte;
+	n, i: int;
+	bytes, lines, chars: big;
+
+	fd = sys->open(path, Sys->OREAD);
+	if(fd == nil)
+		return;
+
+	buf = array[ScanChunkSize] of byte;
+	bytes = big 0;
+	lines = big 0;
+	chars = big 0;
+
+	for(;;){
+		n = sys->read(fd, buf, len buf);
+		if(n <= 0)
+			break;
+
+		bytes += big n;
+		chars += big n;
+
+		for(i = 0; i < n; i++){
+			if(int buf[i] == '\n')
+				lines++;
+		}
+	}
+
+	fd = nil;
+
+	if(token != statstoken)
+		return;
+
+	if(path != statspath)
+		return;
+
+	statsbytes = bytes;
+	statslines = lines;
+	statschars = chars;
+	statsready = 1;
+	statsdirty = 1;
 }
 
 initbuttons(u: ref IcUi->Ui)
@@ -1122,17 +1238,17 @@ initbuttons(u: ref IcUi->Ui)
 			b.text = "Quit";
 			b.enabled = 1;
 		3 =>
-			b.text = "Hex";
+			b.text = "Edit";
 		4 =>
-			b.text = "";
+			b.text = "GoTo";
 		5 =>
-			b.text = "";
+			b.text = "Hex";
 		6 =>
 			b.text = "Search";
 		7 =>
-			b.text = "";
+			b.text = "Codepage";
 		8 =>
-			b.text = "";
+			b.text = "Menu";
 		9 =>
 			b.text = "Quit";
 			b.enabled = 1;
@@ -1177,7 +1293,7 @@ buttoncode(b: ViewerButton): string
 	if(!b.enabled)
 		return BottomDisabledCode;
 
-	if(b.fkey == vieweractivefkey)
+	if(vieweractivewait > 0 && b.fkey == vieweractivefkey)
 		return BottomActiveCode;
 
 	return BottomCode;
@@ -1240,6 +1356,8 @@ drawviewer(u: ref IcUi->Ui, parentid: int, v: ref IcState->ViewerState, w, h: in
 		return;
 
 	rows = bodyh(h);
+	viewerbodyrows = rows;
+
 	ensureids(u, v);
 	ensuresource(v, rows);
 
@@ -1288,7 +1406,6 @@ start(state: ref IcState->AppState, path: string, mode: int): int
 	state.viewer.lines = array[0] of string;
 	state.viewer.wrapped = array[0] of string;
 	state.viewer.topline = 0;
-	state.viewer.nlines = linecount(source);
 	state.viewer.lastw = 0;
 
 	vieweractivefkey = 0;
@@ -1298,6 +1415,9 @@ start(state: ref IcState->AppState, path: string, mode: int): int
 		state.viewer.lines = array[] of { source.error };
 
 	ensureindexed(source, InitialPrefetchScreens * bodyh(state.height) + 1);
+	state.viewer.nlines = linecount(source);
+
+	startstats(path);
 
 	return 0;
 }
@@ -1329,6 +1449,7 @@ handlekey(state: ref IcState->AppState, k: int): int
 		v.active = 0;
 		closefile(source);
 		source = nil;
+		stopstats();
 		return 2;
 
 	Kf3 =>
@@ -1336,6 +1457,7 @@ handlekey(state: ref IcState->AppState, k: int): int
 		v.active = 0;
 		closefile(source);
 		source = nil;
+		stopstats();
 		return 2;
 
 	Kf10 =>
@@ -1343,9 +1465,10 @@ handlekey(state: ref IcState->AppState, k: int): int
 		v.active = 0;
 		closefile(source);
 		source = nil;
+		stopstats();
 		return 2;
 
-	Kf1 or Kf2 or Kf4 or Kf7 =>
+	Kf1 or Kf2 or Kf4 or Kf5 or Kf6 or Kf7 or Kf8 or Kf9 =>
 		r = 0;
 
 	Kup =>
@@ -1388,6 +1511,29 @@ handlekey(state: ref IcState->AppState, k: int): int
 	return 1;
 }
 
+handletick(state: ref IcState->AppState): int
+{
+	changed: int;
+
+	if(state == nil || state.viewer == nil || !state.viewer.active)
+		return 0;
+
+	changed = 0;
+
+	if(viewerhandletick())
+		changed = 1;
+
+	if(statsdirty){
+		statsdirty = 0;
+		changed = 1;
+	}
+
+	if(changed)
+		build(state, state.toolid, state.width, state.height);
+
+	return changed;
+}
+
 runfilemode(path: string, mode: int): int
 {
 	ctx: ref IcursesApp->Context;
@@ -1405,7 +1551,6 @@ runfilemode(path: string, mode: int): int
 	v = newstate();
 	v.path = path;
 	v.mode = mode;
-	v.nlines = linecount(source);
 	v.lines = array[0] of string;
 	v.wrapped = array[0] of string;
 	v.topline = 0;
@@ -1447,6 +1592,9 @@ runfilemode(path: string, mode: int): int
 	v.active = 1;
 
 	ensureindexed(source, InitialPrefetchScreens * bodyh(st.height) + 1);
+	v.nlines = linecount(source);
+
+	startstats(path);
 
 	build(st, st.rootid, st.width, st.height);
 	appfw->draw(ctx);
@@ -1469,7 +1617,7 @@ runfilemode(path: string, mode: int): int
 		if(step.kind == IcUi->StepTick){
 			changed = prefetch(v, bodyh(st.height));
 
-			if(viewerhandletick())
+			if(handletick(st))
 				changed = 1;
 
 			(nw, nh, resized) = appfw->pollresize(ctx, st.width, st.height);
@@ -1488,6 +1636,7 @@ runfilemode(path: string, mode: int): int
 
 	closefile(source);
 	source = nil;
+	stopstats();
 
 	appfw->close(ctx);
 	return 0;

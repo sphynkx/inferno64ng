@@ -79,6 +79,7 @@ IcViewerMod: module
 	init: fn();
 	active: fn(state: ref IcState->AppState): int;
 	handlekey: fn(state: ref IcState->AppState, k: int): int;
+	handletick: fn(state: ref IcState->AppState): int;
 };
 
 IcScreenMod: module
@@ -265,6 +266,12 @@ handletick(state: ref IcState->AppState): int
 		return 0;
 
 	redraw = 0;
+
+	if(viewer->active(state)){
+		if(viewer->handletick(state))
+			redraw = 1;
+		return redraw;
+	}
 
 	if(modal->handletick(state))
 		redraw = 1;
