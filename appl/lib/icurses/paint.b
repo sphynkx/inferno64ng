@@ -1418,39 +1418,47 @@ status(r: ref IcPaint->Renderer, row: int, text: string)
 
 flush(r: ref IcPaint->Renderer)
 {
-	x, y, i, j, start: int;
+	x, y, i: int;
 	code, s: string;
+	changed: int;
 
 	if(r == nil || r.out == nil)
 		return;
 
 	for(y = 0; y < r.h; y++){
+		changed = 0;
+
+		for(x = 0; x < r.w; x++){
+			i = idx(r, x, y);
+			if(!samecell(r.front[i], r.back[i])){
+				changed = 1;
+				break;
+			}
+		}
+
+		if(!changed)
+			continue;
+
 		x = 0;
 		while(x < r.w){
 			i = idx(r, x, y);
-
-			if(samecell(r.front[i], r.back[i])){
-				x++;
-				continue;
-			}
-
-			start = x;
 			code = r.back[i].code;
 			s = "";
 
 			while(x < r.w){
-				j = idx(r, x, y);
-				if(samecell(r.front[j], r.back[j]))
-					break;
-				if(r.back[j].code != code)
+				i = idx(r, x, y);
+
+				if(r.back[i].code != code)
 					break;
 
-				s += r.back[j].ch;
-				r.front[j] = r.back[j];
+				s += r.back[i].ch;
+				r.front[i] = r.back[i];
 				x++;
 			}
 
-			ic->emitrun(r.out, y + 1, start + 1, code, s);
+			ic->cup(r.out, y + 1, x - len s + 1);
+			ic->sgr(r.out, code);
+			sys->fprint(r.out, "%s", s);
 		}
 	}
 
