@@ -79,6 +79,63 @@ IcViewMod: module
 	allocid: fn(t: ref IcView->Tree): int;
 };
 
+IcSearchMod: module
+{
+	PATH: con "/dis/ic/search.dis";
+
+	init: fn();
+
+	defaultopts: fn(): IcViewCommon->SearchOptions;
+	newsession: fn(path: string, opts: IcViewCommon->SearchOptions): ref IcViewCommon->SearchSession;
+	reset: fn(s: ref IcViewCommon->SearchSession, path: string, opts: IcViewCommon->SearchOptions);
+
+	addmatch: fn(s: ref IcViewCommon->SearchSession, m: IcViewCommon->SearchMatch): int;
+
+	findplain: fn(text, pattern: string, casefold, startcol, backward: int): (int, int);
+	matchline: fn(text, pattern: string, casefold, regex, startcol, backward: int): (int, int, string);
+
+	lowerstr: fn(s: string): string;
+};
+
+IcViewGotoMod: module
+{
+	PATH: con "/dis/ic/viewgoto.dis";
+
+	init: fn();
+
+	open: fn(u: ref IcUi->Ui, parentid, w, h: int);
+	close: fn(u: ref IcUi->Ui);
+
+	active: fn(): int;
+	draw: fn(u: ref IcUi->Ui, parentid, w, h: int): int;
+	handlekey: fn(u: ref IcUi->Ui, parentid, w, h, k: int): int;
+	handletick: fn(u: ref IcUi->Ui, parentid, w, h: int): int;
+
+	mode: fn(): int;
+	input: fn(): string;
+};
+
+IcViewSearchMod: module
+{
+	PATH: con "/dis/ic/viewsearch.dis";
+
+	init: fn();
+
+	open: fn(u: ref IcUi->Ui, parentid, w, h: int, pattern: string);
+	alert: fn(u: ref IcUi->Ui, parentid, w, h: int, text: string);
+	close: fn(u: ref IcUi->Ui);
+
+	active: fn(): int;
+	isalert: fn(): int;
+
+	draw: fn(u: ref IcUi->Ui, parentid, w, h: int): int;
+	handletick: fn(u: ref IcUi->Ui, parentid, w, h: int): int;
+	handlekey: fn(u: ref IcUi->Ui, parentid, w, h, k: int): int;
+
+	options: fn(): IcViewCommon->SearchOptions;
+	pattern: fn(): string;
+};
+
 IcViewSourceMod: module
 {
 	PATH: con "/dis/ic/viewsource.dis";
@@ -116,24 +173,6 @@ IcViewStatsMod: module
 	cleardirty: fn();
 };
 
-IcViewGotoMod: module
-{
-	PATH: con "/dis/ic/viewgoto.dis";
-
-	init: fn();
-
-	open: fn(u: ref IcUi->Ui, parentid, w, h: int);
-	close: fn(u: ref IcUi->Ui);
-
-	active: fn(): int;
-	draw: fn(u: ref IcUi->Ui, parentid, w, h: int): int;
-	handlekey: fn(u: ref IcUi->Ui, parentid, w, h, k: int): int;
-	handletick: fn(u: ref IcUi->Ui, parentid, w, h: int): int;
-
-	mode: fn(): int;
-	input: fn(): string;
-};
-
 ViewerButton: adt
 {
 	labelid: int;
@@ -146,11 +185,16 @@ sys: Sys;
 appfw: IcursesApp;
 ui: IcUiMod;
 view: IcViewMod;
+searchmod: IcSearchMod;
+gotomod: IcViewGotoMod;
+viewsearch: IcViewSearchMod;
 srcmod: IcViewSourceMod;
 statsmod: IcViewStatsMod;
-gotomod: IcViewGotoMod;
 
 source: ref IcViewCommon->ViewerSource;
+
+searchsession: ref IcViewCommon->SearchSession;
+lastsearchpattern: string;
 
 viewerbuttons: array of ViewerButton;
 vieweractivefkey: int;
@@ -173,6 +217,9 @@ ViewerFlashTicks: con 2;
 
 Kesc: con 27;
 Kq: con int 'q';
+Kn: con int 'n';
+Kp: con int 'p';
+Ks: con int 's';
 
 Kup: con 57362;
 Kdown: con 57363;
@@ -190,6 +237,10 @@ Kf7: con 57415;
 Kf8: con 57416;
 Kf9: con 57417;
 Kf10: con 57418;
+
+Kshiftf7: con 57463;
+Kaltf7: con 57479;
+Kctrlf7: con 57511;
 
 newsource: fn(path: string): ref IcViewCommon->ViewerSource;
 closefile: fn(s: ref IcViewCommon->ViewerSource);
@@ -232,6 +283,12 @@ parsebigdec: fn(s: string): (big, int);
 parsebighex: fn(s: string): (big, int);
 applygoto: fn(v: ref IcState->ViewerState): int;
 
+searchline: fn(v: ref IcState->ViewerState, line, startcol, backward: int, opts: IcViewCommon->SearchOptions): (int, int, string);
+runsearch: fn(state: ref IcState->AppState, direction: int, fromcurrent: int): int;
+showsearchalert: fn(state: ref IcState->AppState, text: string);
+resetsearchifneeded: fn(v: ref IcState->ViewerState, opts: IcViewCommon->SearchOptions);
+searchstartline: fn(v: ref IcState->ViewerState, direction, fromcurrent: int): (int, int);
+
 rewrap: fn(v: ref IcState->ViewerState, w: int);
 
 init()
@@ -252,6 +309,18 @@ init()
 	if(view == nil)
 		raise "fail:load icurses/view";
 
+	searchmod = load IcSearchMod IcSearchMod->PATH;
+	if(searchmod == nil)
+		raise "fail:load ic/search";
+
+	gotomod = load IcViewGotoMod IcViewGotoMod->PATH;
+	if(gotomod == nil)
+		raise "fail:load ic/viewgoto";
+
+	viewsearch = load IcViewSearchMod IcViewSearchMod->PATH;
+	if(viewsearch == nil)
+		raise "fail:load ic/viewsearch";
+
 	srcmod = load IcViewSourceMod IcViewSourceMod->PATH;
 	if(srcmod == nil)
 		raise "fail:load ic/viewsource";
@@ -260,11 +329,10 @@ init()
 	if(statsmod == nil)
 		raise "fail:load ic/viewstats";
 
-	gotomod = load IcViewGotoMod IcViewGotoMod->PATH;
-	if(gotomod == nil)
-		raise "fail:load ic/viewgoto";
-
 	source = nil;
+	searchsession = nil;
+	lastsearchpattern = "";
+
 	viewerbuttons = array[0] of ViewerButton;
 	vieweractivefkey = 0;
 	vieweractivewait = 0;
@@ -273,9 +341,11 @@ init()
 	appfw->init("icview");
 	ui->init();
 	view->init();
+	searchmod->init();
+	gotomod->init();
+	viewsearch->init();
 	srcmod->init();
 	statsmod->init();
-	gotomod->init();
 }
 
 newstate(): ref IcState->ViewerState
@@ -731,6 +801,7 @@ initbuttons(u: ref IcUi->Ui)
 			b.text = "Hex";
 		6 =>
 			b.text = "Search";
+			b.enabled = 1;
 		7 =>
 			b.text = "Codepage";
 		8 =>
@@ -871,6 +942,9 @@ drawviewer(u: ref IcUi->Ui, parentid: int, v: ref IcState->ViewerState, w, h: in
 
 	if(gotomod->active())
 		gotomod->draw(u, parentid, w, h);
+
+	if(viewsearch->active())
+		viewsearch->draw(u, parentid, w, h);
 }
 
 active(state: ref IcState->AppState): int
@@ -896,6 +970,9 @@ start(state: ref IcState->AppState, path: string, mode: int): int
 	state.viewer.wrapped = array[0] of string;
 	state.viewer.topline = 0;
 	state.viewer.lastw = 0;
+
+	searchsession = nil;
+	lastsearchpattern = "";
 
 	vieweractivefkey = 0;
 	vieweractivewait = 0;
@@ -1044,6 +1121,208 @@ applygoto(v: ref IcState->ViewerState): int
 	return 1;
 }
 
+searchline(v: ref IcState->ViewerState, line, startcol, backward: int, opts: IcViewCommon->SearchOptions): (int, int, string)
+{
+	text, err: string;
+	col, n: int;
+
+	if(source == nil || v == nil)
+		return (-1, 0, "No file");
+
+	if(!srcmod->ensureindexed(source, line))
+		return (-1, 0, "");
+
+	text = srcmod->getline(source, line);
+	(col, n, err) = searchmod->matchline(text, opts.pattern, opts.casefold, opts.regex, startcol, backward);
+
+	return (col, n, err);
+}
+
+showsearchalert(state: ref IcState->AppState, text: string)
+{
+	if(state == nil || state.ui == nil)
+		return;
+
+	viewsearch->alert(state.ui, state.toolid, state.width, state.height, text);
+	build(state, state.toolid, state.width, state.height);
+}
+
+resetsearchifneeded(v: ref IcState->ViewerState, opts: IcViewCommon->SearchOptions)
+{
+	if(v == nil)
+		return;
+
+	if(searchsession == nil){
+		searchsession = searchmod->newsession(v.path, opts);
+		return;
+	}
+
+	if(searchsession.path != v.path || searchsession.opts.pattern != opts.pattern)
+		searchmod->reset(searchsession, v.path, opts);
+	else
+		searchsession.opts = opts;
+}
+
+searchstartline(v: ref IcState->ViewerState, direction, fromcurrent: int): (int, int)
+{
+	line, startcol: int;
+
+	line = v.topline;
+	startcol = 0;
+
+	if(fromcurrent && searchsession != nil && searchsession.current >= 0){
+		line = searchsession.lastline;
+
+		if(direction == IcViewCommon->SearchDirBackward)
+			startcol = searchsession.lastcol - 1;
+		else
+			startcol = searchsession.lastcol + 1;
+	}else if(direction == IcViewCommon->SearchDirBackward)
+		startcol = -1;
+
+	return (line, startcol);
+}
+
+runsearch(state: ref IcState->AppState, direction: int, fromcurrent: int): int
+{
+	v: ref IcState->ViewerState;
+	opts: IcViewCommon->SearchOptions;
+	m: IcViewCommon->SearchMatch;
+	line, col, n, startcol, wrapped, firstline: int;
+	err: string;
+
+	if(state == nil || state.viewer == nil || source == nil)
+		return 0;
+
+	v = state.viewer;
+	opts = viewsearch->options();
+
+	if(direction == IcViewCommon->SearchDirBackward)
+		opts.backward = 1;
+	else
+		opts.backward = 0;
+
+	if(opts.pattern == ""){
+		showsearchalert(state, "Nothing to search");
+		return 1;
+	}
+
+	resetsearchifneeded(v, opts);
+	lastsearchpattern = opts.pattern;
+
+	if(opts.regex){
+		showsearchalert(state, "Regex search is not implemented yet");
+		return 1;
+	}
+
+	if(opts.anyencoding){
+		showsearchalert(state, "Any encoding search is not implemented yet");
+		return 1;
+	}
+
+	(line, startcol) = searchstartline(v, direction, fromcurrent);
+	firstline = line;
+	wrapped = 0;
+
+	if(direction == IcViewCommon->SearchDirBackward){
+		for(;;){
+			if(line < 0){
+				if(!opts.wrap || wrapped){
+					showsearchalert(state, "Search finished");
+					return 1;
+				}
+
+				srcmod->ensureeof(source);
+				line = srcmod->linecount(source) - 1;
+				startcol = -1;
+				wrapped = 1;
+			}
+
+			(col, n, err) = searchline(v, line, startcol, 1, opts);
+			if(err != ""){
+				showsearchalert(state, err);
+				return 1;
+			}
+
+			if(col >= 0){
+				m.offset = source.offsets[line] + big col;
+				m.line = line;
+				m.col = col;
+				m.length = n;
+				m.text = srcmod->getline(source, line);
+
+				searchmod->addmatch(searchsession, m);
+
+				v.topline = line;
+				clampview(v, state.height);
+				build(state, state.toolid, state.width, state.height);
+				return 1;
+			}
+
+			line--;
+			startcol = -1;
+
+			if(wrapped && line < firstline){
+				showsearchalert(state, "Nothing found");
+				return 1;
+			}
+		}
+	}
+
+	for(;;){
+		if(source.eof && line >= srcmod->linecount(source)){
+			if(!opts.wrap || wrapped){
+				showsearchalert(state, "Search finished");
+				return 1;
+			}
+
+			line = 0;
+			startcol = 0;
+			wrapped = 1;
+		}
+
+		if(!srcmod->ensureindexed(source, line)){
+			if(!opts.wrap || wrapped){
+				showsearchalert(state, "Search finished");
+				return 1;
+			}
+
+			line = 0;
+			startcol = 0;
+			wrapped = 1;
+		}
+
+		(col, n, err) = searchline(v, line, startcol, 0, opts);
+		if(err != ""){
+			showsearchalert(state, err);
+			return 1;
+		}
+
+		if(col >= 0){
+			m.offset = source.offsets[line] + big col;
+			m.line = line;
+			m.col = col;
+			m.length = n;
+			m.text = srcmod->getline(source, line);
+
+			searchmod->addmatch(searchsession, m);
+
+			v.topline = line;
+			clampview(v, state.height);
+			build(state, state.toolid, state.width, state.height);
+			return 1;
+		}
+
+		line++;
+		startcol = 0;
+
+		if(wrapped && line > firstline){
+			showsearchalert(state, "Nothing found");
+			return 1;
+		}
+	}
+}
+
 handlekey(state: ref IcState->AppState, k: int): int
 {
 	v: ref IcState->ViewerState;
@@ -1076,6 +1355,31 @@ handlekey(state: ref IcState->AppState, k: int): int
 		return 1;
 	}
 
+	if(viewsearch->active()){
+		gr = viewsearch->handlekey(state.ui, state.toolid, state.width, state.height, k);
+
+		if(gr == IcViewCommon->SearchCancel || gr == IcViewCommon->SearchAlertClosed){
+			viewsearch->close(state.ui);
+			build(state, state.toolid, state.width, state.height);
+			return 1;
+		}
+
+		if(gr == IcViewCommon->SearchForward){
+			viewsearch->close(state.ui);
+			runsearch(state, IcViewCommon->SearchDirForward, 0);
+			return 1;
+		}
+
+		if(gr == IcViewCommon->SearchBackward){
+			viewsearch->close(state.ui);
+			runsearch(state, IcViewCommon->SearchDirBackward, 0);
+			return 1;
+		}
+
+		build(state, state.toolid, state.width, state.height);
+		return 1;
+	}
+
 	r = 1;
 
 	case k {
@@ -1086,6 +1390,8 @@ handlekey(state: ref IcState->AppState, k: int): int
 		source = nil;
 		statsmod->stop();
 		gotomod->close(state.ui);
+		viewsearch->close(state.ui);
+		searchsession = nil;
 		return 2;
 
 	Kf3 =>
@@ -1095,11 +1401,31 @@ handlekey(state: ref IcState->AppState, k: int): int
 		source = nil;
 		statsmod->stop();
 		gotomod->close(state.ui);
+		viewsearch->close(state.ui);
+		searchsession = nil;
 		return 2;
 
 	Kf5 =>
 		activatebutton(5);
 		gotomod->open(state.ui, state.toolid, state.width, state.height);
+
+	Kf7 or Ks =>
+		activatebutton(7);
+		viewsearch->open(state.ui, state.toolid, state.width, state.height, lastsearchpattern);
+
+	Kshiftf7 or Kn =>
+		activatebutton(7);
+		if(lastsearchpattern == "")
+			viewsearch->open(state.ui, state.toolid, state.width, state.height, lastsearchpattern);
+		else
+			runsearch(state, IcViewCommon->SearchDirForward, 1);
+
+	Kctrlf7 or Kaltf7 or Kp =>
+		activatebutton(7);
+		if(lastsearchpattern == "")
+			viewsearch->open(state.ui, state.toolid, state.width, state.height, lastsearchpattern);
+		else
+			runsearch(state, IcViewCommon->SearchDirBackward, 1);
 
 	Kf10 =>
 		activatebutton(10);
@@ -1108,9 +1434,11 @@ handlekey(state: ref IcState->AppState, k: int): int
 		source = nil;
 		statsmod->stop();
 		gotomod->close(state.ui);
+		viewsearch->close(state.ui);
+		searchsession = nil;
 		return 2;
 
-	Kf1 or Kf2 or Kf4 or Kf6 or Kf7 or Kf8 or Kf9 =>
+	Kf1 or Kf2 or Kf4 or Kf6 or Kf8 or Kf9 =>
 		r = 0;
 
 	Kup =>
@@ -1169,6 +1497,9 @@ handletick(state: ref IcState->AppState): int
 	if(gotomod->handletick(state.ui, state.toolid, state.width, state.height))
 		changed = 1;
 
+	if(viewsearch->handletick(state.ui, state.toolid, state.width, state.height))
+		changed = 1;
+
 	st = statsmod->get();
 	if(st.dirty){
 		statsmod->cleardirty();
@@ -1202,6 +1533,9 @@ runfilemode(path: string, mode: int): int
 	v.wrapped = array[0] of string;
 	v.topline = 0;
 	v.lastw = 0;
+
+	searchsession = nil;
+	lastsearchpattern = "";
 
 	viewerbuttons = array[0] of ViewerButton;
 	vieweractivefkey = 0;
@@ -1285,6 +1619,8 @@ runfilemode(path: string, mode: int): int
 	source = nil;
 	statsmod->stop();
 	gotomod->close(u);
+	viewsearch->close(u);
+	searchsession = nil;
 
 	appfw->close(ctx);
 	return 0;

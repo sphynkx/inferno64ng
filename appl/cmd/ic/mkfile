@@ -15,12 +15,14 @@ TARG=\
 	layout.dis\
 	mkdircmd.dis\
 	modal.dis\
+	search.dis\
 	screen.dis\
 	theme.dis\
 	topbar.dis\
 	viewcmd.dis\
 	viewer.dis\
 	viewgoto.dis\
+	viewsearch.dis\
 	viewsource.dis\
 	viewstats.dis\
 
@@ -40,6 +42,7 @@ SYSMODULES=\
 	ic/modal.m\
 	ic/mkdircmd.m\
 	ic/screen.m\
+	ic/search.m\
 	ic/state.m\
 	ic/theme.m\
 	ic/topbar.m\
@@ -47,6 +50,7 @@ SYSMODULES=\
 	ic/viewcommon.m\
 	ic/viewer.m\
 	ic/viewgoto.m\
+	ic/viewsearch.m\
 	ic/viewsource.m\
 	ic/viewstats.m\
 
