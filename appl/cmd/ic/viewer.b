@@ -2,6 +2,7 @@ implement IcViewer;
 
 include "ic/viewer.m";
 include "ic/viewcommon.m";
+include "ic/codepage.m";
 
 IcursesApp: module
 {
@@ -136,6 +137,37 @@ IcViewSearchMod: module
 	pattern: fn(): string;
 };
 
+IcViewCodepageMod: module
+{
+	PATH: con "/dis/ic/viewcodepage.dis";
+
+	init: fn();
+
+	open: fn(u: ref IcUi->Ui, parentid, w, h: int, current: string);
+	close: fn(u: ref IcUi->Ui);
+
+	active: fn(): int;
+	draw: fn(u: ref IcUi->Ui, parentid, w, h: int): int;
+	handletick: fn(u: ref IcUi->Ui, parentid, w, h: int): int;
+	handlekey: fn(u: ref IcUi->Ui, parentid, w, h, k: int): int;
+
+	selected: fn(): string;
+};
+
+IcCodepageMod: module
+{
+	PATH: con "/dis/ic/codepage.dis";
+
+	init: fn();
+
+	count: fn(): int;
+	name: fn(idx: int): string;
+	find: fn(enc: string): int;
+	defaultname: fn(): string;
+
+	decode: fn(enc: string, buf: array of byte, n: int): string;
+};
+
 IcViewSourceMod: module
 {
 	PATH: con "/dis/ic/viewsource.dis";
@@ -153,6 +185,9 @@ IcViewSourceMod: module
 	lineforoffset: fn(s: ref IcViewCommon->ViewerSource, off: big): int;
 
 	getline: fn(s: ref IcViewCommon->ViewerSource, line: int): string;
+
+	setencoding: fn(s: ref IcViewCommon->ViewerSource, enc: string);
+	encoding: fn(s: ref IcViewCommon->ViewerSource): string;
 
 	wraplines: fn(lines: array of string, width: int): array of string;
 	visiblecontent: fn(lines: array of string, top, rows: int): string;
@@ -188,6 +223,8 @@ view: IcViewMod;
 searchmod: IcSearchMod;
 gotomod: IcViewGotoMod;
 viewsearch: IcViewSearchMod;
+viewcodepage: IcViewCodepageMod;
+codepagemod: IcCodepageMod;
 srcmod: IcViewSourceMod;
 statsmod: IcViewStatsMod;
 
@@ -296,6 +333,7 @@ readfile: fn(path: string): string;
 trim: fn(s: string): string;
 loadthemevalue: fn(key, def: string): string;
 searchsarg: fn(v: ref IcState->ViewerState, h: int): string;
+applyencoding: fn(state: ref IcState->AppState, v: ref IcState->ViewerState, enc: string);
 
 init()
 {
@@ -327,6 +365,14 @@ init()
 	if(viewsearch == nil)
 		raise "fail:load ic/viewsearch";
 
+	viewcodepage = load IcViewCodepageMod IcViewCodepageMod->PATH;
+	if(viewcodepage == nil)
+		raise "fail:load ic/viewcodepage";
+
+	codepagemod = load IcCodepageMod IcCodepageMod->PATH;
+	if(codepagemod == nil)
+		raise "fail:load ic/codepage";
+
 	srcmod = load IcViewSourceMod IcViewSourceMod->PATH;
 	if(srcmod == nil)
 		raise "fail:load ic/viewsource";
@@ -341,6 +387,8 @@ init()
 	searchmod->init();
 	gotomod->init();
 	viewsearch->init();
+	viewcodepage->init();
+	codepagemod->init();
 	srcmod->init();
 	statsmod->init();
 
@@ -371,6 +419,7 @@ newstate(): ref IcState->ViewerState
 	v.bottomid = -1;
 	v.bodyids = array[0] of int;
 	v.lastw = 0;
+	v.encoding = codepagemod->defaultname();
 
 	return v;
 }
@@ -401,11 +450,15 @@ ensuresource(v: ref IcState->ViewerState, rows: int)
 	if(rows < 1)
 		rows = 1;
 
-	if(source != nil && source.path == v.path)
+	if(source != nil && source.path == v.path){
+		srcmod->setencoding(source, v.encoding);
 		return;
+	}
 
 	closefile(source);
 	source = newsource(v.path);
+	if(source != nil)
+		srcmod->setencoding(source, v.encoding);
 
 	v.lines = array[0] of string;
 	v.wrapped = array[0] of string;
@@ -734,14 +787,14 @@ charstat(): string
 
 toptext(v: ref IcState->ViewerState): string
 {
-	size, lines, chars, pos: string;
+	size, lines, chars, pos, enc: string;
 	st: IcViewCommon->ViewerStats;
 
 	if(v == nil)
 		return "";
 
 	if(source == nil)
-		return " " + v.path + "  size:? lines:? chars:? pos:? enc:?";
+		return " " + v.path + "  size:? lines:? chars:? pos:? enc:" + v.encoding;
 
 	st = statsmod->get();
 
@@ -755,13 +808,14 @@ toptext(v: ref IcState->ViewerState): string
 	lines = linestat();
 	chars = charstat();
 	pos = viewpercent(v);
+	enc = srcmod->encoding(source);
 
 	return " " + v.path
 		+ "  size:" + size
 		+ "  lines:" + lines
 		+ "  chars:" + chars
 		+ "  pos:" + pos
-		+ "  enc:?";
+		+ "  enc:" + enc;
 }
 
 iserrorline(s: string): int
@@ -814,6 +868,7 @@ initbuttons(u: ref IcUi->Ui)
 			b.enabled = 1;
 		7 =>
 			b.text = "Codepage";
+			b.enabled = 1;
 		8 =>
 			b.text = "Menu";
 		9 =>
@@ -957,6 +1012,9 @@ drawviewer(u: ref IcUi->Ui, parentid: int, v: ref IcState->ViewerState, w, h: in
 
 	if(viewsearch != nil && viewsearch->active())
 		viewsearch->draw(u, parentid, w, h);
+
+	if(viewcodepage != nil && viewcodepage->active())
+		viewcodepage->draw(u, parentid, w, h);
 }
 
 active(state: ref IcState->AppState): int
@@ -983,11 +1041,17 @@ start(state: ref IcState->AppState, path: string, mode: int): int
 	state.viewer.topline = 0;
 	state.viewer.lastw = 0;
 
+	if(state.viewer.encoding == "")
+		state.viewer.encoding = codepagemod->defaultname();
+
 	searchsession = nil;
 	lastsearchpattern = "";
 
 	vieweractivefkey = 0;
 	vieweractivewait = 0;
+
+	if(source != nil)
+		srcmod->setencoding(source, state.viewer.encoding);
 
 	if(source.error != "")
 		state.viewer.lines = array[] of { source.error };
@@ -1208,6 +1272,7 @@ runsearch(state: ref IcState->AppState, direction: int, fromcurrent: int): int
 
 	v = state.viewer;
 	opts = viewsearch->options();
+	opts.encoding = v.encoding;
 
 	if(direction == IcViewCommon->SearchDirBackward)
 		opts.backward = 1;
@@ -1330,16 +1395,64 @@ runsearch(state: ref IcState->AppState, direction: int, fromcurrent: int): int
 	}
 }
 
+applyencoding(state: ref IcState->AppState, v: ref IcState->ViewerState, enc: string)
+{
+	if(v == nil || enc == "")
+		return;
+
+	if(codepagemod->find(enc) < 0)
+		return;
+
+	if(v.encoding == enc)
+		return;
+
+	v.encoding = enc;
+
+	if(source != nil)
+		srcmod->setencoding(source, enc);
+
+	v.lines = array[0] of string;
+	v.wrapped = array[0] of string;
+	v.lastw = 0;
+
+	searchsession = nil;
+
+	clampview(v, state.height);
+	refreshwindow(v, bodyh(state.height));
+	build(state, state.toolid, state.width, state.height);
+}
+
 handlekey(state: ref IcState->AppState, k: int): int
 {
 	v: ref IcState->ViewerState;
 	rows, r, gr: int;
+	enc: string;
 
 	if(state == nil || state.viewer == nil || !state.viewer.active)
 		return 0;
 
 	v = state.viewer;
 	rows = bodyh(state.height);
+
+	if(viewcodepage != nil && viewcodepage->active()){
+		gr = viewcodepage->handlekey(state.ui, state.toolid, state.width, state.height, k);
+
+		if(gr == 2){
+			viewcodepage->close(state.ui);
+			build(state, state.toolid, state.width, state.height);
+			return 1;
+		}
+
+		if(gr == 1){
+			enc = viewcodepage->selected();
+			viewcodepage->close(state.ui);
+			applyencoding(state, v, enc);
+			return 1;
+		}
+
+		build(state, state.toolid, state.width, state.height);
+		return 1;
+	}
 
 	if(gotomod != nil && gotomod->active()){
 		gr = gotomod->handlekey(state.ui, state.toolid, state.width, state.height, k);
@@ -1401,6 +1514,8 @@ handlekey(state: ref IcState->AppState, k: int): int
 			gotomod->close(state.ui);
 		if(viewsearch != nil)
 			viewsearch->close(state.ui);
+		if(viewcodepage != nil)
+			viewcodepage->close(state.ui);
 		searchsession = nil;
 		return 2;
 
@@ -1415,6 +1530,8 @@ handlekey(state: ref IcState->AppState, k: int): int
 			gotomod->close(state.ui);
 		if(viewsearch != nil)
 			viewsearch->close(state.ui);
+		if(viewcodepage != nil)
+			viewcodepage->close(state.ui);
 		searchsession = nil;
 		return 2;
 
@@ -1444,6 +1561,11 @@ handlekey(state: ref IcState->AppState, k: int): int
 		}else
 			runsearch(state, IcViewCommon->SearchDirBackward, 1);
 
+	Kf8 =>
+		activatebutton(8);
+		if(viewcodepage != nil)
+			viewcodepage->open(state.ui, state.toolid, state.width, state.height, v.encoding);
+
 	Kf10 =>
 		activatebutton(10);
 		v.active = 0;
@@ -1455,10 +1577,12 @@ handlekey(state: ref IcState->AppState, k: int): int
 			gotomod->close(state.ui);
 		if(viewsearch != nil)
 			viewsearch->close(state.ui);
+		if(viewcodepage != nil)
+			viewcodepage->close(state.ui);
 		searchsession = nil;
 		return 2;
 
-	Kf1 or Kf2 or Kf4 or Kf6 or Kf8 or Kf9 =>
+	Kf1 or Kf2 or Kf4 or Kf6 or Kf9 =>
 		r = 0;
 
 	Kup =>
@@ -1520,6 +1644,9 @@ handletick(state: ref IcState->AppState): int
 	if(viewsearch != nil && viewsearch->handletick(state.ui, state.toolid, state.width, state.height))
 		changed = 1;
 
+	if(viewcodepage != nil && viewcodepage->handletick(state.ui, state.toolid, state.width, state.height))
+		changed = 1;
+
 	if(statsmod != nil){
 		st = statsmod->get();
 		if(st.dirty){
@@ -1562,6 +1689,9 @@ runfilemode(path: string, mode: int): int
 	viewerbuttons = array[0] of ViewerButton;
 	vieweractivefkey = 0;
 	vieweractivewait = 0;
+
+	if(source != nil)
+		srcmod->setencoding(source, v.encoding);
 
 	if(source.error != "")
 		v.lines = array[] of { source.error };
@@ -1648,6 +1778,9 @@ runfilemode(path: string, mode: int): int
 
 	if(viewsearch != nil)
 		viewsearch->close(u);
+
+	if(viewcodepage != nil)
+		viewcodepage->close(u);
 
 	searchsession = nil;
 
@@ -1797,11 +1930,6 @@ searchsarg(v: ref IcState->ViewerState, h: int): string
 		if(m.offset < lineoff || m.offset >= nextoff)
 			continue;
 
-		#
-		# The match is anchored by file offset, but the visible text is decoded
-		# and sanitized. Use the stored display column after the offset selects
-		# the correct source line.
-		#
 		start = m.col;
 		end = start + m.length;
 

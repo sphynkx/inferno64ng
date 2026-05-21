@@ -174,8 +174,6 @@ IcState: module
 		mode: int;
 
 		path: string;
-		##source: ref Sys->FD;
-
 
 		lines: array of string;
 		wrapped: array of string;
@@ -187,6 +185,8 @@ IcState: module
 		bottomid: int;
 		bodyids: array of int;
 		lastw: int;
+
+		encoding: string;
 	};
 
 	PanelState: adt

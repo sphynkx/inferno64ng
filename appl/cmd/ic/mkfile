@@ -4,6 +4,7 @@ TARG=\
 	app.dis\
 	appanel.dis\
 	bottombar.dis\
+	codepage.dis\
 	commands.dis\
 	config.dis\
 	copycmd.dis\
@@ -20,6 +21,7 @@ TARG=\
 	theme.dis\
 	topbar.dis\
 	viewcmd.dis\
+	viewcodepage.dis\
 	viewer.dis\
 	viewgoto.dis\
 	viewsearch.dis\
@@ -32,6 +34,7 @@ SYSMODULES=\
 	ic/app.m\
 	ic/appanel.m\
 	ic/bottombar.m\
+	ic/codepage.m\
 	ic/commands.m\
 	ic/config.m\
 	ic/copycmd.m\
@@ -47,6 +50,7 @@ SYSMODULES=\
 	ic/theme.m\
 	ic/topbar.m\
 	ic/viewcmd.m\
+	ic/viewcodepage.m\
 	ic/viewcommon.m\
 	ic/viewer.m\
 	ic/viewgoto.m\

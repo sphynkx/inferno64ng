@@ -1,8 +1,10 @@
 implement IcViewSource;
 
 include "ic/viewsource.m";
+include "ic/codepage.m";
 
 sys: Sys;
+codepage: IcCodepage;
 
 ScanChunkSize: con 32768;
 InitialOffsetCap: con 1024;
@@ -11,12 +13,12 @@ ReplacementChar: con 16rFFFD;
 
 appendoffset: fn(s: ref IcViewCommon->ViewerSource, off: big);
 readlinebytes: fn(s: ref IcViewCommon->ViewerSource, line: int): (array of byte, int);
-decodechunk: fn(buf: array of byte, n: int): string;
+decodechunk: fn(s: ref IcViewCommon->ViewerSource, buf: array of byte, n: int): string;
 sanitizechunk: fn(text: string): string;
 needsanitize: fn(text: string): int;
 safecell: fn(c: int): string;
 appendline: fn(a: array of string, s: string): array of string;
-appendarray: fn(dst, src: array of string): array of string;
+appendarray: fn(dst: array of string, src: array of string): array of string;
 wrapline: fn(line: string, width: int): array of string;
 
 init()
@@ -24,6 +26,12 @@ init()
 	sys = load Sys Sys->PATH;
 	if(sys == nil)
 		raise "fail:load sys";
+
+	codepage = load IcCodepage IcCodepage->PATH;
+	if(codepage == nil)
+		raise "fail:load ic/codepage";
+
+	codepage->init();
 }
 
 newsource(path: string): ref IcViewCommon->ViewerSource
@@ -43,6 +51,7 @@ newsource(path: string): ref IcViewCommon->ViewerSource
 	s.scanoff = big 0;
 	s.eof = 0;
 	s.error = "";
+	s.encoding = codepage->defaultname();
 
 	if(s.fd == nil){
 		s.error = "Cannot open file: " + path;
@@ -63,6 +72,28 @@ closefile(s: ref IcViewCommon->ViewerSource)
 		return;
 
 	s.fd = nil;
+}
+
+setencoding(s: ref IcViewCommon->ViewerSource, enc: string)
+{
+	if(s == nil)
+		return;
+
+	if(codepage->find(enc) < 0)
+		enc = codepage->defaultname();
+
+	s.encoding = enc;
+}
+
+encoding(s: ref IcViewCommon->ViewerSource): string
+{
+	if(s == nil)
+		return codepage->defaultname();
+
+	if(s.encoding == "")
+		return codepage->defaultname();
+
+	return s.encoding;
 }
 
 appendoffset(s: ref IcViewCommon->ViewerSource, off: big)
@@ -240,10 +271,6 @@ readlinebytes(s: ref IcViewCommon->ViewerSource, line: int): (array of byte, int
 
 	start = s.offsets[line];
 
-	#
-	# Ensure the next line offset if possible. Do not scan the whole file here:
-	# visible rendering must stay bounded and lazy.
-	#
 	ensureindexed(s, line + 1);
 
 	if(line + 1 < s.noffsets)
@@ -293,70 +320,12 @@ getline(s: ref IcViewCommon->ViewerSource, line: int): string
 	if(n <= 0)
 		return "";
 
-	return sanitizechunk(decodechunk(buf, n));
+	return sanitizechunk(decodechunk(s, buf, n));
 }
 
-decodechunk(buf: array of byte, n: int): string
+decodechunk(s: ref IcViewCommon->ViewerSource, buf: array of byte, n: int): string
 {
-	i, b0, b1, b2, b3, c: int;
-	out: string;
-
-	out = "";
-	i = 0;
-
-	while(i < n){
-		b0 = int buf[i] & 16rFF;
-
-		if(b0 < 16r80){
-			out += sys->sprint("%c", b0);
-			i++;
-			continue;
-		}
-
-		if((b0 & 16rE0) == 16rC0 && i + 1 < n){
-			b1 = int buf[i + 1] & 16rFF;
-			if((b1 & 16rC0) == 16r80){
-				c = ((b0 & 16r1F) << 6) | (b1 & 16r3F);
-				if(c >= 16r80){
-					out += sys->sprint("%c", c);
-					i += 2;
-					continue;
-				}
-			}
-		}
-
-		if((b0 & 16rF0) == 16rE0 && i + 2 < n){
-			b1 = int buf[i + 1] & 16rFF;
-			b2 = int buf[i + 2] & 16rFF;
-			if((b1 & 16rC0) == 16r80 && (b2 & 16rC0) == 16r80){
-				c = ((b0 & 16r0F) << 12) | ((b1 & 16r3F) << 6) | (b2 & 16r3F);
-				if(c >= 16r800 && (c < 16rD800 || c > 16rDFFF)){
-					out += sys->sprint("%c", c);
-					i += 3;
-					continue;
-				}
-			}
-		}
-
-		if((b0 & 16rF8) == 16rF0 && i + 3 < n){
-			b1 = int buf[i + 1] & 16rFF;
-			b2 = int buf[i + 2] & 16rFF;
-			b3 = int buf[i + 3] & 16rFF;
-			if((b1 & 16rC0) == 16r80 && (b2 & 16rC0) == 16r80 && (b3 & 16rC0) == 16r80){
-				c = ((b0 & 16r07) << 18) | ((b1 & 16r3F) << 12) | ((b2 & 16r3F) << 6) | (b3 & 16r3F);
-				if(c >= 16r10000 && c <= 16r10FFFF){
-					out += sys->sprint("%c", c);
-					i += 4;
-					continue;
-				}
-			}
-		}
-
-		out += sys->sprint("%c", ReplacementChar);
-		i++;
-	}
-
-	return out;
+	return codepage->decode(encoding(s), buf, n);
 }
 
 safecell(c: int): string
@@ -446,7 +415,7 @@ appendline(a: array of string, s: string): array of string
 	return b;
 }
 
-appendarray(dst, src: array of string): array of string
+appendarray(dst: array of string, src: array of string): array of string
 {
 	i: int;
 

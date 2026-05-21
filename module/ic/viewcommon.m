@@ -13,6 +13,8 @@ IcViewCommon: module
 		scanoff: big;
 		eof: int;
 		error: string;
+
+		encoding: string;
 	};
 
 	ViewerStats: adt

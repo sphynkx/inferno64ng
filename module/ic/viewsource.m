@@ -19,6 +19,9 @@ IcViewSource: module
 
 	getline: fn(s: ref IcViewCommon->ViewerSource, line: int): string;
 
+	setencoding: fn(s: ref IcViewCommon->ViewerSource, enc: string);
+	encoding: fn(s: ref IcViewCommon->ViewerSource): string;
+
 	wraplines: fn(lines: array of string, width: int): array of string;
 	visiblecontent: fn(lines: array of string, top, rows: int): string;
 	spaces: fn(n: int): string;
