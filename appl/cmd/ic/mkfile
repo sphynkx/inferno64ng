@@ -10,7 +10,11 @@ TARG=\
 	copycmd.dis\
 	deletecmd.dis\
 	editcmd.dis\
+	editcommon.dis\
+	editdraw.dis\
+	editkeys.dis\
 	editor.dis\
+	editsource.dis\
 	fsmodel.dis\
 	ic.dis\
 	icedit.dis\
@@ -46,7 +50,11 @@ SYSMODULES=\
 	ic/copycmd.m\
 	ic/deletecmd.m\
 	ic/editcmd.m\
+	ic/editcommon.m\
+	ic/editdraw.m\
+	ic/editkeys.m\
 	ic/editor.m\
+	ic/editsource.m\
 	ic/fsmodel.m\
 	ic/input.m\
 	ic/layout.m\

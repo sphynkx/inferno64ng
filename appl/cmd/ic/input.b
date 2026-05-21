@@ -78,6 +78,8 @@ IcViewerMod: module
 {
 	PATH: con "/dis/ic/viewer.dis";
 
+	Kf10: con 57418;
+
 	init: fn();
 	active: fn(state: ref IcState->AppState): int;
 	handlekey: fn(state: ref IcState->AppState, k: int): int;
@@ -90,6 +92,7 @@ IcEditorMod: module
 
 	init: fn();
 	active: fn(state: ref IcState->AppState): int;
+	start: fn(state: ref IcState->AppState, path: string): int;
 	handlekey: fn(state: ref IcState->AppState, k: int): int;
 	handletick: fn(state: ref IcState->AppState): int;
 };
@@ -131,6 +134,7 @@ ViewFlashDelayMs: con 80;
 
 flashfkey: fn(state: ref IcState->AppState, fkey: int);
 flashviewkey: fn(state: ref IcState->AppState);
+viewtoedit: fn(state: ref IcState->AppState): int;
 
 init()
 {
@@ -210,6 +214,24 @@ flashviewkey(state: ref IcState->AppState)
 		sys->sleep(ViewFlashDelayMs);
 }
 
+viewtoedit(state: ref IcState->AppState): int
+{
+	path: string;
+
+	if(state == nil || state.viewer == nil)
+		return 0;
+
+	path = state.viewer.path;
+	if(path == "")
+		return 0;
+
+	viewer->handlekey(state, F10Key);
+	editor->start(state, path);
+	screen->rebuild(state);
+
+	return 0;
+}
+
 handlekey(state: ref IcState->AppState, k: int): int
 {
 	r: int;
@@ -225,6 +247,9 @@ handlekey(state: ref IcState->AppState, k: int): int
 	}
 
 	if(viewer->active(state)){
+		if(k == F4Key)
+			return viewtoedit(state);
+
 		r = viewer->handlekey(state, k);
 		if(r == 2)
 			screen->rebuild(state);
@@ -305,8 +330,10 @@ handletick(state: ref IcState->AppState): int
 	redraw = 0;
 
 	if(editor->active(state)){
-		if(editor->handletick(state))
+		if(editor->handletick(state)){
+			screen->rebuild(state);
 			redraw = 1;
+		}
 		return redraw;
 	}
 

@@ -190,6 +190,14 @@ IcState: module
 		encoding: string;
 	};
 
+	EditorOp: adt
+	{
+		kind: int;
+		line: int;
+		count: int;
+		addstart: int;
+	};
+
 	EditorState: adt
 	{
 		active: int;
@@ -197,9 +205,23 @@ IcState: module
 		path: string;
 		dir: string;
 
+		fd: ref Sys->FD;
+		length: big;
+
+		offsets: array of big;
+		noffsets: int;
+		offsetcap: int;
+		scanoff: big;
+		eof: int;
+		error: string;
+
+		addlines: array of string;
+		ops: array of EditorOp;
+
 		lines: array of string;
 
 		topline: int;
+		nlines: int;
 		cursorline: int;
 		cursorcol: int;
 
@@ -207,11 +229,25 @@ IcState: module
 		bodyid: int;
 		bottomid: int;
 
+		buttonids: array of int;
+		overlayids: array of int;
+
 		dirty: int;
 		message: string;
 
 		mode: int;
 		filenameinput: string;
+
+		searchinput: string;
+		lastsearch: string;
+
+		activefkey: int;
+		activewait: int;
+
+		selectionmode: int;
+
+		modalstage: int;
+		modalwait: int;
 	};
 
 	PanelState: adt

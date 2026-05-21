@@ -102,6 +102,7 @@ ensurebuttons(u: ref IcUi->Ui)
 			b.enabled = 1;
 		3 =>
 			b.text = "Edit";
+			b.enabled = 1;
 		4 =>
 			b.text = "GoTo";
 			b.enabled = 1;
