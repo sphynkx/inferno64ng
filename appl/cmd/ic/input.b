@@ -15,6 +15,8 @@ IcCommands: module
 	CmdMkdir: con 7;
 	CmdDelete: con 8;
 	CmdView: con 9;
+	CmdEdit: con 10;
+	CmdEditNew: con 11;
 
 	init: fn();
 	exec: fn(state: ref IcState->AppState, cmd: int): int;
@@ -82,6 +84,16 @@ IcViewerMod: module
 	handletick: fn(state: ref IcState->AppState): int;
 };
 
+IcEditorMod: module
+{
+	PATH: con "/dis/ic/editor.dis";
+
+	init: fn();
+	active: fn(state: ref IcState->AppState): int;
+	handlekey: fn(state: ref IcState->AppState, k: int): int;
+	handletick: fn(state: ref IcState->AppState): int;
+};
+
 IcScreenMod: module
 {
 	PATH: con "/dis/ic/screen.dis";
@@ -100,16 +112,19 @@ deletecmd: IcDeleteCmd;
 modal: IcModal;
 bottombar: IcBottomBar;
 viewer: IcViewerMod;
+editor: IcEditorMod;
 screen: IcScreenMod;
 
 CtrlO: con 15;
 TabKey: con 9;
 F3Key: con 57411;
+F4Key: con 57412;
 F5Key: con 57413;
 F6Key: con 57414;
 F7Key: con 57415;
 F8Key: con 57416;
 F10Key: con 57418;
+ShiftF4Key: con 57460;
 InsKey: con 57443;
 
 ViewFlashDelayMs: con 80;
@@ -155,6 +170,10 @@ init()
 	if(viewer == nil)
 		raise "fail:load ic/viewer";
 
+	editor = load IcEditorMod IcEditorMod->PATH;
+	if(editor == nil)
+		raise "fail:load ic/editor";
+
 	screen = load IcScreenMod IcScreenMod->PATH;
 	if(screen == nil)
 		raise "fail:load ic/screen";
@@ -167,6 +186,7 @@ init()
 	modal->init();
 	bottombar->init();
 	viewer->init();
+	editor->init();
 	screen->init();
 }
 
@@ -197,6 +217,13 @@ handlekey(state: ref IcState->AppState, k: int): int
 	if(state == nil)
 		return -1;
 
+	if(editor->active(state)){
+		r = editor->handlekey(state, k);
+		if(r != 0)
+			screen->rebuild(state);
+		return 0;
+	}
+
 	if(viewer->active(state)){
 		r = viewer->handlekey(state, k);
 		if(r == 2)
@@ -225,6 +252,16 @@ handlekey(state: ref IcState->AppState, k: int): int
 	if(k == F3Key){
 		flashviewkey(state);
 		return commands->exec(state, IcCommands->CmdView);
+	}
+
+	if(k == F4Key){
+		flashfkey(state, 4);
+		return commands->exec(state, IcCommands->CmdEdit);
+	}
+
+	if(k == ShiftF4Key){
+		flashfkey(state, 4);
+		return commands->exec(state, IcCommands->CmdEditNew);
 	}
 
 	if(k == F5Key){
@@ -266,6 +303,12 @@ handletick(state: ref IcState->AppState): int
 		return 0;
 
 	redraw = 0;
+
+	if(editor->active(state)){
+		if(editor->handletick(state))
+			redraw = 1;
+		return redraw;
+	}
 
 	if(viewer->active(state)){
 		if(viewer->handletick(state))

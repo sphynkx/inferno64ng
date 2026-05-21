@@ -68,6 +68,15 @@ IcViewerMod: module
 	build: fn(state: ref IcState->AppState, parentid, w, h: int): int;
 };
 
+IcEditorMod: module
+{
+	PATH: con "/dis/ic/editor.dis";
+
+	init: fn();
+	active: fn(state: ref IcState->AppState): int;
+	build: fn(state: ref IcState->AppState, parentid, w, h: int): int;
+};
+
 ui: IcUiMod;
 view: IcViewMod;
 layout: IcLayoutMod;
@@ -75,6 +84,7 @@ appanel: IcAppPanel;
 topbar: IcTopBarMod;
 bottombar: IcBottomBarMod;
 viewer: IcViewerMod;
+editor: IcEditorMod;
 
 ensurelayer: fn(state: ref IcState->AppState, id: int): int;
 showpanelnode: fn(state: ref IcState->AppState, p: ref IcState->PanelState);
@@ -110,6 +120,10 @@ init()
 	if(viewer == nil)
 		raise "fail:load ic/viewer";
 
+	editor = load IcEditorMod IcEditorMod->PATH;
+	if(editor == nil)
+		raise "fail:load ic/editor";
+
 	ui->init();
 	view->init();
 	layout->init();
@@ -117,6 +131,7 @@ init()
 	topbar->init();
 	bottombar->init();
 	viewer->init();
+	editor->init();
 }
 
 ensurelayer(state: ref IcState->AppState, id: int): int
@@ -193,6 +208,13 @@ build(state: ref IcState->AppState): int
 	view->hide(view->find(state.ui.tree, state.screensaverid));
 	view->hide(view->find(state.ui.tree, state.toolid));
 	view->hide(view->find(state.ui.tree, state.modalid));
+
+	if(editor->active(state)){
+		view->hide(view->find(state.ui.tree, state.mainid));
+		view->show(view->find(state.ui.tree, state.toolid));
+		editor->build(state, state.toolid, state.width, state.height);
+		return 0;
+	}
 
 	if(viewer->active(state)){
 		view->hide(view->find(state.ui.tree, state.mainid));

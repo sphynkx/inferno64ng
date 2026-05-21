@@ -14,6 +14,8 @@ IcCommands: module
 	CmdMkdir: con 7;
 	CmdDelete: con 8;
 	CmdView: con 9;
+	CmdEdit: con 10;
+	CmdEditNew: con 11;
 
 	init: fn();
 	exec: fn(state: ref IcState->AppState, cmd: int): int;

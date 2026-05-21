@@ -16,6 +16,7 @@ IcCommands: module
 	CmdMkdir: con 7;
 	CmdDelete: con 8;
 	CmdView: con 9;
+	CmdEdit: con 10;
 };
 
 IcUiMod: module
@@ -24,7 +25,7 @@ IcUiMod: module
 
 	init: fn();
 	group: fn(u: ref IcUi->Ui, parentid, id: int, x, y, w, h: int): int;
-	label: fn(u: ref IcUi->Ui, parentid, id, x, y, w: int, text: string): int;
+	label: fn(u: ref IcUi->Ui, parentid, id: int, x, y, w: int, text: string): int;
 };
 
 IcViewMod: module
@@ -217,6 +218,8 @@ ensurebuttons(state: ref IcState->AppState, bar: ref IcState->BottomBarState)
 			b.enabled = 1;
 		3 =>
 			b.text = "Edit";
+			b.cmd = IcCommands->CmdEdit;
+			b.enabled = 1;
 		4 =>
 			b.text = "Copy";
 			b.cmd = IcCommands->CmdCopy;

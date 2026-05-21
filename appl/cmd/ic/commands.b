@@ -44,6 +44,15 @@ IcViewCmd: module
 	start: fn(state: ref IcState->AppState): int;
 };
 
+IcEditCmd: module
+{
+	PATH: con "/dis/ic/editcmd.dis";
+
+	init: fn();
+	start: fn(state: ref IcState->AppState): int;
+	startnew: fn(state: ref IcState->AppState): int;
+};
+
 IcScreenMod: module
 {
 	PATH: con "/dis/ic/screen.dis";
@@ -57,6 +66,7 @@ copycmd: IcCopyCmd;
 mkdircmd: IcMkdirCmd;
 deletecmd: IcDeleteCmd;
 viewcmd: IcViewCmd;
+editcmd: IcEditCmd;
 screen: IcScreenMod;
 
 init()
@@ -81,6 +91,10 @@ init()
 	if(viewcmd == nil)
 		raise "fail:load ic/viewcmd";
 
+	editcmd = load IcEditCmd IcEditCmd->PATH;
+	if(editcmd == nil)
+		raise "fail:load ic/editcmd";
+
 	screen = load IcScreenMod IcScreenMod->PATH;
 	if(screen == nil)
 		raise "fail:load ic/screen";
@@ -90,6 +104,7 @@ init()
 	mkdircmd->init();
 	deletecmd->init();
 	viewcmd->init();
+	editcmd->init();
 	screen->init();
 }
 
@@ -143,6 +158,18 @@ exec(state: ref IcState->AppState, cmd: int): int
 
 	IcCommands->CmdView =>
 		rc = viewcmd->start(state);
+		if(rc < 0)
+			return rc;
+		return screen->rebuild(state);
+
+	IcCommands->CmdEdit =>
+		rc = editcmd->start(state);
+		if(rc < 0)
+			return rc;
+		return screen->rebuild(state);
+
+	IcCommands->CmdEditNew =>
+		rc = editcmd->startnew(state);
 		if(rc < 0)
 			return rc;
 		return screen->rebuild(state);

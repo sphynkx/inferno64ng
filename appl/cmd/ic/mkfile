@@ -9,8 +9,11 @@ TARG=\
 	config.dis\
 	copycmd.dis\
 	deletecmd.dis\
+	editcmd.dis\
+	editor.dis\
 	fsmodel.dis\
 	ic.dis\
+	icedit.dis\
 	icview.dis\
 	input.dis\
 	layout.dis\
@@ -42,6 +45,8 @@ SYSMODULES=\
 	ic/config.m\
 	ic/copycmd.m\
 	ic/deletecmd.m\
+	ic/editcmd.m\
+	ic/editor.m\
 	ic/fsmodel.m\
 	ic/input.m\
 	ic/layout.m\
@@ -77,7 +82,10 @@ install:V: all
 	mv $ROOT/dis/ic/ic.dis $ROOT/dis/ic.dis
 	rm -f $ROOT/dis/icview.dis
 	mv $ROOT/dis/ic/icview.dis $ROOT/dis/icview.dis
+	rm -f $ROOT/dis/icedit.dis
+	mv $ROOT/dis/ic/icedit.dis $ROOT/dis/icedit.dis
 
 nuke:V: nuke-std
 	rm -f $ROOT/dis/ic.dis
 	rm -f $ROOT/dis/icview.dis
+	rm -f $ROOT/dis/icedit.dis

@@ -174,6 +174,7 @@ IcState: module
 		mode: int;
 
 		path: string;
+		##source: ref Sys->FD;
 
 		lines: array of string;
 		wrapped: array of string;
@@ -187,6 +188,30 @@ IcState: module
 		lastw: int;
 
 		encoding: string;
+	};
+
+	EditorState: adt
+	{
+		active: int;
+
+		path: string;
+		dir: string;
+
+		lines: array of string;
+
+		topline: int;
+		cursorline: int;
+		cursorcol: int;
+
+		topid: int;
+		bodyid: int;
+		bottomid: int;
+
+		dirty: int;
+		message: string;
+
+		mode: int;
+		filenameinput: string;
 	};
 
 	PanelState: adt
@@ -250,6 +275,7 @@ IcState: module
 		bottombar: ref BottomBarState;
 
 		viewer: ref ViewerState;
+		editor: ref EditorState;
 
 		modal: ref ModalState;
 		copy: ref CopyState;
