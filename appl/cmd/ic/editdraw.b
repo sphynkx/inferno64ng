@@ -43,6 +43,14 @@ IcEditSource: module
 	refreshwindow: fn(e: ref IcState->EditorState, rows: int);
 };
 
+IcEditSearchRun: module
+{
+	PATH: con "/dis/ic/editsearchrun.dis";
+
+	init: fn();
+	searchsarg: fn(e: ref IcState->EditorState, h: int): string;
+};
+
 IcViewMod: module
 {
 	PATH: con "/dis/lib/icurses/view.dis";
@@ -72,6 +80,7 @@ IcUiMod: module
 
 common: IcEditCommon;
 source: IcEditSource;
+editsearchrun: IcEditSearchRun;
 view: IcViewMod;
 ui: IcUiMod;
 
@@ -121,6 +130,10 @@ init()
 	if(source == nil)
 		raise "fail:load ic/editsource";
 
+	editsearchrun = load IcEditSearchRun IcEditSearchRun->PATH;
+	if(editsearchrun == nil)
+		raise "fail:load ic/editsearchrun";
+
 	view = load IcViewMod IcViewMod->PATH;
 	if(view == nil)
 		raise "fail:load icurses/view";
@@ -131,6 +144,7 @@ init()
 
 	common->init();
 	source->init();
+	editsearchrun->init();
 	view->init();
 	ui->init();
 }
@@ -269,6 +283,7 @@ setshadow(u: ref IcUi->Ui, parentid, id, x, y, w, h: int, code: string)
 setbody(u: ref IcUi->Ui, parentid, id, x, y, w, h: int, e: ref IcState->EditorState, content, code: string)
 {
 	n: ref IcView->Node;
+	sarg: string;
 
 	if(u == nil || u.tree == nil || id <= 0)
 		return;
@@ -280,10 +295,12 @@ setbody(u: ref IcUi->Ui, parentid, id, x, y, w, h: int, e: ref IcState->EditorSt
 	if(n == nil)
 		return;
 
+	sarg = cursorarg(e, h);
+
 	view->setbounds(n, x, y, w, h);
 	view->setcontent(n, content);
 	view->setcode(n, code);
-	view->setargs(n, cursorarg(e, h), 0, 0, 0);
+	view->setargs(n, sarg, 0, 0, 0);
 	view->show(n);
 }
 
@@ -356,9 +373,17 @@ visiblecontent(e: ref IcState->EditorState, rows, w: int): string
 
 cursorarg(e: ref IcState->EditorState, rows: int): string
 {
+	searcharg: string;
 	row, start, end: int;
 
-	if(e == nil || e.mode != IcEditCommon->ModeEdit)
+	if(e == nil)
+		return "";
+
+	searcharg = editsearchrun->searchsarg(e, rows);
+	if(searcharg != "")
+		return searcharg;
+
+	if(e.mode != IcEditCommon->ModeEdit)
 		return "";
 
 	row = e.cursorline - e.topline;
@@ -507,16 +532,6 @@ drawmodeoverlay(u: ref IcUi->Ui, parentid: int, e: ref IcState->EditorState, w, 
 		return;
 	}
 
-	if(e.mode == IcEditCommon->ModeSearch){
-		drawmodal(u, parentid, e, w, h,
-			"Search",
-			"Pattern:",
-			" " + e.searchinput,
-			"Enter starts search, Shift+F7 repeats",
-			1);
-		return;
-	}
-
 	if(e.mode == IcEditCommon->ModeConfirmQuit){
 		drawmodal(u, parentid, e, w, h,
 			"Unsaved changes",
@@ -590,7 +605,6 @@ handletick(e: ref IcState->EditorState): int
 
 	if(e.mode == IcEditCommon->ModeHelp
 	|| e.mode == IcEditCommon->ModeFilename
-	|| e.mode == IcEditCommon->ModeSearch
 	|| e.mode == IcEditCommon->ModeConfirmQuit){
 		if(e.modalstage < IcEditCommon->ModalStageMax){
 			e.modalstage++;

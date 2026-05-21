@@ -92,6 +92,7 @@ parseconfigline: fn(section, line: string): string;
 splitkeyvalue: fn(line: string): (string, string, int);
 
 ensureids: fn(u: ref IcUi->Ui);
+resetwindowids: fn();
 dispose: fn(u: ref IcUi->Ui);
 disposewindow: fn(u: ref IcUi->Ui);
 
@@ -151,6 +152,8 @@ init()
 	s.inputid = -1;
 	s.optionids = array[5] of int;
 	s.buttonids = array[3] of int;
+
+	resetwindowids();
 
 	s.x = 0;
 	s.y = 0;
@@ -377,6 +380,7 @@ open(u: ref IcUi->Ui, parentid, w, h: int, pattern: string)
 
 	animstage = StageShadow;
 
+	resetwindowids();
 	ensureids(u);
 	draw(u, parentid, w, h);
 }
@@ -394,6 +398,7 @@ alert(u: ref IcUi->Ui, parentid, w, h: int, text: string)
 
 	animstage = StageShadow;
 
+	resetwindowids();
 	ensureids(u);
 	draw(u, parentid, w, h);
 }
@@ -413,6 +418,7 @@ close(u: ref IcUi->Ui)
 	s.active = 0;
 	s.result = IcViewCommon->SearchNone;
 	animstage = StageNone;
+	resetwindowids();
 }
 
 active(): int
@@ -443,6 +449,26 @@ options(): IcViewCommon->SearchOptions
 	o.anyencoding = s.anyencoding;
 
 	return o;
+}
+
+resetwindowids()
+{
+	i: int;
+
+	s.windowid = -1;
+	s.inputid = -1;
+
+	if(s.optionids == nil || len s.optionids != 5)
+		s.optionids = array[5] of int;
+
+	for(i = 0; i < len s.optionids; i++)
+		s.optionids[i] = -1;
+
+	if(s.buttonids == nil || len s.buttonids != 3)
+		s.buttonids = array[3] of int;
+
+	for(i = 0; i < len s.buttonids; i++)
+		s.buttonids[i] = -1;
 }
 
 ensureids(u: ref IcUi->Ui)
@@ -485,6 +511,9 @@ dispose(u: ref IcUi->Ui)
 		view->removetree(u.tree, s.windowid);
 	if(s.shadowid >= 0)
 		view->removetree(u.tree, s.shadowid);
+
+	s.shadowid = -1;
+	resetwindowids();
 }
 
 disposewindow(u: ref IcUi->Ui)
@@ -494,6 +523,8 @@ disposewindow(u: ref IcUi->Ui)
 
 	if(s.windowid >= 0)
 		view->removetree(u.tree, s.windowid);
+
+	resetwindowids();
 }
 
 fillstr(n: int, ch: string): string
@@ -560,7 +591,7 @@ setlabel(u: ref IcUi->Ui, parentid, id, x, y, w: int, text, code: string)
 {
 	n: ref IcView->Node;
 
-	if(u == nil || u.tree == nil)
+	if(u == nil || u.tree == nil || id <= 0)
 		return;
 
 	if(view->find(u.tree, id) == nil)
@@ -708,6 +739,9 @@ drawshadow(u: ref IcUi->Ui, parentid, x, y, w, h: int): int
 {
 	n: ref IcView->Node;
 
+	if(s.shadowid <= 0)
+		s.shadowid = view->allocid(u.tree);
+
 	ui->node(u, parentid, s.shadowid, "shadow", x + 1, y + 1, w, h);
 	n = view->find(u.tree, s.shadowid);
 	if(n != nil)
@@ -720,6 +754,8 @@ drawshadow(u: ref IcUi->Ui, parentid, x, y, w, h: int): int
 drawwindow(u: ref IcUi->Ui, parentid, x, y, w, h: int): int
 {
 	bodyw, bx, row, bgid: int;
+
+	ensureids(u);
 
 	ui->node(u, parentid, s.windowid, "group", x, y, w, h);
 
@@ -787,6 +823,8 @@ drawalert(u: ref IcUi->Ui, parentid, x, y, w, h: int): int
 {
 	bodyw, bx, row, bgid: int;
 
+	ensureids(u);
+
 	ui->node(u, parentid, s.windowid, "group", x, y, w, h);
 
 	setlabel(u, s.windowid, view->allocid(u.tree), 0, 0, w, topframe(w, "Search"), style.framecode);
@@ -818,9 +856,6 @@ draw(u: ref IcUi->Ui, parentid, w, h: int): int
 
 	if(u == nil || u.tree == nil || !s.active)
 		return -1;
-
-	ensureids(u);
-	dispose(u);
 
 	if(s.alert){
 		iw = 44;
@@ -854,6 +889,10 @@ draw(u: ref IcUi->Ui, parentid, w, h: int): int
 
 	if(animstage == StageShadow || animstage == StageClosingShadow)
 		return drawshadow(u, parentid, x, y, iw, wh);
+
+	if(s.windowid >= 0)
+		view->removetree(u.tree, s.windowid);
+	resetwindowids();
 
 	drawshadow(u, parentid, x, y, iw, wh);
 
@@ -1000,6 +1039,11 @@ handlekey(u: ref IcUi->Ui, parentid, w, h, k: int): int
 	}
 
 	if(k == EnterKey || k == ReturnKey){
+		if(s.focus == IcViewCommon->SearchFocusInput || s.focus == IcViewCommon->SearchFocusForward){
+			s.result = IcViewCommon->SearchForward;
+			return s.result;
+		}
+
 		if(s.focus == IcViewCommon->SearchFocusBackwardButton){
 			s.result = IcViewCommon->SearchBackward;
 			return s.result;
@@ -1010,12 +1054,10 @@ handlekey(u: ref IcUi->Ui, parentid, w, h, k: int): int
 			return s.result;
 		}
 
-		if(s.backward)
-			s.result = IcViewCommon->SearchBackward;
-		else
-			s.result = IcViewCommon->SearchForward;
-
-		return s.result;
+		if(togglefocus()){
+			draw(u, parentid, w, h);
+			return IcViewCommon->SearchNone;
+		}
 	}
 
 	return IcViewCommon->SearchNone;

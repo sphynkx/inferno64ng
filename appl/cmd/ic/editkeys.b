@@ -1,6 +1,7 @@
 implement IcEditKeys;
 
 include "ic/editkeys.m";
+include "ic/viewcommon.m";
 
 IcEditCommon: module
 {
@@ -22,7 +23,6 @@ IcEditCommon: module
 	init: fn();
 	bodyh: fn(h: int): int;
 	basename: fn(path: string): string;
-	trim: fn(s: string): string;
 };
 
 IcEditSource: module
@@ -44,6 +44,46 @@ IcEditSource: module
 	refreshwindow: fn(e: ref IcState->EditorState, rows: int);
 };
 
+IcViewSearchMod: module
+{
+	PATH: con "/dis/ic/viewsearch.dis";
+
+	init: fn();
+
+	open: fn(u: ref IcUi->Ui, parentid, w, h: int, pattern: string);
+	alert: fn(u: ref IcUi->Ui, parentid, w, h: int, text: string);
+	close: fn(u: ref IcUi->Ui);
+
+	active: fn(): int;
+	isalert: fn(): int;
+
+	draw: fn(u: ref IcUi->Ui, parentid, w, h: int): int;
+	handletick: fn(u: ref IcUi->Ui, parentid, w, h: int): int;
+	handlekey: fn(u: ref IcUi->Ui, parentid, w, h, k: int): int;
+
+	options: fn(): IcViewCommon->SearchOptions;
+	pattern: fn(): string;
+};
+
+IcEditSearchRun: module
+{
+	PATH: con "/dis/ic/editsearchrun.dis";
+
+	SearchResult: adt
+	{
+		found: int;
+		alert: int;
+		alerttext: string;
+	};
+
+	init: fn();
+
+	reset: fn();
+	lastpattern: fn(): string;
+
+	run: fn(e: ref IcState->EditorState, opts: IcViewCommon->SearchOptions, direction: int, fromcurrent: int): SearchResult;
+};
+
 IcViewerMod: module
 {
 	PATH: con "/dis/ic/viewer.dis";
@@ -57,6 +97,8 @@ IcViewerMod: module
 sys: Sys;
 common: IcEditCommon;
 source: IcEditSource;
+viewsearch: IcViewSearchMod;
+editsearchrun: IcEditSearchRun;
 viewer: IcViewerMod;
 
 Kesc: con 27;
@@ -94,6 +136,8 @@ Kf10: con 57418;
 Kshiftf2: con 57458;
 Kshiftf3: con 57459;
 Kshiftf7: con 57463;
+Kaltf7: con 57479;
+Kctrlf7: con 57511;
 
 printable: fn(k: int): int;
 activatebutton: fn(e: ref IcState->EditorState, fkey: int);
@@ -109,14 +153,17 @@ moveright: fn(e: ref IcState->EditorState);
 moveup: fn(e: ref IcState->EditorState);
 movedown: fn(e: ref IcState->EditorState);
 
-findplain: fn(text, pattern: string, start: int): int;
-runsearch: fn(e: ref IcState->EditorState): int;
+flushsearchdraw: fn(state: ref IcState->AppState): int;
+closesearch: fn(state: ref IcState->AppState);
+showsearchalert: fn(state: ref IcState->AppState, text: string);
+runeditsearch: fn(state: ref IcState->AppState, e: ref IcState->EditorState, direction, fromcurrent: int): int;
+handlesearchdialog: fn(state: ref IcState->AppState, e: ref IcState->EditorState, k: int): int;
+
 switchtoviewer: fn(state: ref IcState->AppState, e: ref IcState->EditorState): int;
 
 handleedit: fn(state: ref IcState->AppState, e: ref IcState->EditorState, k, h: int): int;
 handleconfirm: fn(e: ref IcState->EditorState, k: int): int;
 handlefilename: fn(e: ref IcState->EditorState, k: int): int;
-handlesearch: fn(e: ref IcState->EditorState, k: int): int;
 handlehelp: fn(e: ref IcState->EditorState, k: int): int;
 handlemenu: fn(e: ref IcState->EditorState, k: int): int;
 
@@ -134,12 +181,22 @@ init()
 	if(source == nil)
 		raise "fail:load ic/editsource";
 
+	viewsearch = load IcViewSearchMod IcViewSearchMod->PATH;
+	if(viewsearch == nil)
+		raise "fail:load ic/viewsearch";
+
+	editsearchrun = load IcEditSearchRun IcEditSearchRun->PATH;
+	if(editsearchrun == nil)
+		raise "fail:load ic/editsearchrun";
+
 	viewer = load IcViewerMod IcViewerMod->PATH;
 	if(viewer == nil)
 		raise "fail:load ic/viewer";
 
 	common->init();
 	source->init();
+	viewsearch->init();
+	editsearchrun->init();
 	viewer->init();
 }
 
@@ -347,83 +404,94 @@ movedown(e: ref IcState->EditorState)
 	clampcursor(e);
 }
 
-findplain(text, pattern: string, start: int): int
+flushsearchdraw(state: ref IcState->AppState): int
 {
-	i, j, ok: int;
-
-	if(pattern == "")
-		return -1;
-
-	if(start < 0)
-		start = 0;
-
-	for(i = start; i + len pattern <= len text; i++){
-		ok = 1;
-		for(j = 0; j < len pattern; j++){
-			if(text[i + j] != pattern[j]){
-				ok = 0;
-				break;
-			}
-		}
-
-		if(ok)
-			return i;
-	}
-
-	return -1;
-}
-
-runsearch(e: ref IcState->EditorState): int
-{
-	i, col, startline, startcol: int;
-	pattern, line: string;
-
-	if(e == nil)
+	if(state == nil || state.ui == nil)
 		return 0;
 
-	pattern = common->trim(e.searchinput);
-	if(pattern == "")
-		pattern = e.lastsearch;
+	if(!viewsearch->active())
+		return 0;
 
-	if(pattern == ""){
-		e.message = "Nothing to search";
+	return viewsearch->handletick(state.ui, state.toolid, state.width, state.height);
+}
+
+closesearch(state: ref IcState->AppState)
+{
+	if(state == nil || state.ui == nil)
+		return;
+
+	viewsearch->close(state.ui);
+	flushsearchdraw(state);
+}
+
+showsearchalert(state: ref IcState->AppState, text: string)
+{
+	if(state == nil || state.ui == nil)
+		return;
+
+	viewsearch->alert(state.ui, state.toolid, state.width, state.height, text);
+	flushsearchdraw(state);
+}
+
+runeditsearch(state: ref IcState->AppState, e: ref IcState->EditorState, direction, fromcurrent: int): int
+{
+	opts: IcViewCommon->SearchOptions;
+	r: IcEditSearchRun->SearchResult;
+
+	if(state == nil || e == nil)
+		return 0;
+
+	opts = viewsearch->options();
+
+	r = editsearchrun->run(e, opts, direction, fromcurrent);
+
+	if(r.alert){
+		showsearchalert(state, r.alerttext);
 		return 1;
 	}
 
-	e.lastsearch = pattern;
-
-	startline = e.cursorline;
-	startcol = e.cursorcol + 1;
-
-	for(i = startline; source->ensureline(e, i); i++){
-		if(i != startline)
-			startcol = 0;
-
-		line = source->getline(e, i);
-		col = findplain(line, pattern, startcol);
-		if(col >= 0){
-			e.cursorline = i;
-			e.cursorcol = col;
-			e.mode = IcEditCommon->ModeEdit;
-			e.message = "Found";
-			return 1;
-		}
+	if(r.found){
+		e.mode = IcEditCommon->ModeEdit;
+		return 1;
 	}
 
-	for(i = 0; i <= startline && source->ensureline(e, i); i++){
-		line = source->getline(e, i);
-		col = findplain(line, pattern, 0);
-		if(col >= 0){
-			e.cursorline = i;
-			e.cursorcol = col;
-			e.mode = IcEditCommon->ModeEdit;
-			e.message = "Found";
-			return 1;
-		}
+	return 0;
+}
+
+handlesearchdialog(state: ref IcState->AppState, e: ref IcState->EditorState, k: int): int
+{
+	r: int;
+
+	if(state == nil || state.ui == nil || e == nil)
+		return 0;
+
+	r = viewsearch->handlekey(state.ui, state.toolid, state.width, state.height, k);
+
+	if(r == IcViewCommon->SearchNone)
+		return 1;
+
+	if(r == IcViewCommon->SearchCancel){
+		closesearch(state);
+		e.mode = IcEditCommon->ModeEdit;
+		return 1;
 	}
 
-	e.mode = IcEditCommon->ModeEdit;
-	e.message = "Nothing found";
+	if(r == IcViewCommon->SearchAlertClosed){
+		closesearch(state);
+		e.mode = IcEditCommon->ModeEdit;
+		return 1;
+	}
+
+	if(r == IcViewCommon->SearchForward){
+		closesearch(state);
+		return runeditsearch(state, e, IcViewCommon->SearchDirForward, 0);
+	}
+
+	if(r == IcViewCommon->SearchBackward){
+		closesearch(state);
+		return runeditsearch(state, e, IcViewCommon->SearchDirBackward, 0);
+	}
+
 	return 1;
 }
 
@@ -514,19 +582,24 @@ handleedit(state: ref IcState->AppState, e: ref IcState->EditorState, k, h: int)
 		return 1;
 
 	Kf7 =>
-		activatebutton(e, 7);
-		if(e.lastsearch != ""){
-			e.searchinput = e.lastsearch;
-			return runsearch(e);
+		if(state == nil || state.ui == nil){
+			e.message = "Search is unavailable here";
+			return 1;
 		}
-		e.searchinput = "";
-		modalstart(e, IcEditCommon->ModeSearch);
+
+		activatebutton(e, 7);
+		e.mode = IcEditCommon->ModeSearch;
+		viewsearch->open(state.ui, state.toolid, state.width, state.height, editsearchrun->lastpattern());
+		flushsearchdraw(state);
 		return 1;
 
 	Kshiftf7 =>
 		activatebutton(e, 7);
-		e.searchinput = e.lastsearch;
-		return runsearch(e);
+		return runeditsearch(state, e, IcViewCommon->SearchDirForward, 1);
+
+	Kaltf7 or Kctrlf7 =>
+		activatebutton(e, 7);
+		return runeditsearch(state, e, IcViewCommon->SearchDirBackward, 1);
 
 	Kf8 =>
 		activatebutton(e, 8);
@@ -654,31 +727,6 @@ handlefilename(e: ref IcState->EditorState, k: int): int
 	return 0;
 }
 
-handlesearch(e: ref IcState->EditorState, k: int): int
-{
-	if(k == Kesc){
-		e.mode = IcEditCommon->ModeEdit;
-		e.searchinput = "";
-		return 1;
-	}
-
-	if(k == Kenter || k == Kreturn)
-		return runsearch(e);
-
-	if(k == Kbackspace){
-		if(len e.searchinput > 0)
-			e.searchinput = e.searchinput[0:len e.searchinput - 1];
-		return 1;
-	}
-
-	if(printable(k)){
-		e.searchinput += sys->sprint("%c", k);
-		return 1;
-	}
-
-	return 0;
-}
-
 handlehelp(e: ref IcState->EditorState, k: int): int
 {
 	if(k == Kesc || k == Kenter || k == Kreturn || k == Kf1){
@@ -705,14 +753,14 @@ handlekey(state: ref IcState->AppState, e: ref IcState->EditorState, k, h: int):
 	if(e == nil || !e.active)
 		return 0;
 
+	if(e.mode == IcEditCommon->ModeSearch || viewsearch->active())
+		return handlesearchdialog(state, e, k);
+
 	if(e.mode == IcEditCommon->ModeConfirmQuit)
 		return handleconfirm(e, k);
 
 	if(e.mode == IcEditCommon->ModeFilename)
 		return handlefilename(e, k);
-
-	if(e.mode == IcEditCommon->ModeSearch)
-		return handlesearch(e, k);
 
 	if(e.mode == IcEditCommon->ModeHelp)
 		return handlehelp(e, k);

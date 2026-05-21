@@ -97,6 +97,15 @@ IcEditKeys: module
 	handlekey: fn(state: ref IcState->AppState, e: ref IcState->EditorState, k, h: int): int;
 };
 
+IcViewSearchMod: module
+{
+	PATH: con "/dis/ic/viewsearch.dis";
+
+	init: fn();
+	active: fn(): int;
+	handletick: fn(u: ref IcUi->Ui, parentid, w, h: int): int;
+};
+
 sys: Sys;
 appfw: IcursesApp;
 ui: IcUiMod;
@@ -104,6 +113,7 @@ common: IcEditCommon;
 source: IcEditSource;
 drawmod: IcEditDraw;
 keys: IcEditKeys;
+viewsearch: IcViewSearchMod;
 
 init()
 {
@@ -135,12 +145,17 @@ init()
 	if(keys == nil)
 		raise "fail:load ic/editkeys";
 
+	viewsearch = load IcViewSearchMod IcViewSearchMod->PATH;
+	if(viewsearch == nil)
+		raise "fail:load ic/viewsearch";
+
 	appfw->init("icedit");
 	ui->init();
 	common->init();
 	source->init();
 	drawmod->init();
 	keys->init();
+	viewsearch->init();
 }
 
 runfile(path: string): int
@@ -204,7 +219,17 @@ runfile(path: string): int
 		}
 
 		if(step.kind == IcUi->StepTick){
-			if(drawmod->handletick(e)){
+			r = 0;
+
+			if(drawmod->handletick(e))
+				r = 1;
+
+			if(viewsearch->active()){
+				if(viewsearch->handletick(u, rootid, w, h))
+					r = 1;
+			}
+
+			if(r){
 				drawmod->draw(u, rootid, e, w, h);
 				appfw->draw(ctx);
 			}
@@ -280,8 +305,20 @@ handlekey(state: ref IcState->AppState, k: int): int
 
 handletick(state: ref IcState->AppState): int
 {
+	r: int;
+
 	if(state == nil || state.editor == nil)
 		return 0;
 
-	return drawmod->handletick(state.editor);
+	r = 0;
+
+	if(drawmod->handletick(state.editor))
+		r = 1;
+
+	if(viewsearch->active()){
+		if(viewsearch->handletick(state.ui, state.toolid, state.width, state.height))
+			r = 1;
+	}
+
+	return r;
 }
