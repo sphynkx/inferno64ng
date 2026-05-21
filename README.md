@@ -13,8 +13,7 @@ The current focus is the hosted `emu` runtime on `amd64` for:
 
 ## Main changes and improvements
 
-This build includes a number of system-level fixes and extensions compared to the
-original 64-bit port:
+This build includes a number of system-level fixes and extensions compared to the original 64-bit port:
 
 - Fixed several 64-bit arithmetic and runtime correctness issues.
 - Improved hosted console support for both Windows/MSYS2 and Linux.
@@ -31,6 +30,9 @@ original 64-bit port:
 - Added support for building console TUI applications through the
   [`icurses`](https://github.com/sphynkx/icurses) framework.
 - Added an extended shell, `esh`.
+- Implemented `icurses` - ncurses like TUI framework.
+- Implemented `ic` - icurses based file manager inspired by Midnight Commander.
+- Default screen size for GUI expanded to 1024x768.
 - Added various build, packaging and usability improvements, including optional
   binary size reduction/compression work.
 
