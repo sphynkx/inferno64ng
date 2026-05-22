@@ -51,6 +51,16 @@ IcEditSearchRun: module
 	searchsarg: fn(e: ref IcState->EditorState, h: int): string;
 };
 
+IcEditBlock: module
+{
+	PATH: con "/dis/ic/editblock.dis";
+
+	init: fn();
+
+	active: fn(e: ref IcState->EditorState): int;
+	span: fn(e: ref IcState->EditorState, line, width: int): (int, int, int);
+};
+
 IcViewMod: module
 {
 	PATH: con "/dis/lib/icurses/view.dis";
@@ -81,6 +91,7 @@ IcUiMod: module
 common: IcEditCommon;
 source: IcEditSource;
 editsearchrun: IcEditSearchRun;
+editblock: IcEditBlock;
 view: IcViewMod;
 ui: IcUiMod;
 
@@ -91,6 +102,7 @@ BottomCode: con "1;38;2;20;25;30;48;2;170;225;255";
 BottomActiveCode: con "1;38;2;255;120;210;48;2;170;225;255";
 BottomDisabledCode: con "38;2;120;120;120;48;2;170;225;255";
 CursorCode: con "1;38;2;0;0;0;48;2;255;235;80";
+SelectionCode: con "1;38;2;0;0;0;48;2;170;225;255";
 
 ModalCode: con "1;38;2;20;20;20;48;2;225;225;225";
 ModalTitleCode: con "1;38;2;255;255;255;48;2;40;105;160";
@@ -101,7 +113,10 @@ ModalShadowCode: con "38;2;120;120;120;48;2;0;0;0";
 ensureids: fn(u: ref IcUi->Ui, e: ref IcState->EditorState);
 ensurebuttonids: fn(u: ref IcUi->Ui, e: ref IcState->EditorState);
 ensureoverlayids: fn(u: ref IcUi->Ui, e: ref IcState->EditorState);
+ensureselectionids: fn(u: ref IcUi->Ui, e: ref IcState->EditorState, rows: int);
+
 hideoverlay: fn(u: ref IcUi->Ui, e: ref IcState->EditorState);
+hideselection: fn(u: ref IcUi->Ui, e: ref IcState->EditorState);
 
 setlabel: fn(u: ref IcUi->Ui, parentid, id, x, y, w: int, text, code: string);
 setshadow: fn(u: ref IcUi->Ui, parentid, id, x, y, w, h: int, code: string);
@@ -117,6 +132,7 @@ buttontext: fn(b: IcEditCommon->EditorButton, w: int): string;
 buttoncode: fn(e: ref IcState->EditorState, b: IcEditCommon->EditorButton): string;
 drawbuttonbar: fn(u: ref IcUi->Ui, parentid: int, e: ref IcState->EditorState, w, h: int);
 
+drawselection: fn(u: ref IcUi->Ui, parentid: int, e: ref IcState->EditorState, rows, w: int);
 drawmodal: fn(u: ref IcUi->Ui, parentid: int, e: ref IcState->EditorState, w, h: int, title, line1, inputline, line3: string, input: int);
 drawmodeoverlay: fn(u: ref IcUi->Ui, parentid: int, e: ref IcState->EditorState, w, h: int);
 
@@ -134,6 +150,10 @@ init()
 	if(editsearchrun == nil)
 		raise "fail:load ic/editsearchrun";
 
+	editblock = load IcEditBlock IcEditBlock->PATH;
+	if(editblock == nil)
+		raise "fail:load ic/editblock";
+
 	view = load IcViewMod IcViewMod->PATH;
 	if(view == nil)
 		raise "fail:load icurses/view";
@@ -145,6 +165,7 @@ init()
 	common->init();
 	source->init();
 	editsearchrun->init();
+	editblock->init();
 	view->init();
 	ui->init();
 }
@@ -192,6 +213,24 @@ ensureoverlayids(u: ref IcUi->Ui, e: ref IcState->EditorState)
 		e.overlayids[i] = view->allocid(u.tree);
 }
 
+ensureselectionids(u: ref IcUi->Ui, e: ref IcState->EditorState, rows: int)
+{
+	i: int;
+
+	if(u == nil || u.tree == nil || e == nil)
+		return;
+
+	if(rows < 1)
+		rows = 1;
+
+	if(e.selectionids != nil && len e.selectionids == rows)
+		return;
+
+	e.selectionids = array[rows] of int;
+	for(i = 0; i < rows; i++)
+		e.selectionids[i] = view->allocid(u.tree);
+}
+
 hide(u: ref IcUi->Ui, e: ref IcState->EditorState)
 {
 	i: int;
@@ -220,6 +259,7 @@ hide(u: ref IcUi->Ui, e: ref IcState->EditorState)
 		}
 	}
 
+	hideselection(u, e);
 	hideoverlay(u, e);
 }
 
@@ -233,6 +273,21 @@ hideoverlay(u: ref IcUi->Ui, e: ref IcState->EditorState)
 
 	for(i = 0; i < len e.overlayids; i++){
 		n = view->find(u.tree, e.overlayids[i]);
+		if(n != nil)
+			view->hide(n);
+	}
+}
+
+hideselection(u: ref IcUi->Ui, e: ref IcState->EditorState)
+{
+	i: int;
+	n: ref IcView->Node;
+
+	if(u == nil || u.tree == nil || e == nil || e.selectionids == nil)
+		return;
+
+	for(i = 0; i < len e.selectionids; i++){
+		n = view->find(u.tree, e.selectionids[i]);
 		if(n != nil)
 			view->hide(n);
 	}
@@ -322,9 +377,9 @@ toptext(e: ref IcState->EditorState): string
 		name = e.path;
 
 	sel = "";
-	if(e.selectionmode == IcEditCommon->SelectionLine)
+	if(e.selectionactive && e.selectionkind == IcEditCommon->SelectionLine)
 		sel = "  sel:line";
-	else if(e.selectionmode == IcEditCommon->SelectionBlock)
+	else if(e.selectionactive && e.selectionkind == IcEditCommon->SelectionBlock)
 		sel = "  sel:block";
 
 	if(e.message != "")
@@ -461,6 +516,37 @@ drawbuttonbar(u: ref IcUi->Ui, parentid: int, e: ref IcState->EditorState, w, h:
 	}
 }
 
+drawselection(u: ref IcUi->Ui, parentid: int, e: ref IcState->EditorState, rows, w: int)
+{
+	i, ok, start, end, line: int;
+
+	if(u == nil || e == nil)
+		return;
+
+	hideselection(u, e);
+
+	if(!editblock->active(e))
+		return;
+
+	ensureselectionids(u, e, rows);
+
+	for(i = 0; i < rows; i++){
+		line = e.topline + i;
+		(start, end, ok) = editblock->span(e, line, w);
+		if(!ok)
+			continue;
+
+		if(start < 0)
+			start = 0;
+		if(end > w)
+			end = w;
+		if(end <= start)
+			continue;
+
+		setshadow(u, parentid, e.selectionids[i], start, 1 + i, end - start, 1, SelectionCode);
+	}
+}
+
 drawmodal(u: ref IcUi->Ui, parentid: int, e: ref IcState->EditorState, w, h: int, title, line1, inputline, line3: string, input: int)
 {
 	x, y, mw, mh: int;
@@ -582,6 +668,8 @@ draw(u: ref IcUi->Ui, parentid: int, e: ref IcState->EditorState, w, h: int)
 
 	content = visiblecontent(e, rows, w);
 	setbody(u, parentid, e.bodyid, 0, 1, w, rows, e, content, BodyCode);
+
+	drawselection(u, parentid, e, rows, w);
 
 	drawbuttonbar(u, parentid, e, w, h);
 	drawmodeoverlay(u, parentid, e, w, h);

@@ -9,6 +9,7 @@ TARG=\
 	config.dis\
 	copycmd.dis\
 	deletecmd.dis\
+	editblock.dis\
 	editcmd.dis\
 	editcommon.dis\
 	editdraw.dis\
@@ -50,6 +51,7 @@ SYSMODULES=\
 	ic/config.m\
 	ic/copycmd.m\
 	ic/deletecmd.m\
+	ic/editblock.m\
 	ic/editcmd.m\
 	ic/editcommon.m\
 	ic/editdraw.m\

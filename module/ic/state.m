@@ -231,6 +231,7 @@ IcState: module
 
 		buttonids: array of int;
 		overlayids: array of int;
+		selectionids: array of int;
 
 		dirty: int;
 		message: string;
@@ -245,6 +246,13 @@ IcState: module
 		activewait: int;
 
 		selectionmode: int;
+		selectionactive: int;
+		selectionkind: int;
+		selectionanchorline: int;
+		selectionanchorcol: int;
+
+		clipkind: int;
+		cliplines: array of string;
 
 		modalstage: int;
 		modalwait: int;

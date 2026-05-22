@@ -44,6 +44,33 @@ IcEditSource: module
 	refreshwindow: fn(e: ref IcState->EditorState, rows: int);
 };
 
+IcEditBlock: module
+{
+	PATH: con "/dis/ic/editblock.dis";
+
+	SelectionNone: con 0;
+	SelectionLine: con 1;
+	SelectionBlock: con 2;
+
+	init: fn();
+
+	active: fn(e: ref IcState->EditorState): int;
+	kind: fn(e: ref IcState->EditorState): int;
+
+	startline: fn(e: ref IcState->EditorState);
+	startblock: fn(e: ref IcState->EditorState);
+	clear: fn(e: ref IcState->EditorState);
+
+	refresh: fn(e: ref IcState->EditorState);
+
+	copyselection: fn(e: ref IcState->EditorState): int;
+	paste: fn(e: ref IcState->EditorState): int;
+	deleteselection: fn(e: ref IcState->EditorState): int;
+
+	savepersistent: fn(e: ref IcState->EditorState): int;
+	loadpersistent: fn(e: ref IcState->EditorState): int;
+};
+
 IcViewSearchMod: module
 {
 	PATH: con "/dis/ic/viewsearch.dis";
@@ -97,6 +124,7 @@ IcViewerMod: module
 sys: Sys;
 common: IcEditCommon;
 source: IcEditSource;
+editblock: IcEditBlock;
 viewsearch: IcViewSearchMod;
 editsearchrun: IcEditSearchRun;
 viewer: IcViewerMod;
@@ -112,6 +140,7 @@ Kenter: con 10;
 Kreturn: con 13;
 Kbackspace: con 8;
 Kdelete: con 127;
+Kctrlf: con 6;
 
 Kup: con 57362;
 Kdown: con 57363;
@@ -135,6 +164,7 @@ Kf10: con 57418;
 
 Kshiftf2: con 57458;
 Kshiftf3: con 57459;
+Kshiftf5: con 57461;
 Kshiftf7: con 57463;
 Kaltf7: con 57479;
 Kctrlf7: con 57511;
@@ -144,14 +174,29 @@ activatebutton: fn(e: ref IcState->EditorState, fkey: int);
 modalstart: fn(e: ref IcState->EditorState, mode: int);
 
 clampcursor: fn(e: ref IcState->EditorState);
+selectionrefresh: fn(e: ref IcState->EditorState);
+
 insertchar: fn(e: ref IcState->EditorState, k: int);
 newline: fn(e: ref IcState->EditorState);
 backspace: fn(e: ref IcState->EditorState);
 deletechar: fn(e: ref IcState->EditorState);
+
 moveleft: fn(e: ref IcState->EditorState);
 moveright: fn(e: ref IcState->EditorState);
 moveup: fn(e: ref IcState->EditorState);
 movedown: fn(e: ref IcState->EditorState);
+movepgup: fn(e: ref IcState->EditorState, rows: int);
+movepgdown: fn(e: ref IcState->EditorState, rows: int);
+movehome: fn(e: ref IcState->EditorState);
+moveend: fn(e: ref IcState->EditorState);
+
+toggleselectline: fn(e: ref IcState->EditorState);
+startselectblock: fn(e: ref IcState->EditorState);
+copyselection: fn(e: ref IcState->EditorState): int;
+pastebuffer: fn(e: ref IcState->EditorState): int;
+pastepersistentbuffer: fn(e: ref IcState->EditorState): int;
+deleteselection: fn(e: ref IcState->EditorState): int;
+savepersistentselection: fn(e: ref IcState->EditorState): int;
 
 flushsearchdraw: fn(state: ref IcState->AppState): int;
 closesearch: fn(state: ref IcState->AppState);
@@ -181,6 +226,10 @@ init()
 	if(source == nil)
 		raise "fail:load ic/editsource";
 
+	editblock = load IcEditBlock IcEditBlock->PATH;
+	if(editblock == nil)
+		raise "fail:load ic/editblock";
+
 	viewsearch = load IcViewSearchMod IcViewSearchMod->PATH;
 	if(viewsearch == nil)
 		raise "fail:load ic/viewsearch";
@@ -195,6 +244,7 @@ init()
 
 	common->init();
 	source->init();
+	editblock->init();
 	viewsearch->init();
 	editsearchrun->init();
 	viewer->init();
@@ -228,6 +278,15 @@ modalstart(e: ref IcState->EditorState, mode: int)
 	e.modalwait = 0;
 }
 
+selectionrefresh(e: ref IcState->EditorState)
+{
+	if(e == nil)
+		return;
+
+	if(editblock->active(e))
+		editblock->refresh(e);
+}
+
 clampcursor(e: ref IcState->EditorState)
 {
 	line: string;
@@ -259,6 +318,9 @@ insertchar(e: ref IcState->EditorState, k: int)
 {
 	line, c: string;
 
+	if(editblock->active(e))
+		editblock->clear(e);
+
 	clampcursor(e);
 
 	line = source->getline(e, e.cursorline);
@@ -275,6 +337,9 @@ insertchar(e: ref IcState->EditorState, k: int)
 newline(e: ref IcState->EditorState)
 {
 	line, left, right: string;
+
+	if(editblock->active(e))
+		editblock->clear(e);
 
 	clampcursor(e);
 
@@ -295,6 +360,11 @@ backspace(e: ref IcState->EditorState)
 {
 	line, prev: string;
 	prevlen: int;
+
+	if(editblock->active(e)){
+		deleteselection(e);
+		return;
+	}
 
 	clampcursor(e);
 
@@ -330,6 +400,11 @@ deletechar(e: ref IcState->EditorState)
 	line, next: string;
 	n: int;
 
+	if(editblock->active(e)){
+		deleteselection(e);
+		return;
+	}
+
 	clampcursor(e);
 
 	line = source->getline(e, e.cursorline);
@@ -362,6 +437,7 @@ moveleft(e: ref IcState->EditorState)
 
 	if(e.cursorcol > 0){
 		e.cursorcol--;
+		selectionrefresh(e);
 		return;
 	}
 
@@ -369,6 +445,8 @@ moveleft(e: ref IcState->EditorState)
 		e.cursorline--;
 		e.cursorcol = len source->getline(e, e.cursorline);
 	}
+
+	selectionrefresh(e);
 }
 
 moveright(e: ref IcState->EditorState)
@@ -382,6 +460,7 @@ moveright(e: ref IcState->EditorState)
 
 	if(e.cursorcol < len line){
 		e.cursorcol++;
+		selectionrefresh(e);
 		return;
 	}
 
@@ -390,18 +469,137 @@ moveright(e: ref IcState->EditorState)
 		e.cursorline++;
 		e.cursorcol = 0;
 	}
+
+	selectionrefresh(e);
 }
 
 moveup(e: ref IcState->EditorState)
 {
 	e.cursorline--;
 	clampcursor(e);
+	selectionrefresh(e);
 }
 
 movedown(e: ref IcState->EditorState)
 {
 	e.cursorline++;
 	clampcursor(e);
+	selectionrefresh(e);
+}
+
+movepgup(e: ref IcState->EditorState, rows: int)
+{
+	e.cursorline -= rows;
+	clampcursor(e);
+	selectionrefresh(e);
+}
+
+movepgdown(e: ref IcState->EditorState, rows: int)
+{
+	e.cursorline += rows;
+	clampcursor(e);
+	selectionrefresh(e);
+}
+
+movehome(e: ref IcState->EditorState)
+{
+	e.cursorcol = 0;
+	clampcursor(e);
+	selectionrefresh(e);
+}
+
+moveend(e: ref IcState->EditorState)
+{
+	clampcursor(e);
+	e.cursorcol = len source->getline(e, e.cursorline);
+	selectionrefresh(e);
+}
+
+toggleselectline(e: ref IcState->EditorState)
+{
+	if(e == nil)
+		return;
+
+	if(editblock->active(e)){
+		editblock->copyselection(e);
+		editblock->clear(e);
+		e.message = "Selection copied";
+		return;
+	}
+
+	editblock->startline(e);
+}
+
+startselectblock(e: ref IcState->EditorState)
+{
+	if(e == nil)
+		return;
+
+	editblock->startblock(e);
+}
+
+copyselection(e: ref IcState->EditorState): int
+{
+	if(e == nil)
+		return 0;
+
+	if(!editblock->active(e)){
+		e.message = "No selection";
+		return 1;
+	}
+
+	editblock->copyselection(e);
+	editblock->clear(e);
+	e.message = "Selection copied";
+	return 1;
+}
+
+pastebuffer(e: ref IcState->EditorState): int
+{
+	if(e == nil)
+		return 0;
+
+	if(editblock->active(e))
+		editblock->clear(e);
+
+	return editblock->paste(e);
+}
+
+pastepersistentbuffer(e: ref IcState->EditorState): int
+{
+	if(e == nil)
+		return 0;
+
+	if(editblock->active(e))
+		editblock->clear(e);
+
+	if(!editblock->loadpersistent(e)){
+		e.message = "Clipboard file is empty";
+		return 1;
+	}
+
+	return editblock->paste(e);
+}
+
+deleteselection(e: ref IcState->EditorState): int
+{
+	if(e == nil)
+		return 0;
+
+	if(!editblock->active(e)){
+		e.message = "No selection";
+		return 1;
+	}
+
+	return editblock->deleteselection(e);
+}
+
+savepersistentselection(e: ref IcState->EditorState): int
+{
+	if(e == nil)
+		return 0;
+
+	return editblock->savepersistent(e);
 }
 
 flushsearchdraw(state: ref IcState->AppState): int
@@ -536,6 +734,9 @@ handleedit(state: ref IcState->AppState, e: ref IcState->EditorState, k, h: int)
 	rows = common->bodyh(h);
 
 	case k {
+	Kctrlf =>
+		return savepersistentselection(e);
+
 	Kf1 =>
 		activatebutton(e, 1);
 		modalstart(e, IcEditCommon->ModeHelp);
@@ -557,14 +758,12 @@ handleedit(state: ref IcState->AppState, e: ref IcState->EditorState, k, h: int)
 
 	Kf3 =>
 		activatebutton(e, 3);
-		e.selectionmode = IcEditCommon->SelectionLine;
-		e.message = "Line selection is not implemented yet";
+		toggleselectline(e);
 		return 1;
 
 	Kshiftf3 =>
 		activatebutton(e, 3);
-		e.selectionmode = IcEditCommon->SelectionBlock;
-		e.message = "Block selection is not implemented yet";
+		startselectblock(e);
 		return 1;
 
 	Kf4 =>
@@ -573,13 +772,15 @@ handleedit(state: ref IcState->AppState, e: ref IcState->EditorState, k, h: int)
 
 	Kf5 =>
 		activatebutton(e, 5);
-		e.message = "Copy insert is not implemented yet";
-		return 1;
+		return pastebuffer(e);
+
+	Kshiftf5 =>
+		activatebutton(e, 5);
+		return pastepersistentbuffer(e);
 
 	Kf6 =>
 		activatebutton(e, 6);
-		e.message = "Move insert is not implemented yet";
-		return 1;
+		return copyselection(e);
 
 	Kf7 =>
 		if(state == nil || state.ui == nil){
@@ -603,8 +804,7 @@ handleedit(state: ref IcState->AppState, e: ref IcState->EditorState, k, h: int)
 
 	Kf8 =>
 		activatebutton(e, 8);
-		e.message = "Delete selection is not implemented yet";
-		return 1;
+		return deleteselection(e);
 
 	Kf9 =>
 		activatebutton(e, 9);
@@ -613,6 +813,11 @@ handleedit(state: ref IcState->AppState, e: ref IcState->EditorState, k, h: int)
 
 	Kesc or Kf10 =>
 		activatebutton(e, 10);
+		if(editblock->active(e)){
+			editblock->clear(e);
+			return 1;
+		}
+
 		if(e.dirty){
 			modalstart(e, IcEditCommon->ModeConfirmQuit);
 			return 1;
@@ -642,20 +847,16 @@ handleedit(state: ref IcState->AppState, e: ref IcState->EditorState, k, h: int)
 		movedown(e);
 
 	Kpgup =>
-		e.cursorline -= rows;
-		clampcursor(e);
+		movepgup(e, rows);
 
 	Kpgdown =>
-		e.cursorline += rows;
-		clampcursor(e);
+		movepgdown(e, rows);
 
 	Khome =>
-		e.cursorcol = 0;
-		clampcursor(e);
+		movehome(e);
 
 	Kend =>
-		clampcursor(e);
-		e.cursorcol = len source->getline(e, e.cursorline);
+		moveend(e);
 
 	* =>
 		if(printable(k))

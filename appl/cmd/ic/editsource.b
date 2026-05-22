@@ -103,6 +103,7 @@ newstate(path, dir: string): ref IcState->EditorState
 
 	e.buttonids = array[0] of int;
 	e.overlayids = array[0] of int;
+	e.selectionids = array[0] of int;
 
 	e.dirty = 0;
 	e.message = "";
@@ -116,6 +117,13 @@ newstate(path, dir: string): ref IcState->EditorState
 	e.activewait = 0;
 
 	e.selectionmode = IcEditCommon->SelectionNone;
+	e.selectionactive = 0;
+	e.selectionkind = IcEditCommon->SelectionNone;
+	e.selectionanchorline = 0;
+	e.selectionanchorcol = 0;
+
+	e.clipkind = IcEditCommon->SelectionNone;
+	e.cliplines = array[0] of string;
 
 	e.modalstage = 0;
 	e.modalwait = 0;
