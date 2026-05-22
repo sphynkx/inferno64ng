@@ -34,6 +34,7 @@ TARG=\
 	archfs.dis\
 	auplay.dis\
 	auhdr.dis\
+	awk.dis\
 	basename.dis\
 	bind.dis\
 	bit2gif.dis\
