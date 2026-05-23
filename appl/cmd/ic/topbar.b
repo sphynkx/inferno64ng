@@ -2,68 +2,59 @@ implement IcTopBar;
 
 include "ic/topbar.m";
 
-IcUiMod: module
+IcTopMenu: module
 {
-	PATH: con "/dis/lib/icurses/ui.dis";
+	PATH: con "/dis/ic/topmenu.dis";
 
 	init: fn();
-	label: fn(u: ref IcUi->Ui, parentid, id: int, x, y, w: int, text: string): int;
+
+	newstate: fn(): ref IcState->TopBarState;
+
+	active: fn(bar: ref IcState->TopBarState): int;
+	toggle: fn(bar: ref IcState->TopBarState);
+	close: fn(bar: ref IcState->TopBarState);
+
+	build: fn(state: ref IcState->AppState, bar: ref IcState->TopBarState, rect: IcLayout->Rect): int;
+	handlekey: fn(state: ref IcState->AppState, bar: ref IcState->TopBarState, k: int): int;
 };
 
-IcViewMod: module
-{
-	PATH: con "/dis/lib/icurses/view.dis";
-
-	init: fn();
-	find: fn(t: ref IcView->Tree, id: int): ref IcView->Node;
-	setbounds: fn(v: ref IcView->Node, x, y, w, h: int);
-	settext: fn(v: ref IcView->Node, text: string);
-	show: fn(v: ref IcView->Node);
-	allocid: fn(t: ref IcView->Tree): int;
-};
-
-ui: IcUiMod;
-view: IcViewMod;
-
-BarText: con " Left  File  Command  Options  Right ";
+topmenu: IcTopMenu;
 
 init()
 {
-	ui = load IcUiMod IcUiMod->PATH;
-	if(ui == nil)
-		raise "fail:load icurses/ui";
+	topmenu = load IcTopMenu IcTopMenu->PATH;
+	if(topmenu == nil)
+		raise "fail:load ic/topmenu";
 
-	view = load IcViewMod IcViewMod->PATH;
-	if(view == nil)
-		raise "fail:load icurses/view";
-
-	ui->init();
-	view->init();
+	topmenu->init();
 }
 
 newbar(): ref IcState->TopBarState
 {
-	return ref IcState->TopBarState;
+	return topmenu->newstate();
 }
 
 build(state: ref IcState->AppState, bar: ref IcState->TopBarState, rect: IcLayout->Rect): int
 {
-	n: ref IcView->Node;
+	return topmenu->build(state, bar, rect);
+}
 
-	if(state == nil || state.ui == nil || bar == nil)
-		return -1;
+active(bar: ref IcState->TopBarState): int
+{
+	return topmenu->active(bar);
+}
 
-	if(bar.id <= 0)
-		bar.id = view->allocid(state.ui.tree);
+toggle(bar: ref IcState->TopBarState)
+{
+	topmenu->toggle(bar);
+}
 
-	ui->label(state.ui, state.mainid, bar.id, rect.x, rect.y, rect.w, BarText);
+close(bar: ref IcState->TopBarState)
+{
+	topmenu->close(bar);
+}
 
-	n = view->find(state.ui.tree, bar.id);
-	if(n != nil){
-		view->setbounds(n, rect.x, rect.y, rect.w, 1);
-		view->settext(n, BarText);
-		view->show(n);
-	}
-
-	return 0;
+handlekey(state: ref IcState->AppState, bar: ref IcState->TopBarState, k: int): int
+{
+	return topmenu->handlekey(state, bar, k);
 }

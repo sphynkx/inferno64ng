@@ -2,7 +2,7 @@ implement IcLayout;
 
 include "ic/layout.m";
 
-TopBarHeight: con 1;
+TopBarHeight: con 0;
 CommandLineHeight: con 1;
 BottomBarHeight: con 1;
 MinPanelWidth: con 10;

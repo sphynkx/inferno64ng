@@ -274,11 +274,17 @@ IcState: module
 
 		panel: ref IcPanel->Panel;
 		model: ref IcPanel->Model;
+
+		decorationids: array of int;
 	};
 
 	TopBarState: adt
 	{
 		id: int;
+		backgroundid: int;
+		active: int;
+		focus: int;
+		itemids: array of int;
 	};
 
 	BottomBarState: adt

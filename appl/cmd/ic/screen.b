@@ -227,7 +227,6 @@ build(state: ref IcState->AppState): int
 
 	ls = layout->compute(state.width, state.height, state.panelshidden);
 
-	topbar->build(state, state.topbar, ls.topbar);
 	bottombar->build(state, state.bottombar, ls.bottombar);
 
 	if(!state.panelshidden){
@@ -242,6 +241,8 @@ build(state: ref IcState->AppState): int
 		hidepanelnode(state, state.left);
 		hidepanelnode(state, state.right);
 	}
+
+	topbar->build(state, state.topbar, ls.topbar);
 
 	return 0;
 }

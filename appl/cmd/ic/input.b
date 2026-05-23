@@ -74,6 +74,17 @@ IcBottomBar: module
 	handletick: fn(state: ref IcState->AppState): int;
 };
 
+IcTopBar: module
+{
+	PATH: con "/dis/ic/topbar.dis";
+
+	init: fn();
+	active: fn(bar: ref IcState->TopBarState): int;
+	toggle: fn(bar: ref IcState->TopBarState);
+	close: fn(bar: ref IcState->TopBarState);
+	handlekey: fn(state: ref IcState->AppState, bar: ref IcState->TopBarState, k: int): int;
+};
+
 IcViewerMod: module
 {
 	PATH: con "/dis/ic/viewer.dis";
@@ -114,6 +125,7 @@ mkdircmd: IcMkdirCmd;
 deletecmd: IcDeleteCmd;
 modal: IcModal;
 bottombar: IcBottomBar;
+topbar: IcTopBar;
 viewer: IcViewerMod;
 editor: IcEditorMod;
 screen: IcScreenMod;
@@ -126,6 +138,7 @@ F5Key: con 57413;
 F6Key: con 57414;
 F7Key: con 57415;
 F8Key: con 57416;
+F9Key: con 57417;
 F10Key: con 57418;
 ShiftF4Key: con 57460;
 InsKey: con 57443;
@@ -170,6 +183,10 @@ init()
 	if(bottombar == nil)
 		raise "fail:load ic/bottombar";
 
+	topbar = load IcTopBar IcTopBar->PATH;
+	if(topbar == nil)
+		raise "fail:load ic/topbar";
+
 	viewer = load IcViewerMod IcViewerMod->PATH;
 	if(viewer == nil)
 		raise "fail:load ic/viewer";
@@ -189,6 +206,7 @@ init()
 	deletecmd->init();
 	modal->init();
 	bottombar->init();
+	topbar->init();
 	viewer->init();
 	editor->init();
 	screen->init();
@@ -264,6 +282,20 @@ handlekey(state: ref IcState->AppState, k: int): int
 
 	if(deletecmd->active(state))
 		return deletecmd->handlekey(state, k);
+
+	if(k == F9Key){
+		flashfkey(state, 9);
+		topbar->toggle(state.topbar);
+		screen->rebuild(state);
+		return 0;
+	}
+
+	if(topbar->active(state.topbar)){
+		if(topbar->handlekey(state, state.topbar, k)){
+			screen->rebuild(state);
+			return 0;
+		}
+	}
 
 	if(k == TabKey)
 		return commands->exec(state, IcCommands->CmdSwitchPanel);

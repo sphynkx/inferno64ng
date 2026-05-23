@@ -238,6 +238,7 @@ ensurebuttons(state: ref IcState->AppState, bar: ref IcState->BottomBarState)
 			b.enabled = 1;
 		8 =>
 			b.text = "Menu";
+			b.enabled = 1;
 		9 =>
 			b.text = "Exit";
 			b.cmd = IcCommands->CmdExit;
