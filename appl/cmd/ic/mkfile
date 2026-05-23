@@ -31,6 +31,7 @@ TARG=\
 	theme.dis\
 	topbar.dis\
 	topmenu.dis\
+	userdir.dis\
 	viewbuttons.dis\
 	viewcmd.dis\
 	viewcodepage.dis\
@@ -73,6 +74,7 @@ SYSMODULES=\
 	ic/theme.m\
 	ic/topbar.m\
 	ic/topmenu.m\
+	ic/userdir.m\
 	ic/viewbuttons.m\
 	ic/viewcmd.m\
 	ic/viewcodepage.m\

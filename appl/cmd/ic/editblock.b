@@ -17,11 +17,26 @@ IcEditSource: module
 	deletelineat: fn(e: ref IcState->EditorState, line: int): int;
 };
 
+IcUserDir: module
+{
+	PATH: con "/dis/ic/userdir.dis";
+
+	init: fn();
+
+	home: fn(): string;
+	dir: fn(): string;
+	enabled: fn(): int;
+
+	ensure: fn(): int;
+	path: fn(name: string): string;
+	ensurepath: fn(name: string): string;
+};
+
 sys: Sys;
 source: IcEditSource;
+userdir: IcUserDir;
 
-BufferDir: con "/tmp/ic";
-BufferFile: con "/tmp/ic/edit-buffer";
+BufferFileName: con "edit-buffer";
 
 PersistentLine: con "kind=line";
 PersistentBlock: con "kind=block";
@@ -49,7 +64,7 @@ deletefullines: fn(e: ref IcState->EditorState, a, b: int): int;
 deleteblock: fn(e: ref IcState->EditorState, a, b, c0, c1: int): int;
 
 ensurelineexists: fn(e: ref IcState->EditorState, line: int);
-makedir: fn(path: string): int;
+bufferpath: fn(create: int): string;
 writefile: fn(path, text: string): int;
 readfile: fn(path: string): string;
 
@@ -63,7 +78,12 @@ init()
 	if(source == nil)
 		raise "fail:load ic/editsource";
 
+	userdir = load IcUserDir IcUserDir->PATH;
+	if(userdir == nil)
+		raise "fail:load ic/userdir";
+
 	source->init();
+	userdir->init();
 }
 
 initstate(e: ref IcState->EditorState)
@@ -515,31 +535,20 @@ deleteselection(e: ref IcState->EditorState): int
 	return 1;
 }
 
-makedir(path: string): int
+bufferpath(create: int): string
 {
-	fd: ref Sys->FD;
-	d: Sys->Dir;
-	rc: int;
+	if(create)
+		return userdir->ensurepath(BufferFileName);
 
-	(rc, d) = sys->stat(path);
-	if(rc >= 0){
-		if((d.mode & Sys->DMDIR) != 0)
-			return 0;
-
-		return -1;
-	}
-
-	fd = sys->create(path, Sys->OREAD, Sys->DMDIR | 8r777);
-	if(fd == nil)
-		return -1;
-
-	fd = nil;
-	return 0;
+	return userdir->path(BufferFileName);
 }
 
 writefile(path, text: string): int
 {
 	fd: ref Sys->FD;
+
+	if(path == "")
+		return -1;
 
 	fd = sys->create(path, Sys->OWRITE, 8r666);
 	if(fd == nil)
@@ -560,6 +569,9 @@ readfile(path: string): string
 	buf: array of byte;
 	n: int;
 	text: string;
+
+	if(path == "")
+		return "";
 
 	fd = sys->open(path, Sys->OREAD);
 	if(fd == nil)
@@ -582,7 +594,7 @@ readfile(path: string): string
 
 savepersistent(e: ref IcState->EditorState): int
 {
-	header, text: string;
+	header, text, path: string;
 
 	if(e == nil)
 		return 0;
@@ -595,8 +607,9 @@ savepersistent(e: ref IcState->EditorState): int
 		return 0;
 	}
 
-	if(makedir(BufferDir) < 0){
-		e.message = "Cannot create clipboard directory";
+	path = bufferpath(1);
+	if(path == ""){
+		e.message = "No home directory";
 		return 0;
 	}
 
@@ -611,7 +624,7 @@ savepersistent(e: ref IcState->EditorState): int
 
 	text = header + "\n" + PersistentSep + "\n" + joinlines(e.cliplines);
 
-	if(writefile(BufferFile, text) < 0){
+	if(writefile(path, text) < 0){
 		e.message = "Cannot save clipboard";
 		return 0;
 	}
@@ -622,14 +635,18 @@ savepersistent(e: ref IcState->EditorState): int
 
 loadpersistent(e: ref IcState->EditorState): int
 {
-	text, body: string;
+	text, body, path: string;
 	lines: array of string;
 	i, start: int;
 
 	if(e == nil)
 		return 0;
 
-	text = readfile(BufferFile);
+	path = bufferpath(0);
+	if(path == "")
+		return 0;
+
+	text = readfile(path);
 	if(text == "")
 		return 0;
 

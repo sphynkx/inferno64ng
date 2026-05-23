@@ -13,6 +13,10 @@ IcState: module
 	{
 		cfg: ref IcConfig->Config;
 
+		home: string;
+		userdir: string;
+		userenabled: int;
+
 		themefile: string;
 		keysfile: string;
 		layoutfile: string;
