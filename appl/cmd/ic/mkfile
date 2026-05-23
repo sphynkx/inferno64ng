@@ -32,6 +32,7 @@ TARG=\
 	topbar.dis\
 	topmenu.dis\
 	userdir.dis\
+	userstate.dis\
 	viewbuttons.dis\
 	viewcmd.dis\
 	viewcodepage.dis\
@@ -75,6 +76,7 @@ SYSMODULES=\
 	ic/topbar.m\
 	ic/topmenu.m\
 	ic/userdir.m\
+	ic/userstate.m\
 	ic/viewbuttons.m\
 	ic/viewcmd.m\
 	ic/viewcodepage.m\
@@ -86,6 +88,7 @@ SYSMODULES=\
 	ic/viewsource.m\
 	ic/viewstats.m\
 	ic/viewstatus.m\
+
 
 DISBIN=$ROOT/dis/ic
 
