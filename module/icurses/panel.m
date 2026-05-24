@@ -91,7 +91,13 @@ IcPanel: module
 		customfields:     array of string;
 
 		namefit:          int;
+
+		windowcode:       string;
+		focuscode:        string;
+		titlecode:        string;
+		framecode:        string;
 		markedcode:       string;
+		markedfocuscode:  string;
 
 		mouseenabled:     int;
 		wrapnav:          int;
@@ -137,6 +143,7 @@ IcPanel: module
 	};
 
 	init: fn();
+	reloadtheme: fn();
 
 	defaultopts: fn(): Options;
 

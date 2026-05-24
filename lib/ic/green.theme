@@ -1,0 +1,31 @@
+# Green light theme overrides.
+# Base values are inherited from default.theme.
+
+[theme]
+
+panel_top_code=1;38;2;0;55;20;48;2;125;235;150
+panel_body_code=38;2;220;255;225;48;2;25;95;45
+panel_focus_code=1;38;2;0;45;15;48;2;180;255;120
+panel_title_code=1;38;2;230;255;170;48;2;25;95;45
+panel_marked_code=1;38;2;255;255;120;48;2;25;95;45
+panel_marked_focus_code=1;38;2;80;20;0;48;2;180;255;120
+
+menu_window_code=1;38;2;0;55;20;48;2;125;235;150
+menu_focus_code=1;38;2;0;45;15;48;2;180;255;120
+
+command_bar_code=1;38;2;5;35;15;48;2;150;235;130
+command_bar_active_code=1;38;2;0;40;10;48;2;190;255;100
+command_bar_disabled_code=38;2;75;130;80;48;2;150;235;130
+command_line_code=38;2;220;255;225;48;2;25;75;35
+
+modal_copy_code=38;2;5;35;15;48;2;205;245;205
+modal_overwrite_code=38;2;20;45;20;48;2;190;255;180
+modal_frame_code=1;38;2;20;95;45;48;2;205;245;205
+modal_text_code=38;2;5;35;15;48;2;205;245;205
+modal_field_code=1;38;2;5;35;15;48;2;230;255;225
+modal_focus_code=1;38;2;0;40;10;48;2;190;255;100
+modal_button_code=1;38;2;5;35;15;48;2;220;250;215
+modal_button_focus_code=1;38;2;0;40;10;48;2;190;255;100
+
+viewer_search_match_code=1;38;2;0;45;15;48;2;190;255;100
+editor_cursor_code=1;38;2;0;45;15;48;2;190;255;100

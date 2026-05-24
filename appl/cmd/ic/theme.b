@@ -11,9 +11,33 @@ IcConfigData: module
 	getint: fn(c: ref IcState->ConfigState, section, key: string, def: int): int;
 };
 
+IcursesTheme: module
+{
+	PATH: con "/dis/lib/icurses/theme.dis";
+
+	AttrNormal: con 0;
+	AttrWindow: con 1;
+	AttrFrame: con 2;
+	AttrTitle: con 3;
+	AttrButton: con 4;
+	AttrFocus: con 5;
+	AttrStatus: con 6;
+	AttrScroll: con 7;
+	AttrShadow: con 8;
+	AttrMarked: con 9;
+	AttrMarkedFocus: con 10;
+
+	init: fn(ci: Icurses->ConsInfo);
+	reset: fn();
+	setcode: fn(attr: int, code: string): int;
+};
+
 cfgdata: IcConfigData;
+fwtheme: IcursesTheme;
 
 ThemeSection: con "theme";
+
+applyframework: fn(t: ref IcState->ThemeState);
 
 init()
 {
@@ -21,7 +45,30 @@ init()
 	if(cfgdata == nil)
 		raise "fail:load ic/config";
 
+	fwtheme = load IcursesTheme IcursesTheme->PATH;
+	if(fwtheme == nil)
+		raise "fail:load icurses/theme";
+
 	cfgdata->init();
+}
+
+applyframework(t: ref IcState->ThemeState)
+{
+	if(t == nil || fwtheme == nil)
+		return;
+
+	if(t.panelbodycode != "")
+		fwtheme->setcode(IcursesTheme->AttrWindow, t.panelbodycode);
+	if(t.paneltopcode != "")
+		fwtheme->setcode(IcursesTheme->AttrFrame, t.paneltopcode);
+	if(t.paneltitlecode != "")
+		fwtheme->setcode(IcursesTheme->AttrTitle, t.paneltitlecode);
+	if(t.panelfocuscode != "")
+		fwtheme->setcode(IcursesTheme->AttrFocus, t.panelfocuscode);
+	if(t.panelmarkedcode != "")
+		fwtheme->setcode(IcursesTheme->AttrMarked, t.panelmarkedcode);
+	if(t.panelmarkedfocuscode != "")
+		fwtheme->setcode(IcursesTheme->AttrMarkedFocus, t.panelmarkedfocuscode);
 }
 
 loadstate(cfg: ref IcState->ConfigState): ref IcState->ThemeState
@@ -32,6 +79,13 @@ loadstate(cfg: ref IcState->ConfigState): ref IcState->ThemeState
 
 	t.frame = cfgdata->getint(cfg, ThemeSection, "frame_style", 1);
 	t.panelshadow = cfgdata->getint(cfg, ThemeSection, "panel_shadow", 0);
+
+	t.paneltopcode = cfgdata->get(cfg, ThemeSection, "panel_top_code", "1;38;2;20;25;30;48;2;225;225;225");
+	t.panelbodycode = cfgdata->get(cfg, ThemeSection, "panel_body_code", "38;2;220;230;255;48;2;20;45;90");
+	t.panelfocuscode = cfgdata->get(cfg, ThemeSection, "panel_focus_code", "1;38;2;0;0;0;48;2;170;225;255");
+	t.paneltitlecode = cfgdata->get(cfg, ThemeSection, "panel_title_code", "1;38;2;255;230;120;48;2;20;45;90");
+	t.panelmarkedcode = cfgdata->get(cfg, ThemeSection, "panel_marked_code", "1;38;2;255;120;210;48;2;20;45;90");
+	t.panelmarkedfocuscode = cfgdata->get(cfg, ThemeSection, "panel_marked_focus_code", "1;38;2;220;0;0;48;2;170;225;255");
 
 	t.modalanimticks = cfgdata->getint(cfg, ThemeSection, "modal_anim_ticks", 3);
 
@@ -50,6 +104,11 @@ loadstate(cfg: ref IcState->ConfigState): ref IcState->ThemeState
 	t.commandbaractivecode = cfgdata->get(cfg, ThemeSection, "command_bar_active_code", "1;38;2;255;120;210;48;2;170;225;255");
 	t.commandbardisabledcode = cfgdata->get(cfg, ThemeSection, "command_bar_disabled_code", "38;2;120;120;120;48;2;170;225;255");
 	t.commandlinecode = cfgdata->get(cfg, ThemeSection, "command_line_code", "38;2;220;230;255;48;2;20;45;90");
+
+	t.menuwindowcode = cfgdata->get(cfg, ThemeSection, "menu_window_code", t.paneltopcode);
+	t.menufocuscode = cfgdata->get(cfg, ThemeSection, "menu_focus_code", t.panelfocuscode);
+
+	applyframework(t);
 
 	return t;
 }

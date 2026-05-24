@@ -4,6 +4,9 @@ include "icurses/theme.m";
 
 _colorcount: int;
 _truecolor: int;
+_codes: array of string;
+
+MaxAttr: con 32;
 
 init(ci: Icurses->ConsInfo)
 {
@@ -15,6 +18,68 @@ init(ci: Icurses->ConsInfo)
 
 	if(ci.truecolor != 0)
 		_truecolor = 1;
+
+	if(_codes == nil)
+		reset();
+}
+
+reset()
+{
+	_codes = array[MaxAttr] of string;
+
+	if(_truecolor){
+		_codes[AttrNormal] = "0";
+		_codes[AttrWindow] = "38;2;220;230;255;48;2;20;45;90";
+		_codes[AttrFrame] = "38;2;230;240;255;48;2;20;45;90";
+		_codes[AttrTitle] = "1;38;2;255;230;120;48;2;20;45;90";
+		_codes[AttrButton] = "38;2;10;25;35;48;2;70;210;230";
+		_codes[AttrFocus] = "1;38;2;0;0;0;48;2;170;225;255";
+		_codes[AttrStatus] = "38;2;20;25;30;48;2;225;225;225";
+		_codes[AttrScroll] = "38;2;255;220;80;48;2;20;45;90";
+		_codes[AttrShadow] = "38;2;170;180;190;48;2;45;45;45";
+		_codes[AttrMarked] = "1;38;2;255;120;210;48;2;20;45;90";
+		_codes[AttrMarkedFocus] = "1;38;2;220;0;0;48;2;170;225;255";
+
+		_codes[AttrEffectHead] = "38;2;220;255;220;40";
+		_codes[AttrEffectBright] = "38;2;100;255;140;40";
+		_codes[AttrEffectMid] = "38;2;0;230;80;40";
+		_codes[AttrEffectDim] = "38;2;0;155;50;40";
+		_codes[AttrEffectDark] = "38;2;0;55;18;40";
+		return;
+	}
+
+	_codes[AttrNormal] = "0";
+	_codes[AttrWindow] = "0;37;44";
+	_codes[AttrFrame] = "1;37;44";
+	_codes[AttrTitle] = "1;33;44";
+	_codes[AttrButton] = "1;30;46";
+	_codes[AttrFocus] = "1;30;106";
+	_codes[AttrStatus] = "1;30;47";
+	_codes[AttrScroll] = "1;33;44";
+	_codes[AttrShadow] = "0;37;100";
+	_codes[AttrMarked] = "1;31;44";
+	_codes[AttrMarkedFocus] = "1;31;106";
+
+	_codes[AttrEffectHead] = "1;37;40";
+	_codes[AttrEffectBright] = "1;32;40";
+	_codes[AttrEffectMid] = "1;32;40";
+	_codes[AttrEffectDim] = "0;32;40";
+	_codes[AttrEffectDark] = "0;30;40";
+}
+
+setcode(attr: int, code: string): int
+{
+	if(attr < 0 || attr >= MaxAttr)
+		return -1;
+
+	if(_codes == nil)
+		reset();
+
+	if(code == "")
+		return -1;
+
+	_codes[attr] = code;
+	return 0;
 }
 
 colors(): int
@@ -29,83 +94,14 @@ truecolor(): int
 
 sgr(attr: int): string
 {
-	if(_truecolor){
-		if(attr == AttrNormal)
-			return "0";
-		if(attr == AttrWindow)
-			return "38;2;220;230;255;48;2;20;45;90";
-		if(attr == AttrFrame)
-			return "38;2;230;240;255;48;2;20;45;90";
-		if(attr == AttrTitle)
-			return "1;38;2;255;230;120;48;2;20;45;90";
-		if(attr == AttrButton)
-			return "38;2;10;25;35;48;2;70;210;230";
-		if(attr == AttrFocus)
-			return "1;38;2;0;0;0;48;2;170;225;255";
-		if(attr == AttrStatus)
-			return "38;2;20;25;30;48;2;225;225;225";
-		if(attr == AttrScroll)
-			return "38;2;255;220;80;48;2;20;45;90";
-		if(attr == AttrShadow)
-			return "38;2;170;180;190;48;2;45;45;45";
-		if(attr == AttrMarked)
-			return "1;38;2;255;120;210;48;2;20;45;90";
+	if(_codes == nil)
+		reset();
 
-		#
-		# Marked item under cursor:
-		# red foreground on the same light-blue focus background.
-		#
-		if(attr == AttrMarkedFocus)
-			return "1;38;2;220;0;0;48;2;170;225;255";
-
-		if(attr == AttrEffectHead)
-			return "38;2;220;255;220;40";
-		if(attr == AttrEffectBright)
-			return "38;2;100;255;140;40";
-		if(attr == AttrEffectMid)
-			return "38;2;0;230;80;40";
-		if(attr == AttrEffectDim)
-			return "38;2;0;155;50;40";
-		if(attr == AttrEffectDark)
-			return "38;2;0;55;18;40";
-
+	if(attr < 0 || attr >= len _codes)
 		return "0";
-	}
 
-	if(attr == AttrNormal)
+	if(_codes[attr] == "")
 		return "0";
-	if(attr == AttrWindow)
-		return "0;37;44";
-	if(attr == AttrFrame)
-		return "1;37;44";
-	if(attr == AttrTitle)
-		return "1;33;44";
-	if(attr == AttrButton)
-		return "1;30;46";
-	if(attr == AttrFocus)
-		return "1;30;106";
-	if(attr == AttrStatus)
-		return "1;30;47";
-	if(attr == AttrScroll)
-		return "1;33;44";
-	if(attr == AttrShadow)
-		return "0;37;100";
-	if(attr == AttrMarked)
-		return "1;31;44";
 
-	if(attr == AttrMarkedFocus)
-		return "1;31;106";
-
-	if(attr == AttrEffectHead)
-		return "1;37;40";
-	if(attr == AttrEffectBright)
-		return "1;32;40";
-	if(attr == AttrEffectMid)
-		return "1;32;40";
-	if(attr == AttrEffectDim)
-		return "0;32;40";
-	if(attr == AttrEffectDark)
-		return "0;30;40";
-
-	return "0";
+	return _codes[attr];
 }

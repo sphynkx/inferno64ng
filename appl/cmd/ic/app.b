@@ -89,6 +89,7 @@ IcAppPanel: module
 	PATH: con "/dis/ic/appanel.dis";
 
 	init: fn();
+	reloadtheme: fn(): int;
 	newpanel: fn(side: int): ref IcState->PanelState;
 };
 
@@ -196,6 +197,7 @@ newstate(): ref IcState->AppState
 
 	s.cfg = cfgdata->loadstate();
 	s.theme = themedata->loadstate(s.cfg);
+	appanel->reloadtheme();
 
 	s.left = appanel->newpanel(IcState->SideLeft);
 	s.right = appanel->newpanel(IcState->SideRight);

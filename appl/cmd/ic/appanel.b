@@ -74,9 +74,6 @@ DecorationInfoSeparator: con 1;
 DecorationInfoText: con 2;
 DecorationBodyStart: con 3;
 
-TopFrameCode: con "1;38;2;20;25;30;48;2;225;225;225";
-BodyCode: con "38;2;220;230;255;48;2;20;45;90";
-
 appenditem: fn(a: array of IcPanel->Item, e: IcPanel->Item): array of IcPanel->Item;
 emptyitem: fn(): IcPanel->Item;
 maketitle: fn(p: ref IcState->PanelState): string;
@@ -123,6 +120,10 @@ setdecorlabel: fn(state: ref IcState->AppState, p: ref IcState->PanelState, idx,
 hidedecorations: fn(state: ref IcState->AppState, p: ref IcState->PanelState);
 drawdecorations: fn(state: ref IcState->AppState, p: ref IcState->PanelState);
 
+topframecode: fn(state: ref IcState->AppState): string;
+bodycode: fn(state: ref IcState->AppState): string;
+markedcode: fn(state: ref IcState->AppState): string;
+
 init()
 {
 	sys = load Sys Sys->PATH;
@@ -159,6 +160,39 @@ init()
 	view->init();
 	cfgdata->init();
 	panelinfo->init();
+}
+
+reloadtheme(): int
+{
+	if(panelui == nil)
+		return -1;
+
+	panelui->reloadtheme();
+	return 0;
+}
+
+topframecode(state: ref IcState->AppState): string
+{
+	if(state != nil && state.theme != nil && state.theme.paneltopcode != "")
+		return state.theme.paneltopcode;
+
+	return "1;38;2;20;25;30;48;2;225;225;225";
+}
+
+bodycode(state: ref IcState->AppState): string
+{
+	if(state != nil && state.theme != nil && state.theme.panelbodycode != "")
+		return state.theme.panelbodycode;
+
+	return "38;2;220;230;255;48;2;20;45;90";
+}
+
+markedcode(state: ref IcState->AppState): string
+{
+	if(state != nil && state.theme != nil && state.theme.panelmarkedcode != "")
+		return state.theme.panelmarkedcode;
+
+	return "1;38;2;255;120;210;48;2;20;45;90";
 }
 
 spaces(n: int): string
@@ -387,7 +421,14 @@ makeopts(state: ref IcState->AppState, p: ref IcState->PanelState): IcPanel->Opt
 		s = cfgdata->get(state.cfg, PanelSection, "namefit", "middle");
 		o.namefit = namefitvalue(s, IcPanel->NameFitMiddle);
 
-		o.markedcode = cfgdata->get(state.cfg, PanelSection, "markedcode", "");
+		if(state.theme != nil){
+			o.windowcode = state.theme.panelbodycode;
+			o.focuscode = state.theme.panelfocuscode;
+			o.titlecode = state.theme.paneltitlecode;
+			o.framecode = state.theme.paneltopcode;
+			o.markedcode = state.theme.panelmarkedcode;
+			o.markedfocuscode = state.theme.panelmarkedfocuscode;
+		}
 
 		o.mouseenabled = cfgdata->getbool(state.cfg, PanelSection, "mouseenabled", 0);
 		o.wrapnav = cfgdata->getbool(state.cfg, PanelSection, "wrapnav", 0);
@@ -983,6 +1024,7 @@ hidedecorations(state: ref IcState->AppState, p: ref IcState->PanelState)
 drawdecorations(state: ref IcState->AppState, p: ref IcState->PanelState)
 {
 	bodyrows, x0, y0, i, need: int;
+	topcode, body: string;
 
 	if(state == nil || state.ui == nil || p == nil || p.panel == nil)
 		return;
@@ -993,11 +1035,14 @@ drawdecorations(state: ref IcState->AppState, p: ref IcState->PanelState)
 	need = DecorationBodyStart + bodyrows;
 	ensuredecorationids(state, p, need);
 
-	setdecorlabel(state, p, DecorationTop, 0, 0, p.panel.w, topframetext(p), TopFrameCode);
+	topcode = topframecode(state);
+	body = bodycode(state);
+
+	setdecorlabel(state, p, DecorationTop, 0, 0, p.panel.w, topframetext(p), topcode);
 
 	if(p.panel.opts.showinfobar && visibleinforows(p) > 0 && p.panel.h >= 2){
-		setdecorlabel(state, p, DecorationInfoSeparator, 0, p.panel.h - 2, p.panel.w, infoseparator(p), BodyCode);
-		setdecorlabel(state, p, DecorationInfoText, 0, p.panel.h - 1, p.panel.w, infotextline(p), BodyCode);
+		setdecorlabel(state, p, DecorationInfoSeparator, 0, p.panel.h - 2, p.panel.w, infoseparator(p), body);
+		setdecorlabel(state, p, DecorationInfoText, 0, p.panel.h - 1, p.panel.w, infotextline(p), body);
 	}
 
 	if(p.panel.opts.mode == IcPanel->ModeBrief2Col && p.panel.opts.columncount >= 2){
@@ -1005,7 +1050,7 @@ drawdecorations(state: ref IcState->AppState, p: ref IcState->PanelState)
 		y0 = 1 + visiblecommandrows(p);
 
 		for(i = 0; i < bodyrows; i++)
-			setdecorlabel(state, p, DecorationBodyStart + i, x0, y0 + i, 1, "│", BodyCode);
+			setdecorlabel(state, p, DecorationBodyStart + i, x0, y0 + i, 1, "│", body);
 	}
 }
 

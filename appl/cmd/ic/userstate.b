@@ -34,9 +34,11 @@ userdir: IcUserDir;
 panelui: IcPanelMod;
 
 StateFileName: con "state.cfg";
+DefaultThemeName: con "default";
 
 savedleftitem: string;
 savedrightitem: string;
+savedtheme: string;
 
 statepath: fn(create: int): string;
 readfile: fn(path: string): string;
@@ -49,6 +51,8 @@ applykv: fn(state: ref IcState->AppState, key, value: string);
 currentitem: fn(p: ref IcState->PanelState): string;
 selectitem: fn(state: ref IcState->AppState, p: ref IcState->PanelState, name: string): int;
 panelactivevalue: fn(state: ref IcState->AppState): string;
+themevalue: fn(state: ref IcState->AppState): string;
+readthemefromstate: fn(): string;
 validdir: fn(path: string): int;
 
 init()
@@ -70,6 +74,7 @@ init()
 
 	savedleftitem = "";
 	savedrightitem = "";
+	savedtheme = DefaultThemeName;
 }
 
 statepath(create: int): string
@@ -189,6 +194,13 @@ applykv(state: ref IcState->AppState, key, value: string)
 	if(state == nil)
 		return;
 
+	if(key == "theme"){
+		savedtheme = value;
+		if(state.cfg != nil)
+			state.cfg.theme = value;
+		return;
+	}
+
 	if(key == "activepanel"){
 		if(value == "right")
 			state.activepanel = IcState->PanelRight;
@@ -231,6 +243,9 @@ loadstate(state: ref IcState->AppState): int
 
 	if(state == nil)
 		return -1;
+
+	if(state.cfg != nil && state.cfg.theme != "")
+		savedtheme = state.cfg.theme;
 
 	if(!userdir->enabled())
 		return 0;
@@ -310,6 +325,52 @@ panelactivevalue(state: ref IcState->AppState): string
 	return "left";
 }
 
+readthemefromstate(): string
+{
+	path, text, line, key, value: string;
+	i, start, ok: int;
+
+	path = statepath(0);
+	if(path == "")
+		return "";
+
+	text = readfile(path);
+	if(text == "")
+		return "";
+
+	start = 0;
+	for(i = 0; i <= len text; i++){
+		if(i < len text && text[i] != '\n')
+			continue;
+
+		line = text[start:i];
+		start = i + 1;
+
+		(key, value, ok) = splitkv(line);
+		if(ok && key == "theme")
+			return value;
+	}
+
+	return "";
+}
+
+themevalue(state: ref IcState->AppState): string
+{
+	filetheme: string;
+
+	filetheme = readthemefromstate();
+	if(filetheme != "")
+		return filetheme;
+
+	if(state != nil && state.cfg != nil && state.cfg.theme != "")
+		return state.cfg.theme;
+
+	if(savedtheme != "")
+		return savedtheme;
+
+	return DefaultThemeName;
+}
+
 save(state: ref IcState->AppState): int
 {
 	path, text, leftitem, rightitem: string;
@@ -328,6 +389,7 @@ save(state: ref IcState->AppState): int
 	rightitem = currentitem(state.right);
 
 	text = "";
+	text += "theme=" + themevalue(state) + "\n";
 	text += "activepanel=" + panelactivevalue(state) + "\n";
 
 	if(state.left != nil){

@@ -31,6 +31,9 @@ IcTheme: module
 
 	init: fn(ci: Icurses->ConsInfo);
 
+	reset: fn();
+	setcode: fn(attr: int, code: string): int;
+
 	sgr: fn(attr: int): string;
 
 	colors: fn(): int;

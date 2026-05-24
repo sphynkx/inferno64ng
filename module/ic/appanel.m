@@ -6,6 +6,8 @@ IcAppPanel: module
 	PATH: con "/dis/ic/appanel.dis";
 
 	init: fn();
+	reloadtheme: fn(): int;
+
 	newpanel: fn(side: int): ref IcState->PanelState;
 	build: fn(state: ref IcState->AppState, p: ref IcState->PanelState, rect: IcLayout->Rect): int;
 	refresh: fn(state: ref IcState->AppState, p: ref IcState->PanelState): int;

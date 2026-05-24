@@ -21,6 +21,12 @@ ParentKind: con "parent";
 PanelCmdSelect: con "panel.select";
 PanelCmdActivate: con "panel.activate";
 
+windowcode: fn(p: ref IcPanel->Panel): string;
+focuscode: fn(p: ref IcPanel->Panel): string;
+titlecode: fn(p: ref IcPanel->Panel): string;
+framecode: fn(p: ref IcPanel->Panel): string;
+markedfocuscode: fn(p: ref IcPanel->Panel): string;
+
 setlabel: fn(u: ref IcUi->Ui, id, x, y, w: int, text, code: string);
 finditem: fn(m: ref IcPanel->Model, itemid: int): int;
 getitem: fn(m: ref IcPanel->Model, itemid: int): IcPanel->Item;
@@ -118,12 +124,60 @@ init()
 	glyph->init(ci);
 	theme->init(ci);
 
+	reloadtheme();
+}
+
+reloadtheme()
+{
+	if(theme == nil)
+		return;
+
 	CodeWindow = theme->sgr(IcTheme->AttrWindow);
 	CodeFocus = theme->sgr(IcTheme->AttrFocus);
 	CodeTitle = theme->sgr(IcTheme->AttrTitle);
 	CodeFrame = theme->sgr(IcTheme->AttrFrame);
 	CodeMarked = theme->sgr(IcTheme->AttrMarked);
 	CodeMarkedFocus = theme->sgr(IcTheme->AttrMarkedFocus);
+}
+
+windowcode(p: ref IcPanel->Panel): string
+{
+	if(p != nil && p.opts.windowcode != "")
+		return p.opts.windowcode;
+
+	return CodeWindow;
+}
+
+focuscode(p: ref IcPanel->Panel): string
+{
+	if(p != nil && p.opts.focuscode != "")
+		return p.opts.focuscode;
+
+	return CodeFocus;
+}
+
+titlecode(p: ref IcPanel->Panel): string
+{
+	if(p != nil && p.opts.titlecode != "")
+		return p.opts.titlecode;
+
+	return CodeTitle;
+}
+
+framecode(p: ref IcPanel->Panel): string
+{
+	if(p != nil && p.opts.framecode != "")
+		return p.opts.framecode;
+
+	return CodeFrame;
+}
+
+markedfocuscode(p: ref IcPanel->Panel): string
+{
+	if(p != nil && p.opts.markedfocuscode != "")
+		return p.opts.markedfocuscode;
+
+	return CodeMarkedFocus;
 }
 
 spaces(n: int): string
@@ -212,7 +266,7 @@ linecode(p: ref IcPanel->Panel, l: IcPanel->Line, leftidx, rightidx, row: int): 
 	rightidx = rightidx;
 
 	if(p == nil || l.itemid < 0)
-		return CodeWindow;
+		return windowcode(p);
 
 	marked = (l.flags & IcPanel->FlagMarked) != 0;
 
@@ -220,21 +274,21 @@ linecode(p: ref IcPanel->Panel, l: IcPanel->Line, leftidx, rightidx, row: int): 
 		if(marked)
 			return markcode(p);
 
-		return CodeWindow;
+		return windowcode(p);
 	}
 
 	if(p.opts.mode != IcPanel->ModeBrief2Col || p.opts.columncount < 2){
 		if(marked){
 			if(p.active)
-				return CodeMarkedFocus;
+				return markedfocuscode(p);
 
 			return markcode(p);
 		}
 
 		if(p.active)
-			return CodeFocus;
+			return focuscode(p);
 
-		return CodeTitle;
+		return titlecode(p);
 	}
 
 	rows = visiblebodyrows(p);
@@ -244,22 +298,22 @@ linecode(p: ref IcPanel->Panel, l: IcPanel->Line, leftidx, rightidx, row: int): 
 	if(cur < 0 || rows <= 0 || cols < 2){
 		if(marked){
 			if(p.active)
-				return CodeMarkedFocus;
+				return markedfocuscode(p);
 
 			return markcode(p);
 		}
 
 		if(p.active)
-			return CodeFocus;
+			return focuscode(p);
 
-		return CodeTitle;
+		return titlecode(p);
 	}
 
 	if(cur < p.top || cur >= p.top + visiblecapacity(p)){
 		if(marked)
 			return markcode(p);
 
-		return CodeWindow;
+		return windowcode(p);
 	}
 
 	if(cur < p.top + rows){
@@ -267,28 +321,28 @@ linecode(p: ref IcPanel->Panel, l: IcPanel->Line, leftidx, rightidx, row: int): 
 			if(marked)
 				return markcode(p);
 
-			return CodeWindow;
+			return windowcode(p);
 		}
 	}else{
 		if(cur - (p.top + rows) != row){
 			if(marked)
 				return markcode(p);
 
-			return CodeWindow;
+			return windowcode(p);
 		}
 	}
 
 	if(marked){
 		if(p.active)
-			return CodeMarkedFocus;
+			return markedfocuscode(p);
 
 		return markcode(p);
 	}
 
 	if(p.active)
-		return CodeFocus;
+		return focuscode(p);
 
-	return CodeTitle;
+	return titlecode(p);
 }
 
 defaultopts(): IcPanel->Options
@@ -321,7 +375,13 @@ defaultopts(): IcPanel->Options
 	o.customfields = array[0] of string;
 
 	o.namefit = IcPanel->NameFitMiddle;
+
+	o.windowcode = "";
+	o.focuscode = "";
+	o.titlecode = "";
+	o.framecode = "";
 	o.markedcode = "";
+	o.markedfocuscode = "";
 
 	o.mouseenabled = 0;
 	o.wrapnav = 0;
@@ -1291,7 +1351,7 @@ render(u: ref IcUi->Ui, p: ref IcPanel->Panel): int
 	n = view->find(u.tree, p.titleid);
 	if(n != nil){
 		view->settext(n, p.title);
-		view->setcode(n, CodeTitle);
+		view->setcode(n, titlecode(p));
 	}
 
 	n = view->find(u.tree, p.commandbarid);
@@ -1301,7 +1361,7 @@ render(u: ref IcUi->Ui, p: ref IcPanel->Panel): int
 		else
 			view->hide(n);
 		view->settext(n, p.commandbar);
-		view->setcode(n, CodeWindow);
+		view->setcode(n, windowcode(p));
 	}
 
 	n = view->find(u.tree, p.infobarid);
@@ -1311,7 +1371,7 @@ render(u: ref IcUi->Ui, p: ref IcPanel->Panel): int
 		else
 			view->hide(n);
 		view->settext(n, p.info);
-		view->setcode(n, CodeWindow);
+		view->setcode(n, windowcode(p));
 	}
 
 	sep = rowseparator(p);
@@ -1342,16 +1402,16 @@ render(u: ref IcUi->Ui, p: ref IcPanel->Panel): int
 			if(rightline.itemid >= 0)
 				righttext = fittext(rightline.text, colw, p.opts.namefit);
 
-			leftcode = CodeWindow;
+			leftcode = windowcode(p);
 			if(leftline.itemid >= 0)
 				leftcode = linecode(p, leftline, leftidx, rightidx, i);
 
-			rightcode = CodeWindow;
+			rightcode = windowcode(p);
 			if(rightline.itemid >= 0)
 				rightcode = linecode(p, rightline, leftidx, rightidx, i);
 
 			setlabel(u, p.leftids[i], 0, i, colw, lefttext, leftcode);
-			setlabel(u, p.separators[i], colw, i, 1, sep, CodeFrame);
+			setlabel(u, p.separators[i], colw, i, 1, sep, framecode(p));
 			setlabel(u, p.rightids[i], colw + 1, i, colw, righttext, rightcode);
 		}
 	}else{
@@ -1369,7 +1429,7 @@ render(u: ref IcUi->Ui, p: ref IcPanel->Panel): int
 			if(leftline.itemid >= 0)
 				lefttext = fittext(leftline.text, bodyw, p.opts.namefit);
 
-			leftcode = CodeWindow;
+			leftcode = windowcode(p);
 			if(leftline.itemid >= 0)
 				leftcode = linecode(p, leftline, leftidx, -1, i);
 

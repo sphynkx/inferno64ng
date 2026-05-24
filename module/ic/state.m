@@ -17,6 +17,8 @@ IcState: module
 		userdir: string;
 		userenabled: int;
 
+		theme: string;
+
 		themefile: string;
 		keysfile: string;
 		layoutfile: string;
@@ -32,6 +34,16 @@ IcState: module
 	{
 		frame: int;
 		panelshadow: int;
+
+		paneltopcode: string;
+		panelbodycode: string;
+		panelfocuscode: string;
+		paneltitlecode: string;
+		panelmarkedcode: string;
+		panelmarkedfocuscode: string;
+
+		menuwindowcode: string;
+		menufocuscode: string;
 
 		modalanimticks: int;
 
