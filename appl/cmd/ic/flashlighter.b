@@ -29,12 +29,12 @@ ConfigSection: con "flashlighter";
 DefaultIdleTicks: con 300;
 DefaultShadowPercent: con 35;
 
-DefaultBeamCount: con 3;
+DefaultBeamCount: con 2;
 
 DefaultRadiusMin: con 20;
 DefaultRadiusMax: con 24;
 DefaultRadiusYPercentMin: con 45;
-DefaultRadiusYPercentMax: con 65;
+DefaultRadiusYPercentMax: con 140;
 
 DefaultSpeedMin: con 4;
 DefaultSpeedMax: con 7;
@@ -46,8 +46,8 @@ DefaultPreferredAngleMin: con 25;
 DefaultPreferredAngleMax: con 65;
 DefaultPreferredAnglePercent: con 76;
 
-DefaultCurveMinAmpPercent: con 18;
-DefaultCurveMaxAmpPercent: con 42;
+DefaultCurveMinAmpPercent: con 26;
+DefaultCurveMaxAmpPercent: con 60;
 
 DefaultShadowCode: con "38;2;80;80;80;48;2;0;0;0";
 
@@ -73,13 +73,15 @@ abs: fn(v: int): int;
 sig: fn(ch, code: string): int;
 mkpaintcell: fn(ch, code: string): IcPaint->Cell;
 
+mixseed: fn(s: ref IcState->ScreenSaverState, v: int);
+seedfromscreen: fn(state: ref IcState->AppState): int;
 nextseed: fn(s: ref IcState->ScreenSaverState): int;
 randrange: fn(s: ref IcState->ScreenSaverState, lo, hi: int): int;
 
 snapshot: fn(state: ref IcState->AppState): int;
-initbeams: fn(s: ref IcState->ScreenSaverState);
-makebeam: fn(s: ref IcState->ScreenSaverState, delaymax: int): IcState->ScreenBeam;
-movebeam: fn(s: ref IcState->ScreenSaverState, b: IcState->ScreenBeam): IcState->ScreenBeam;
+initbeams: fn(state: ref IcState->AppState);
+makebeam: fn(state: ref IcState->AppState, delaymax, index: int): IcState->ScreenBeam;
+movebeam: fn(state: ref IcState->AppState, b: IcState->ScreenBeam, index: int): IcState->ScreenBeam;
 drawrenderer: fn(state: ref IcState->AppState): int;
 
 token: fn(s: string, start: int): (string, int, int);
@@ -268,6 +270,42 @@ mkpaintcell(ch, code: string): IcPaint->Cell
 	c.sig = sig(ch, code);
 
 	return c;
+}
+
+mixseed(s: ref IcState->ScreenSaverState, v: int)
+{
+	if(s == nil)
+		return;
+
+	if(v < 0)
+		v = -v;
+
+	s.seed = ((s.seed * 257) ^ (v + 17)) + SeedAdd;
+	if(s.seed < 0)
+		s.seed = -s.seed;
+}
+
+seedfromscreen(state: ref IcState->AppState): int
+{
+	r: ref IcPaint->Renderer;
+	n, a, b, c: int;
+
+	if(state == nil || state.ui == nil || state.ui.renderer == nil)
+		return 0;
+
+	r = state.ui.renderer;
+	if(r.front == nil)
+		return 0;
+
+	n = len r.front;
+	if(n <= 0)
+		return 0;
+
+	a = sig(r.front[0].ch, r.front[0].code);
+	b = sig(r.front[n / 2].ch, r.front[n / 2].code);
+	c = sig(r.front[n - 1].ch, r.front[n - 1].code);
+
+	return a ^ (b * 3) ^ (c * 7) ^ (state.width * 97) ^ (state.height * 131) ^ (state.ui.ticks * 17);
 }
 
 nextseed(s: ref IcState->ScreenSaverState): int
@@ -508,10 +546,6 @@ choosevector(s: ref IcState->ScreenSaverState, angle: int): (int, int)
 
 	angle = clamp(angle, 0, 90);
 
-	#
-	# Integer vector approximation for angle ranges.
-	# It avoids floating point and keeps movement varied.
-	#
 	if(angle < 10){
 		dx = speed;
 		dy = 0;
@@ -560,10 +594,13 @@ choosevector(s: ref IcState->ScreenSaverState, angle: int): (int, int)
 	return (dx * sx, dy * sy);
 }
 
-makebeam(s: ref IcState->ScreenSaverState, delaymax: int): IcState->ScreenBeam
+makebeam(state: ref IcState->AppState, delaymax, index: int): IcState->ScreenBeam
 {
+	s: ref IcState->ScreenSaverState;
 	b: IcState->ScreenBeam;
 	angle, ampbase, amp, marginx, marginy, targetx, targety: int;
+
+	s = state.screensaver;
 
 	b.active = 1;
 	b.delay = 0;
@@ -579,8 +616,8 @@ makebeam(s: ref IcState->ScreenSaverState, delaymax: int): IcState->ScreenBeam
 	if(b.rx < 1)
 		b.rx = 1;
 
-	if(b.ry > s.h / 4)
-		b.ry = s.h / 4;
+	if(b.ry > s.h / 3)
+		b.ry = s.h / 3;
 	if(b.ry < 3)
 		b.ry = 3;
 
@@ -620,18 +657,25 @@ makebeam(s: ref IcState->ScreenSaverState, delaymax: int): IcState->ScreenBeam
 	if(amp < 1)
 		amp = 1;
 
+	if(abs(b.dx) > abs(b.dy) * 2)
+		amp = (amp * 3) / 2;
+
 	if(randrange(s, 0, 1) == 0)
 		amp = -amp;
 
 	b.curveamp = amp;
 
+	mixseed(s, index * 97 + b.rx * 13 + b.ry * 29 + angle * 7 + b.life);
+
 	return b;
 }
 
-initbeams(s: ref IcState->ScreenSaverState)
+initbeams(state: ref IcState->AppState)
 {
+	s: ref IcState->ScreenSaverState;
 	i, delaymax: int;
 
+	s = state.screensaver;
 	if(s == nil)
 		return;
 
@@ -642,7 +686,7 @@ initbeams(s: ref IcState->ScreenSaverState)
 		delaymax = 1;
 
 	for(i = 0; i < len s.beams; i++)
-		s.beams[i] = makebeam(s, delaymax);
+		s.beams[i] = makebeam(state, delaymax, i);
 }
 
 parabolaoffset(b: IcState->ScreenBeam): int
@@ -665,12 +709,12 @@ parabolaoffset(b: IcState->ScreenBeam): int
 	return (amp * 4 * x * (CurveScale - x)) / (CurveScale * CurveScale);
 }
 
-movebeam(s: ref IcState->ScreenSaverState, b: IcState->ScreenBeam): IcState->ScreenBeam
+movebeam(state: ref IcState->AppState, b: IcState->ScreenBeam, index: int): IcState->ScreenBeam
 {
+	s: ref IcState->ScreenSaverState;
 	offset, oldoffset, marginx, marginy: int;
 
-	if(s == nil)
-		return b;
+	s = state.screensaver;
 
 	if(b.delay > 0){
 		b.delay--;
@@ -678,7 +722,7 @@ movebeam(s: ref IcState->ScreenSaverState, b: IcState->ScreenBeam): IcState->Scr
 	}
 
 	if(b.life <= 0)
-		return makebeam(s, s.lifemin / 3);
+		return makebeam(state, s.lifemin / 3, index);
 
 	oldoffset = parabolaoffset(b);
 
@@ -860,9 +904,16 @@ start(state: ref IcState->AppState): int
 	if(snapshot(state) < 0)
 		return -1;
 
-	s.seed = SeedBase + state.width * 97 + state.height * 131 + s.idleticks * 17;
+	s.seed = SeedBase
+		+ state.width * 97
+		+ state.height * 131
+		+ s.idleticks * 17
+		+ seedfromscreen(state);
 
-	initbeams(s);
+	mixseed(s, state.ui.ticks);
+	mixseed(s, len s.snapshot);
+
+	initbeams(state);
 
 	s.active = 1;
 
@@ -895,8 +946,10 @@ handletick(state: ref IcState->AppState): int
 	if(!s.active)
 		return 0;
 
+	mixseed(s, state.ui.ticks);
+
 	for(i = 0; i < len s.beams; i++)
-		s.beams[i] = movebeam(s, s.beams[i]);
+		s.beams[i] = movebeam(state, s.beams[i], i);
 
 	drawrenderer(state);
 	return 1;

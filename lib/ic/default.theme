@@ -102,7 +102,7 @@ name=flashlighter
 
 # Idle timeout in UI ticks before screensaver starts.
 # 0 disables screensaver without changing "enabled".
-idle_ticks=30
+idle_ticks=300
 
 [flashlighter]
 
