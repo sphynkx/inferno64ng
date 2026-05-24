@@ -117,6 +117,19 @@ IcScreenMod: module
 	redraw: fn(state: ref IcState->AppState): int;
 };
 
+IcScreenSaver: module
+{
+	PATH: con "/dis/ic/screensaver.dis";
+
+	init: fn();
+
+	newstate: fn(cfg: ref IcState->ConfigState): ref IcState->ScreenSaverState;
+	active: fn(state: ref IcState->AppState): int;
+	stop: fn(state: ref IcState->AppState): int;
+	resetidle: fn(state: ref IcState->AppState);
+	handletick: fn(state: ref IcState->AppState): int;
+};
+
 sys: Sys;
 commands: IcCommands;
 appanel: IcAppPanel;
@@ -129,6 +142,7 @@ topbar: IcTopBar;
 viewer: IcViewerMod;
 editor: IcEditorMod;
 screen: IcScreenMod;
+screensaver: IcScreenSaver;
 
 CtrlO: con 15;
 TabKey: con 9;
@@ -199,6 +213,10 @@ init()
 	if(screen == nil)
 		raise "fail:load ic/screen";
 
+	screensaver = load IcScreenSaver IcScreenSaver->PATH;
+	if(screensaver == nil)
+		raise "fail:load ic/screensaver";
+
 	commands->init();
 	appanel->init();
 	copycmd->init();
@@ -210,6 +228,7 @@ init()
 	viewer->init();
 	editor->init();
 	screen->init();
+	screensaver->init();
 }
 
 flashfkey(state: ref IcState->AppState, fkey: int)
@@ -256,6 +275,17 @@ handlekey(state: ref IcState->AppState, k: int): int
 
 	if(state == nil)
 		return -1;
+
+	if(state.screensaver == nil)
+		state.screensaver = screensaver->newstate(state.cfg);
+
+	if(screensaver->active(state)){
+		screensaver->stop(state);
+		screen->rebuild(state);
+		return 0;
+	}
+
+	screensaver->resetidle(state);
 
 	if(editor->active(state)){
 		r = editor->handlekey(state, k);
@@ -359,7 +389,16 @@ handletick(state: ref IcState->AppState): int
 	if(state == nil)
 		return 0;
 
+	if(state.screensaver == nil)
+		state.screensaver = screensaver->newstate(state.cfg);
+
 	redraw = 0;
+
+	if(screensaver->handletick(state))
+		redraw = 1;
+
+	if(screensaver->active(state))
+		return redraw;
 
 	if(editor->active(state)){
 		if(editor->handletick(state)){

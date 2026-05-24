@@ -17,6 +17,7 @@ TARG=\
 	editor.dis\
 	editsearchrun.dis\
 	editsource.dis\
+	flashlighter.dis\
 	fsmodel.dis\
 	ic.dis\
 	icedit.dis\
@@ -28,6 +29,7 @@ TARG=\
 	panelinfo.dis\
 	search.dis\
 	screen.dis\
+	screensaver.dis\
 	theme.dis\
 	topbar.dis\
 	topmenu.dis\
@@ -63,6 +65,7 @@ SYSMODULES=\
 	ic/editor.m\
 	ic/editsearchrun.m\
 	ic/editsource.m\
+	ic/flashlighter.m\
 	ic/fsmodel.m\
 	ic/input.m\
 	ic/layout.m\
@@ -70,6 +73,7 @@ SYSMODULES=\
 	ic/mkdircmd.m\
 	ic/panelinfo.m\
 	ic/screen.m\
+	ic/screensaver.m\
 	ic/search.m\
 	ic/state.m\
 	ic/theme.m\

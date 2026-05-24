@@ -312,6 +312,90 @@ IcState: module
 		activewait: int;
 	};
 
+	ScreenCell: adt
+	{
+		ch: string;
+		code: string;
+	};
+
+	ScreenBeam: adt
+	{
+		active: int;
+
+		x: int;
+		y: int;
+		startx: int;
+		starty: int;
+		dx: int;
+		dy: int;
+
+		rx: int;
+		ry: int;
+
+		life: int;
+		pathlife: int;
+
+		curveaxis: int;
+		curveamp: int;
+
+		delay: int;
+	};
+
+	ScreenSaverState: adt
+	{
+		active: int;
+		idleticks: int;
+
+		canvasid: int;
+		w: int;
+		h: int;
+
+		snapshot: array of ScreenCell;
+		shadow: array of ScreenCell;
+
+		beams: array of ScreenBeam;
+
+		seed: int;
+
+		x: int;
+		y: int;
+		dx: int;
+		dy: int;
+		rx: int;
+		ry: int;
+		life: int;
+
+		pathkind: int;
+		pathlife: int;
+		curveamp: int;
+
+		enabled: int;
+		idlelimit: int;
+		shadowpercent: int;
+
+		beamcount: int;
+
+		radiusmin: int;
+		radiusmax: int;
+		radiusypercentmin: int;
+		radiusypercentmax: int;
+
+		speedmin: int;
+		speedmax: int;
+
+		lifemin: int;
+		lifemax: int;
+
+		preferredanglemin: int;
+		preferredanglemax: int;
+		preferredanglepercent: int;
+
+		curveminamppercent: int;
+		curvemaxamppercent: int;
+
+		shadowcode: string;
+	};
+
 	AppState: adt
 	{
 		running: int;
@@ -344,6 +428,7 @@ IcState: module
 		editor: ref EditorState;
 
 		modal: ref ModalState;
+		screensaver: ref ScreenSaverState;
 		copy: ref CopyState;
 		delete: ref DeleteState;
 		mkdir: ref MkdirState;

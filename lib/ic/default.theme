@@ -89,3 +89,66 @@ command_bar_code=1;38;2;20;25;30;48;2;170;225;255
 command_bar_active_code=1;38;2;255;120;210;48;2;170;225;255
 command_bar_disabled_code=38;2;120;120;120;48;2;170;225;255
 command_line_code=38;2;220;230;255;48;2;20;45;90
+
+
+[screensaver]
+
+# Master switch for screensaver system.
+# 0 disables screensaver completely.
+enabled=1
+
+# Active screensaver implementation name.
+name=flashlighter
+
+# Idle timeout in UI ticks before screensaver starts.
+# 0 disables screensaver without changing "enabled".
+idle_ticks=30
+
+[flashlighter]
+
+# Number of simultaneous light spots.
+# Recommended values: 1..3
+beam_count=2
+
+# Minimum and maximum horizontal radius of a light spot, in terminal cells.
+radius_min=20
+radius_max=24
+
+# Vertical radius as percent of horizontal radius.
+# 100 means a circle.
+# Less than 100 makes horizontally stretched ellipses.
+# Greater than 100 allows vertically stretched ellipses.
+radius_y_percent_min=95
+radius_y_percent_max=125
+
+# Minimum and maximum beam movement speed per tick.
+speed_min=4
+speed_max=7
+
+# Minimum and maximum beam lifetime in ticks.
+# Larger values give longer, smoother trajectories.
+beam_life_min=70
+beam_life_max=160
+
+# Preferred angle range for movement, in degrees.
+# 0 means horizontal, 90 means vertical.
+# Values around 25..65 favor natural diagonal motion.
+preferred_angle_min=15
+preferred_angle_max=45
+
+# Probability in percent to choose angle from preferred range.
+# Remaining probability uses the full 0..90 range.
+preferred_angle_percent=76
+
+# Parabola bend amplitude as percent of beam radius.
+# Higher values produce stronger curved trajectories.
+curve_min_amp_percent=18
+curve_max_amp_percent=42
+
+# Darkness of the shadowed background around the beam.
+# Lower value means darker shadow.
+shadow_percent=35
+
+# Fallback SGR code used for deep shadow if source cell code
+# cannot be darkened analytically.
+shadow_code=38;2;80;80;80;48;2;0;0;0

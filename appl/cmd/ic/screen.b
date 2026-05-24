@@ -77,6 +77,16 @@ IcEditorMod: module
 	build: fn(state: ref IcState->AppState, parentid, w, h: int): int;
 };
 
+IcScreenSaver: module
+{
+	PATH: con "/dis/ic/screensaver.dis";
+
+	init: fn();
+
+	active: fn(state: ref IcState->AppState): int;
+	build: fn(state: ref IcState->AppState): int;
+};
+
 ui: IcUiMod;
 view: IcViewMod;
 layout: IcLayoutMod;
@@ -85,6 +95,7 @@ topbar: IcTopBarMod;
 bottombar: IcBottomBarMod;
 viewer: IcViewerMod;
 editor: IcEditorMod;
+screensaver: IcScreenSaver;
 
 ensurelayer: fn(state: ref IcState->AppState, id: int): int;
 showpanelnode: fn(state: ref IcState->AppState, p: ref IcState->PanelState);
@@ -124,6 +135,10 @@ init()
 	if(editor == nil)
 		raise "fail:load ic/editor";
 
+	screensaver = load IcScreenSaver IcScreenSaver->PATH;
+	if(screensaver == nil)
+		raise "fail:load ic/screensaver";
+
 	ui->init();
 	view->init();
 	layout->init();
@@ -132,6 +147,7 @@ init()
 	bottombar->init();
 	viewer->init();
 	editor->init();
+	screensaver->init();
 }
 
 ensurelayer(state: ref IcState->AppState, id: int): int
@@ -205,6 +221,14 @@ build(state: ref IcState->AppState): int
 	ensurelayer(state, state.mainid);
 	ensurelayer(state, state.modalid);
 
+	if(screensaver->active(state)){
+		view->hide(view->find(state.ui.tree, state.toolid));
+		view->hide(view->find(state.ui.tree, state.mainid));
+		view->hide(view->find(state.ui.tree, state.modalid));
+		view->show(view->find(state.ui.tree, state.screensaverid));
+		return screensaver->build(state);
+	}
+
 	view->hide(view->find(state.ui.tree, state.screensaverid));
 	view->hide(view->find(state.ui.tree, state.toolid));
 	view->hide(view->find(state.ui.tree, state.modalid));
@@ -256,6 +280,9 @@ redraw(state: ref IcState->AppState): int
 {
 	if(state == nil || state.ui == nil)
 		return -1;
+
+	if(screensaver != nil && screensaver->active(state))
+		return screensaver->build(state);
 
 	ui->draw(state.ui);
 	return 0;
