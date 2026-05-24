@@ -1,10 +1,11 @@
 include "ic/state.m";
 
-IcFlashlighter: module
+IcScreenSaverPlugin: module
 {
-	PATH: con "/dis/ic/flashlighter.dis";
-
 	init: fn();
+
+	name: fn(): string;
+	title: fn(): string;
 
 	newstate: fn(cfg: ref IcState->ConfigState): ref IcState->ScreenSaverState;
 

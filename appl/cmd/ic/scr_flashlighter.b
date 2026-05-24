@@ -1,6 +1,6 @@
-implement IcFlashlighter;
+implement IcScreenSaverPlugin;
 
-include "ic/flashlighter.m";
+include "ic/scr.m";
 
 IcConfigData: module
 {
@@ -110,6 +110,16 @@ init()
 
 	paint->init();
 	cfgdata->init();
+}
+
+name(): string
+{
+	return "flashlighter";
+}
+
+title(): string
+{
+	return "Flashlighter";
 }
 
 newstate(cfg: ref IcState->ConfigState): ref IcState->ScreenSaverState

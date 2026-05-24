@@ -98,7 +98,8 @@ command_line_code=38;2;220;230;255;48;2;20;45;90
 enabled=1
 
 # Active screensaver implementation name.
-name=flashlighter
+##name=flashlighter
+name=matrix
 
 # Idle timeout in UI ticks before screensaver starts.
 # 0 disables screensaver without changing "enabled".
@@ -152,3 +153,45 @@ shadow_percent=35
 # Fallback SGR code used for deep shadow if source cell code
 # cannot be darkened analytically.
 shadow_code=38;2;80;80;80;48;2;0;0;0
+
+[matrix]
+
+# Charset selection:
+# auto    - use unicode chars only when terminal reports usable UTF-8.
+# ascii   - force ASCII-safe charset.
+# unicode - force Matrix-like Unicode charset.
+charset=auto
+
+# ASCII-safe character set.
+ascii_chars=0123456789+=&%$?#ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz
+
+# Unicode Matrix-like character set.
+unicode_chars=モエヤキオカ7ケサスz152ヨタワ4ネヌナ98ヒ0ホア3ウ セ¦:"꞊ミラリ╌ツテニハソ▪—<>0|+*コシマムメ
+
+# Background left behind stream tails.
+background_code=0;30;40
+
+# Stream brightness SGR codes.
+head_code=38;2;220;255;220;40
+bright_code=38;2;100;255;140;40
+mid_code=38;2;0;190;70;40
+dim_code=38;2;0;100;35;40
+tail_code=38;2;0;40;15;40
+
+# Number of independent falling streams.
+stream_count=32
+
+# Minimum and maximum stream tail length, in terminal rows.
+tail_min=6
+tail_max=22
+
+# Minimum and maximum per-stream delay, in UI ticks.
+# Smaller values make streams faster.
+delay_min_ticks=1
+delay_max_ticks=5
+
+# Initial stream head depth above the top edge.
+start_depth_max=12
+
+# Chance in percent that a stream moves two rows on one update.
+step_chance_percent=25

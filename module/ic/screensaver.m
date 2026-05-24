@@ -6,6 +6,9 @@ IcScreenSaver: module
 
 	init: fn();
 
+	available: fn(): array of string;
+	titleof: fn(name: string): string;
+
 	newstate: fn(cfg: ref IcState->ConfigState): ref IcState->ScreenSaverState;
 
 	active: fn(state: ref IcState->AppState): int;
