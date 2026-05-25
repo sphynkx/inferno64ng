@@ -213,8 +213,9 @@ date_code=38;2;110;210;80;40
 # unicode - force unicode_segment_char.
 # ascii   - force ascii_segment_char.
 # Any other non-empty value is used as the segment character directly.
-#segment_char=auto
-segment_char=unicode
+#
+segment_char=auto
+#segment_char=unicode
 
 unicode_segment_char=█
 ascii_segment_char=#

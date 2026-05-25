@@ -81,7 +81,7 @@ drawrenderer: fn(state: ref IcState->AppState): int;
 clockw: fn(): int;
 clockh: fn(): int;
 initmotion: fn(state: ref IcState->AppState);
-movecanvas: fn(state: ref IcState->AppState);
+movecanvas: fn(state: ref IcState->AppState): int;
 
 clearclockrect: fn(s: ref IcState->ScreenSaverState, x, y: int);
 
@@ -410,19 +410,19 @@ initmotion(state: ref IcState->AppState)
 	s.life = 0;
 }
 
-movecanvas(state: ref IcState->AppState)
+movecanvas(state: ref IcState->AppState): int
 {
 	s: ref IcState->ScreenSaverState;
 	maxx, maxy: int;
 
 	if(state == nil || state.screensaver == nil)
-		return;
+		return 0;
 
 	s = state.screensaver;
 
 	s.life++;
 	if(s.life < movedelay)
-		return;
+		return 0;
 
 	s.life = 0;
 
@@ -456,6 +456,8 @@ movecanvas(state: ref IcState->AppState)
 		s.y = maxy;
 		s.dy = -1;
 	}
+
+	return 1;
 }
 
 clearclockrect(s: ref IcState->ScreenSaverState, x, y: int)
@@ -852,7 +854,7 @@ stop(state: ref IcState->AppState): int
 handletick(state: ref IcState->AppState): int
 {
 	s: ref IcState->ScreenSaverState;
-	oldx, oldy: int;
+	oldx, oldy, moved: int;
 
 	if(state == nil || state.screensaver == nil)
 		return 0;
@@ -869,9 +871,13 @@ handletick(state: ref IcState->AppState): int
 	oldx = s.x;
 	oldy = s.y;
 
-	movecanvas(state);
+	moved = movecanvas(state);
 
-	clearclockrect(s, oldx, oldy);
+	if(moved)
+		clearclockrect(s, oldx, oldy);
+	else
+		clearclockrect(s, s.x, s.y);
+
 	drawclockat(s, s.x, s.y);
 
 	drawrenderer(state);
