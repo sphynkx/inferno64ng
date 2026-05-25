@@ -99,11 +99,12 @@ enabled=1
 
 # Active screensaver implementation name.
 ##name=flashlighter
-name=matrix
+##name=matrix
+name=clock
 
 # Idle timeout in UI ticks before screensaver starts.
 # 0 disables screensaver without changing "enabled".
-idle_ticks=300
+idle_ticks=30
 
 [flashlighter]
 
@@ -195,3 +196,35 @@ start_depth_max=12
 
 # Chance in percent that a stream moves two rows on one update.
 step_chance_percent=25
+
+[clock]
+
+# Background used by the clock screensaver.
+background_code=0;30;40
+
+# Segment color for large digital digits.
+segment_code=1;38;2;0;255;0;40
+
+# Date line color.
+date_code=38;2;110;210;80;40
+
+# Segment character policy:
+# auto    - Unicode block when terminal is suitable, ASCII otherwise.
+# unicode - force unicode_segment_char.
+# ascii   - force ascii_segment_char.
+# Any other non-empty value is used as the segment character directly.
+#segment_char=auto
+segment_char=unicode
+
+unicode_segment_char=█
+ascii_segment_char=#
+blank_char= 
+
+# Show simple date line under clock.
+show_date=1
+
+# Movement tuning.
+# move_delay_ticks controls how often position changes.
+# move_step controls distance per movement update.
+move_delay_ticks=3
+move_step=1

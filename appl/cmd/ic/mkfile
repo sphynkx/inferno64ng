@@ -26,6 +26,7 @@ TARG=\
 	mkdircmd.dis\
 	modal.dis\
 	panelinfo.dis\
+	scr_clock.dis\
 	scr_flashlighter.dis\
 	scr_matrix.dis\
 	search.dis\
