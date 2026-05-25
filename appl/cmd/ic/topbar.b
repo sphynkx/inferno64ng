@@ -7,7 +7,7 @@ IcUiMod: module
 	PATH: con "/dis/lib/icurses/ui.dis";
 
 	init: fn();
-	group: fn(u: ref IcUi->Ui, parentid, id: int, x, y, w, h: int): int;
+	node: fn(u: ref IcUi->Ui, parentid, id: int, kind: string, x, y, w, h: int): int;
 	label: fn(u: ref IcUi->Ui, parentid, id: int, x, y, w: int, text: string): int;
 };
 
@@ -30,18 +30,39 @@ ui: IcUiMod;
 view: IcViewMod;
 
 MenuCount: con 5;
+OptionItemCount: con 1;
 
 Kesc: con 27;
 Kenter: con 10;
 Kreturn: con 13;
+Kup: con 57362;
+Kdown: con 57363;
 Kleft: con 57364;
 Kright: con 57365;
 
 DefaultBaseCode: con "1;38;2;20;25;30;48;2;210;235;255";
 DefaultFocusCode: con "1;38;2;0;0;0;48;2;170;225;255";
 
+submenuactive: int;
+submenushadowid: int;
+submenubgid: int;
+submenuitemids: array of int;
+submenuindex: int;
+
 basecode: fn(state: ref IcState->AppState): string;
 focuscode: fn(state: ref IcState->AppState): string;
+spaces: fn(n: int): string;
+fittext: fn(s: string, w: int): string;
+itemtext: fn(i: int): string;
+submenuitemtext: fn(i: int): string;
+menuitemx: fn(i: int): int;
+ensureids: fn(state: ref IcState->AppState, bar: ref IcState->TopBarState);
+hideall: fn(state: ref IcState->AppState, bar: ref IcState->TopBarState);
+hidesubmenu: fn(state: ref IcState->AppState);
+setlabel: fn(state: ref IcState->AppState, id, x, y, w: int, text, code: string);
+showshadow: fn(state: ref IcState->AppState, id, x, y, w, h: int);
+showmenu: fn(state: ref IcState->AppState, bar: ref IcState->TopBarState, w: int);
+showsubmenu: fn(state: ref IcState->AppState, bar: ref IcState->TopBarState);
 
 init()
 {
@@ -55,6 +76,12 @@ init()
 
 	ui->init();
 	view->init();
+
+	submenuactive = 0;
+	submenushadowid = -1;
+	submenubgid = -1;
+	submenuitemids = array[0] of int;
+	submenuindex = 0;
 }
 
 basecode(state: ref IcState->AppState): string
@@ -100,6 +127,9 @@ toggle(bar: ref IcState->TopBarState)
 	bar.active = !bar.active;
 	if(bar.active && (bar.focus < 0 || bar.focus >= MenuCount))
 		bar.focus = 0;
+
+	submenuactive = 0;
+	submenuindex = 0;
 }
 
 close(bar: ref IcState->TopBarState)
@@ -108,6 +138,8 @@ close(bar: ref IcState->TopBarState)
 		return;
 
 	bar.active = 0;
+	submenuactive = 0;
+	submenuindex = 0;
 }
 
 spaces(n: int): string
@@ -154,6 +186,27 @@ itemtext(i: int): string
 	return " ";
 }
 
+submenuitemtext(i: int): string
+{
+	case i {
+	0 =>
+		return " Screensavers ";
+	}
+
+	return " ";
+}
+
+menuitemx(i: int): int
+{
+	x, k: int;
+
+	x = 1;
+	for(k = 0; k < i; k++)
+		x += len itemtext(k) + 1;
+
+	return x;
+}
+
 ensureids(state: ref IcState->AppState, bar: ref IcState->TopBarState)
 {
 	i: int;
@@ -161,18 +214,26 @@ ensureids(state: ref IcState->AppState, bar: ref IcState->TopBarState)
 	if(state == nil || state.ui == nil || state.ui.tree == nil || bar == nil)
 		return;
 
-	if(bar.id <= 0)
-		bar.id = view->allocid(state.ui.tree);
-
 	if(bar.backgroundid <= 0)
 		bar.backgroundid = view->allocid(state.ui.tree);
 
-	if(bar.itemids != nil && len bar.itemids == MenuCount)
-		return;
+	if(bar.itemids == nil || len bar.itemids != MenuCount){
+		bar.itemids = array[MenuCount] of int;
+		for(i = 0; i < MenuCount; i++)
+			bar.itemids[i] = view->allocid(state.ui.tree);
+	}
 
-	bar.itemids = array[MenuCount] of int;
-	for(i = 0; i < MenuCount; i++)
-		bar.itemids[i] = view->allocid(state.ui.tree);
+	if(submenushadowid <= 0)
+		submenushadowid = view->allocid(state.ui.tree);
+
+	if(submenubgid <= 0)
+		submenubgid = view->allocid(state.ui.tree);
+
+	if(submenuitemids == nil || len submenuitemids != OptionItemCount){
+		submenuitemids = array[OptionItemCount] of int;
+		for(i = 0; i < OptionItemCount; i++)
+			submenuitemids[i] = view->allocid(state.ui.tree);
+	}
 }
 
 hideall(state: ref IcState->AppState, bar: ref IcState->TopBarState)
@@ -195,12 +256,35 @@ hideall(state: ref IcState->AppState, bar: ref IcState->TopBarState)
 	if(n != nil)
 		view->hide(n);
 
-	n = view->find(state.ui.tree, bar.id);
-	if(n != nil)
-		view->hide(n);
+	hidesubmenu(state);
 }
 
-setlabel(state: ref IcState->AppState, parentid, id, x, y, w: int, text, code: string)
+hidesubmenu(state: ref IcState->AppState)
+{
+	i: int;
+	n: ref IcView->Node;
+
+	if(state == nil || state.ui == nil || state.ui.tree == nil)
+		return;
+
+	n = view->find(state.ui.tree, submenushadowid);
+	if(n != nil)
+		view->hide(n);
+
+	n = view->find(state.ui.tree, submenubgid);
+	if(n != nil)
+		view->hide(n);
+
+	if(submenuitemids != nil){
+		for(i = 0; i < len submenuitemids; i++){
+			n = view->find(state.ui.tree, submenuitemids[i]);
+			if(n != nil)
+				view->hide(n);
+		}
+	}
+}
+
+setlabel(state: ref IcState->AppState, id, x, y, w: int, text, code: string)
 {
 	n: ref IcView->Node;
 
@@ -208,7 +292,7 @@ setlabel(state: ref IcState->AppState, parentid, id, x, y, w: int, text, code: s
 		return;
 
 	if(view->find(state.ui.tree, id) == nil)
-		ui->label(state.ui, parentid, id, x, y, w, text);
+		ui->label(state.ui, state.mainid, id, x, y, w, text);
 
 	n = view->find(state.ui.tree, id);
 	if(n == nil)
@@ -218,29 +302,40 @@ setlabel(state: ref IcState->AppState, parentid, id, x, y, w: int, text, code: s
 	view->settext(n, fittext(text, w));
 	view->setcode(n, code);
 	view->show(n);
+	view->bringtofront(state.ui.tree, id);
+}
+
+showshadow(state: ref IcState->AppState, id, x, y, w, h: int)
+{
+	n: ref IcView->Node;
+
+	if(state == nil || state.ui == nil || state.ui.tree == nil || id <= 0)
+		return;
+
+	if(view->find(state.ui.tree, id) == nil)
+		ui->node(state.ui, state.mainid, id, "shadow", x, y, w, h);
+
+	n = view->find(state.ui.tree, id);
+	if(n == nil)
+		return;
+
+	view->setbounds(n, x, y, w, h);
+	view->show(n);
+	view->bringtofront(state.ui.tree, id);
 }
 
 showmenu(state: ref IcState->AppState, bar: ref IcState->TopBarState, w: int)
 {
 	i, x, iw: int;
-	n: ref IcView->Node;
-	code, normal, focus: string;
+	code, normal, focusc: string;
 
 	if(w <= 0)
 		return;
 
 	normal = basecode(state);
-	focus = focuscode(state);
+	focusc = focuscode(state);
 
-	ui->group(state.ui, state.mainid, bar.id, 0, 0, w, 1);
-
-	n = view->find(state.ui.tree, bar.id);
-	if(n != nil){
-		view->setbounds(n, 0, 0, w, 1);
-		view->show(n);
-	}
-
-	setlabel(state, bar.id, bar.backgroundid, 0, 0, w, spaces(w), normal);
+	setlabel(state, bar.backgroundid, 0, 0, w, spaces(w), normal);
 
 	x = 1;
 	for(i = 0; i < MenuCount; i++){
@@ -252,19 +347,47 @@ showmenu(state: ref IcState->AppState, bar: ref IcState->TopBarState, w: int)
 
 		code = normal;
 		if(bar.focus == i)
-			code = focus;
+			code = focusc;
 
-		setlabel(state, bar.id, bar.itemids[i], x, 0, iw, itemtext(i), code);
+		setlabel(state, bar.itemids[i], x, 0, iw, itemtext(i), code);
 		x += iw + 1;
 	}
+}
 
-	view->bringtofront(state.ui.tree, bar.id);
-	view->bringtofront(state.ui.tree, bar.backgroundid);
+showsubmenu(state: ref IcState->AppState, bar: ref IcState->TopBarState)
+{
+	x, y, w, h, i: int;
+	normal, focusc, code: string;
 
-	if(bar.itemids != nil){
-		for(i = 0; i < len bar.itemids; i++)
-			view->bringtofront(state.ui.tree, bar.itemids[i]);
+	if(state == nil || state.ui == nil || state.ui.tree == nil || bar == nil)
+		return;
+
+	if(bar.focus != 3){
+		hidesubmenu(state);
+		submenuactive = 0;
+		return;
 	}
+
+	normal = basecode(state);
+	focusc = focuscode(state);
+
+	x = menuitemx(3);
+	y = 1;
+	w = len submenuitemtext(0);
+	h = OptionItemCount;
+
+	showshadow(state, submenushadowid, x + 2, y + 1, w, h);
+	setlabel(state, submenubgid, x, y, w, spaces(w), normal);
+
+	for(i = 0; i < OptionItemCount; i++){
+		code = normal;
+		if(submenuindex == i)
+			code = focusc;
+
+		setlabel(state, submenuitemids[i], x, y + i, w, submenuitemtext(i), code);
+	}
+
+	submenuactive = 1;
 }
 
 build(state: ref IcState->AppState, bar: ref IcState->TopBarState, rect: IcLayout->Rect): int
@@ -287,6 +410,11 @@ build(state: ref IcState->AppState, bar: ref IcState->TopBarState, rect: IcLayou
 
 	showmenu(state, bar, w);
 
+	if(submenuactive)
+		showsubmenu(state, bar);
+	else
+		hidesubmenu(state);
+
 	return 0;
 }
 
@@ -296,7 +424,33 @@ handlekey(state: ref IcState->AppState, bar: ref IcState->TopBarState, k: int): 
 		return 0;
 
 	if(k == Kesc){
-		bar.active = 0;
+		close(bar);
+		return 1;
+	}
+
+	if(submenuactive){
+		if(k == Kup){
+			submenuindex--;
+			if(submenuindex < 0)
+				submenuindex = OptionItemCount - 1;
+			return 1;
+		}
+
+		if(k == Kdown){
+			submenuindex++;
+			if(submenuindex >= OptionItemCount)
+				submenuindex = 0;
+			return 1;
+		}
+
+		if(k == Kleft){
+			submenuactive = 0;
+			return 1;
+		}
+
+		if(k == Kenter || k == Kreturn)
+			return 2;
+
 		return 1;
 	}
 
@@ -314,8 +468,14 @@ handlekey(state: ref IcState->AppState, bar: ref IcState->TopBarState, k: int): 
 		return 1;
 	}
 
+	if((k == Kenter || k == Kreturn || k == Kdown) && bar.focus == 3){
+		submenuactive = 1;
+		submenuindex = 0;
+		return 1;
+	}
+
 	if(k == Kenter || k == Kreturn){
-		bar.active = 0;
+		close(bar);
 		return 1;
 	}
 

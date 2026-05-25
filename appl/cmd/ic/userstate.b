@@ -29,9 +29,21 @@ IcPanelMod: module
 	render: fn(u: ref IcUi->Ui, p: ref IcPanel->Panel): int;
 };
 
+IcScreenSaver: module
+{
+	PATH: con "/dis/ic/screensaver.dis";
+
+	init: fn();
+
+	selected: fn(cfg: ref IcState->ConfigState): string;
+	isenabled: fn(cfg: ref IcState->ConfigState): int;
+	idlelimit: fn(cfg: ref IcState->ConfigState): int;
+};
+
 sys: Sys;
 userdir: IcUserDir;
 panelui: IcPanelMod;
+screensaver: IcScreenSaver;
 
 StateFileName: con "state.cfg";
 DefaultThemeName: con "default";
@@ -39,6 +51,9 @@ DefaultThemeName: con "default";
 savedleftitem: string;
 savedrightitem: string;
 savedtheme: string;
+savedscreensaver: string;
+savedscreensaverenabled: int;
+savedscreensaveridle: int;
 
 statepath: fn(create: int): string;
 readfile: fn(path: string): string;
@@ -52,6 +67,9 @@ currentitem: fn(p: ref IcState->PanelState): string;
 selectitem: fn(state: ref IcState->AppState, p: ref IcState->PanelState, name: string): int;
 panelactivevalue: fn(state: ref IcState->AppState): string;
 themevalue: fn(state: ref IcState->AppState): string;
+screensavervalue: fn(state: ref IcState->AppState): string;
+screensaverenabledvalue: fn(state: ref IcState->AppState): string;
+screensaveridlevalue: fn(state: ref IcState->AppState): string;
 readthemefromstate: fn(): string;
 validdir: fn(path: string): int;
 
@@ -69,12 +87,20 @@ init()
 	if(panelui == nil)
 		raise "fail:load icurses/panel";
 
+	screensaver = load IcScreenSaver IcScreenSaver->PATH;
+	if(screensaver == nil)
+		raise "fail:load ic/screensaver";
+
 	userdir->init();
 	panelui->init();
+	screensaver->init();
 
 	savedleftitem = "";
 	savedrightitem = "";
 	savedtheme = DefaultThemeName;
+	savedscreensaver = "";
+	savedscreensaverenabled = 1;
+	savedscreensaveridle = 30;
 }
 
 statepath(create: int): string
@@ -201,6 +227,36 @@ applykv(state: ref IcState->AppState, key, value: string)
 		return;
 	}
 
+	if(key == "screensaver.name"){
+		savedscreensaver = value;
+		if(state.cfg != nil)
+			state.cfg.screensavername = value;
+		return;
+	}
+
+	if(key == "screensaver.enabled"){
+		if(value == "0")
+			savedscreensaverenabled = 0;
+		else
+			savedscreensaverenabled = 1;
+
+		if(state.cfg != nil)
+			state.cfg.screensaverenabled = savedscreensaverenabled;
+
+		return;
+	}
+
+	if(key == "screensaver.idle_ticks"){
+		savedscreensaveridle = int value;
+		if(savedscreensaveridle < 0)
+			savedscreensaveridle = 0;
+
+		if(state.cfg != nil)
+			state.cfg.screensaveridleticks = savedscreensaveridle;
+
+		return;
+	}
+
 	if(key == "activepanel"){
 		if(value == "right")
 			state.activepanel = IcState->PanelRight;
@@ -246,6 +302,16 @@ loadstate(state: ref IcState->AppState): int
 
 	if(state.cfg != nil && state.cfg.theme != "")
 		savedtheme = state.cfg.theme;
+
+	if(state.cfg != nil){
+		state.cfg.screensavername = "";
+		state.cfg.screensaverenabled = -1;
+		state.cfg.screensaveridleticks = -1;
+
+		savedscreensaver = screensaver->selected(state.cfg);
+		savedscreensaverenabled = screensaver->isenabled(state.cfg);
+		savedscreensaveridle = screensaver->idlelimit(state.cfg);
+	}
 
 	if(!userdir->enabled())
 		return 0;
@@ -371,6 +437,51 @@ themevalue(state: ref IcState->AppState): string
 	return DefaultThemeName;
 }
 
+screensavervalue(state: ref IcState->AppState): string
+{
+	if(state != nil && state.cfg != nil && state.cfg.screensavername != "")
+		return state.cfg.screensavername;
+
+	if(state != nil && state.cfg != nil)
+		return screensaver->selected(state.cfg);
+
+	if(savedscreensaver != "")
+		return savedscreensaver;
+
+	return "flashlighter";
+}
+
+screensaverenabledvalue(state: ref IcState->AppState): string
+{
+	if(state != nil && state.cfg != nil && state.cfg.screensaverenabled >= 0){
+		if(state.cfg.screensaverenabled != 0)
+			return "1";
+		return "0";
+	}
+
+	if(state != nil && state.cfg != nil && screensaver->isenabled(state.cfg))
+		return "1";
+
+	if(state != nil && state.cfg != nil)
+		return "0";
+
+	if(savedscreensaverenabled)
+		return "1";
+
+	return "0";
+}
+
+screensaveridlevalue(state: ref IcState->AppState): string
+{
+	if(state != nil && state.cfg != nil && state.cfg.screensaveridleticks >= 0)
+		return string state.cfg.screensaveridleticks;
+
+	if(state != nil && state.cfg != nil)
+		return string screensaver->idlelimit(state.cfg);
+
+	return string savedscreensaveridle;
+}
+
 save(state: ref IcState->AppState): int
 {
 	path, text, leftitem, rightitem: string;
@@ -390,6 +501,9 @@ save(state: ref IcState->AppState): int
 
 	text = "";
 	text += "theme=" + themevalue(state) + "\n";
+	text += "screensaver.name=" + screensavervalue(state) + "\n";
+	text += "screensaver.enabled=" + screensaverenabledvalue(state) + "\n";
+	text += "screensaver.idle_ticks=" + screensaveridlevalue(state) + "\n";
 	text += "activepanel=" + panelactivevalue(state) + "\n";
 
 	if(state.left != nil){

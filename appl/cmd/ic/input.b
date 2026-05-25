@@ -128,6 +128,22 @@ IcScreenSaver: module
 	stop: fn(state: ref IcState->AppState): int;
 	resetidle: fn(state: ref IcState->AppState);
 	handletick: fn(state: ref IcState->AppState): int;
+	reload: fn(state: ref IcState->AppState): int;
+};
+
+IcSsSetup: module
+{
+	PATH: con "/dis/ic/sssetup.dis";
+
+	init: fn();
+
+	active: fn(state: ref IcState->AppState): int;
+	open: fn(state: ref IcState->AppState): int;
+	close: fn(state: ref IcState->AppState): int;
+
+	handlekey: fn(state: ref IcState->AppState, k: int): int;
+	handletick: fn(state: ref IcState->AppState): int;
+	build: fn(state: ref IcState->AppState): int;
 };
 
 sys: Sys;
@@ -143,6 +159,7 @@ viewer: IcViewerMod;
 editor: IcEditorMod;
 screen: IcScreenMod;
 screensaver: IcScreenSaver;
+sssetup: IcSsSetup;
 
 CtrlO: con 15;
 TabKey: con 9;
@@ -217,6 +234,10 @@ init()
 	if(screensaver == nil)
 		raise "fail:load ic/screensaver";
 
+	sssetup = load IcSsSetup IcSsSetup->PATH;
+	if(sssetup == nil)
+		raise "fail:load ic/sssetup";
+
 	commands->init();
 	appanel->init();
 	copycmd->init();
@@ -229,6 +250,7 @@ init()
 	editor->init();
 	screen->init();
 	screensaver->init();
+	sssetup->init();
 }
 
 flashfkey(state: ref IcState->AppState, fkey: int)
@@ -287,6 +309,13 @@ handlekey(state: ref IcState->AppState, k: int): int
 
 	screensaver->resetidle(state);
 
+	if(sssetup->active(state)){
+		if(sssetup->handlekey(state, k)){
+			screen->rebuild(state);
+			return 0;
+		}
+	}
+
 	if(editor->active(state)){
 		r = editor->handlekey(state, k);
 		if(r != 0)
@@ -321,7 +350,15 @@ handlekey(state: ref IcState->AppState, k: int): int
 	}
 
 	if(topbar->active(state.topbar)){
-		if(topbar->handlekey(state, state.topbar, k)){
+		r = topbar->handlekey(state, state.topbar, k);
+		if(r == 2){
+			sssetup->open(state);
+			topbar->close(state.topbar);
+			screen->rebuild(state);
+			return 0;
+		}
+
+		if(r){
 			screen->rebuild(state);
 			return 0;
 		}
@@ -393,6 +430,12 @@ handletick(state: ref IcState->AppState): int
 		state.screensaver = screensaver->newstate(state.cfg);
 
 	redraw = 0;
+
+	if(sssetup->active(state)){
+		if(sssetup->handletick(state))
+			redraw = 1;
+		return redraw;
+	}
 
 	if(screensaver->handletick(state))
 		redraw = 1;

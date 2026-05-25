@@ -28,6 +28,10 @@ IcState: module
 		userkeysfile: string;
 		userlayoutfile: string;
 		usermenusfile: string;
+
+		screensavername: string;
+		screensaverenabled: int;
+		screensaveridleticks: int;
 	};
 
 	ThemeState: adt

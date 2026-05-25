@@ -42,7 +42,8 @@ PluginSuffix: con ".dis";
 ConfigSection: con "screensaver";
 DefaultName: con "flashlighter";
 DefaultEnabled: con 1;
-DefaultIdleTicks: con 300;
+DefaultIdleSeconds: con 30;
+TicksPerSecond: con 10;
 
 selectedplugin: IcScreenSaverPlugin;
 selectedpluginname: string;
@@ -56,12 +57,14 @@ appendstr: fn(a: array of string, s: string): array of string;
 
 selectedname: fn(cfg: ref IcState->ConfigState): string;
 enabled: fn(cfg: ref IcState->ConfigState): int;
-idlelimit: fn(cfg: ref IcState->ConfigState): int;
+idlevalue: fn(cfg: ref IcState->ConfigState): int;
+idleticklimit: fn(cfg: ref IcState->ConfigState): int;
 
 loadpluginpath: fn(path: string): IcScreenSaverPlugin;
 findpluginpath: fn(name: string): string;
 ensureplugin: fn(cfg: ref IcState->ConfigState): IcScreenSaverPlugin;
 ensurestate: fn(state: ref IcState->AppState): ref IcState->ScreenSaverState;
+dropstate: fn(state: ref IcState->AppState);
 
 init()
 {
@@ -138,17 +141,37 @@ appendstr(a: array of string, s: string): array of string
 
 selectedname(cfg: ref IcState->ConfigState): string
 {
+	if(cfg != nil && cfg.screensavername != "")
+		return cfg.screensavername;
+
 	return cfgdata->get(cfg, ConfigSection, "name", DefaultName);
 }
 
 enabled(cfg: ref IcState->ConfigState): int
 {
+	if(cfg != nil && (cfg.screensaverenabled == 0 || cfg.screensaverenabled == 1))
+		return cfg.screensaverenabled;
+
 	return cfgdata->getbool(cfg, ConfigSection, "enabled", DefaultEnabled);
 }
 
-idlelimit(cfg: ref IcState->ConfigState): int
+idlevalue(cfg: ref IcState->ConfigState): int
 {
-	return cfgdata->getint(cfg, ConfigSection, "idle_ticks", DefaultIdleTicks);
+	if(cfg != nil && cfg.screensaveridleticks >= 0)
+		return cfg.screensaveridleticks;
+
+	return cfgdata->getint(cfg, ConfigSection, "idle_ticks", DefaultIdleSeconds);
+}
+
+idleticklimit(cfg: ref IcState->ConfigState): int
+{
+	v: int;
+
+	v = idlevalue(cfg);
+	if(v <= 0)
+		return 0;
+
+	return v * TicksPerSecond;
 }
 
 loadpluginpath(path: string): IcScreenSaverPlugin
@@ -240,6 +263,17 @@ ensureplugin(cfg: ref IcState->ConfigState): IcScreenSaverPlugin
 	return selectedplugin;
 }
 
+dropstate(state: ref IcState->AppState)
+{
+	if(state == nil)
+		return;
+
+	state.screensaver = nil;
+	selectedplugin = nil;
+	selectedpluginname = "";
+	selectedpluginpath = "";
+}
+
 ensurestate(state: ref IcState->AppState): ref IcState->ScreenSaverState
 {
 	p: IcScreenSaverPlugin;
@@ -316,6 +350,89 @@ titleof(name: string): string
 	return p->title();
 }
 
+selected(cfg: ref IcState->ConfigState): string
+{
+	return selectedname(cfg);
+}
+
+isenabled(cfg: ref IcState->ConfigState): int
+{
+	return enabled(cfg);
+}
+
+idlelimit(cfg: ref IcState->ConfigState): int
+{
+	return idlevalue(cfg);
+}
+
+setselected(state: ref IcState->AppState, name: string): int
+{
+	if(state == nil || state.cfg == nil || name == "")
+		return -1;
+
+	if(findpluginpath(name) == "")
+		return -1;
+
+	state.cfg.screensavername = name;
+	dropstate(state);
+	return 0;
+}
+
+setenabled(state: ref IcState->AppState, on: int): int
+{
+	if(state == nil || state.cfg == nil)
+		return -1;
+
+	if(on != 0)
+		on = 1;
+
+	state.cfg.screensaverenabled = on;
+
+	if(state.screensaver != nil)
+		state.screensaver.enabled = enabled(state.cfg);
+
+	if(!enabled(state.cfg))
+		stop(state);
+
+	return 0;
+}
+
+setidlelimit(state: ref IcState->AppState, seconds: int): int
+{
+	if(state == nil || state.cfg == nil)
+		return -1;
+
+	if(seconds < 0)
+		seconds = 0;
+
+	state.cfg.screensaveridleticks = seconds;
+
+	if(state.screensaver != nil){
+		state.screensaver.idlelimit = seconds;
+		if(seconds <= 0){
+			state.screensaver.enabled = 0;
+			stop(state);
+		}else
+			state.screensaver.enabled = enabled(state.cfg);
+	}
+
+	return 0;
+}
+
+reload(state: ref IcState->AppState): int
+{
+	if(state == nil)
+		return -1;
+
+	stop(state);
+	dropstate(state);
+
+	if(ensurestate(state) == nil)
+		return -1;
+
+	return 0;
+}
+
 newstate(cfg: ref IcState->ConfigState): ref IcState->ScreenSaverState
 {
 	s: ref IcState->ScreenSaverState;
@@ -330,7 +447,7 @@ newstate(cfg: ref IcState->ConfigState): ref IcState->ScreenSaverState
 		return nil;
 
 	s.enabled = enabled(cfg);
-	s.idlelimit = idlelimit(cfg);
+	s.idlelimit = idlevalue(cfg);
 
 	if(s.idlelimit <= 0)
 		s.enabled = 0;
@@ -396,7 +513,7 @@ handletick(state: ref IcState->AppState): int
 		return p->handletick(state);
 
 	s.idleticks++;
-	if(s.idleticks >= s.idlelimit)
+	if(s.idleticks >= idleticklimit(state.cfg))
 		return start(state) >= 0;
 
 	return 0;
