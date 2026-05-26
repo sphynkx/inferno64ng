@@ -9,6 +9,7 @@ IcTopBar: module
 	CmdHandled: con 1;
 
 	CmdOptionsScreensavers: con 1001;
+	CmdOptionsTheme: con 1002;
 
 	init: fn();
 	newbar: fn(): ref IcState->TopBarState;
@@ -17,6 +18,7 @@ IcTopBar: module
 	active: fn(bar: ref IcState->TopBarState): int;
 	toggle: fn(bar: ref IcState->TopBarState);
 	close: fn(bar: ref IcState->TopBarState);
+	selectedtheme: fn(): string;
 	handlekey: fn(state: ref IcState->AppState, bar: ref IcState->TopBarState, k: int): int;
 	handletick: fn(state: ref IcState->AppState, bar: ref IcState->TopBarState): int;
 };

@@ -330,7 +330,7 @@ popuprowline(it: IcMenu->Item, w: int): string
 		return "";
 
 	if(separator(it))
-		return repeat("-", w);
+		return repeat("─", w);
 
 	if(checked(it)){
 		if(radio(it))

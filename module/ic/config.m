@@ -6,6 +6,7 @@ IcConfigData: module
 
 	init: fn();
 	loadstate: fn(): ref IcState->ConfigState;
+	settheme: fn(c: ref IcState->ConfigState, name: string): int;
 
 	hasuserdir: fn(c: ref IcState->ConfigState): int;
 	userpath: fn(c: ref IcState->ConfigState, name: string): string;

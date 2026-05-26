@@ -27,6 +27,7 @@ IcAppPanel: module
 	PATH: con "/dis/ic/appanel.dis";
 
 	init: fn();
+	reloadtheme: fn(): int;
 	handlekey: fn(state: ref IcState->AppState, p: ref IcState->PanelState, k: int): int;
 };
 
@@ -82,11 +83,13 @@ IcTopBar: module
 	CmdHandled: con 1;
 
 	CmdOptionsScreensavers: con 1001;
+	CmdOptionsTheme: con 1002;
 
 	init: fn();
 	active: fn(bar: ref IcState->TopBarState): int;
 	toggle: fn(bar: ref IcState->TopBarState);
 	close: fn(bar: ref IcState->TopBarState);
+	selectedtheme: fn(): string;
 	handlekey: fn(state: ref IcState->AppState, bar: ref IcState->TopBarState, k: int): int;
 	handletick: fn(state: ref IcState->AppState, bar: ref IcState->TopBarState): int;
 };
@@ -151,6 +154,22 @@ IcSsSetup: module
 	build: fn(state: ref IcState->AppState): int;
 };
 
+IcConfigData: module
+{
+	PATH: con "/dis/ic/config.dis";
+
+	init: fn();
+	settheme: fn(c: ref IcState->ConfigState, name: string): int;
+};
+
+IcThemeData: module
+{
+	PATH: con "/dis/ic/theme.dis";
+
+	init: fn();
+	loadstate: fn(cfg: ref IcState->ConfigState): ref IcState->ThemeState;
+};
+
 sys: Sys;
 commands: IcCommands;
 appanel: IcAppPanel;
@@ -165,6 +184,8 @@ editor: IcEditorMod;
 screen: IcScreenMod;
 screensaver: IcScreenSaver;
 sssetup: IcSsSetup;
+cfgdata: IcConfigData;
+themedata: IcThemeData;
 
 CtrlO: con 15;
 TabKey: con 9;
@@ -185,6 +206,7 @@ flashfkey: fn(state: ref IcState->AppState, fkey: int);
 flashviewkey: fn(state: ref IcState->AppState);
 viewtoedit: fn(state: ref IcState->AppState): int;
 handletopbarcmd: fn(state: ref IcState->AppState, cmd: int): int;
+applytheme: fn(state: ref IcState->AppState, name: string): int;
 
 init()
 {
@@ -244,6 +266,14 @@ init()
 	if(sssetup == nil)
 		raise "fail:load ic/sssetup";
 
+	cfgdata = load IcConfigData IcConfigData->PATH;
+	if(cfgdata == nil)
+		raise "fail:load ic/config";
+
+	themedata = load IcThemeData IcThemeData->PATH;
+	if(themedata == nil)
+		raise "fail:load ic/theme";
+
 	commands->init();
 	appanel->init();
 	copycmd->init();
@@ -257,6 +287,8 @@ init()
 	screen->init();
 	screensaver->init();
 	sssetup->init();
+	cfgdata->init();
+	themedata->init();
 }
 
 flashfkey(state: ref IcState->AppState, fkey: int)
@@ -297,8 +329,25 @@ viewtoedit(state: ref IcState->AppState): int
 	return 0;
 }
 
+applytheme(state: ref IcState->AppState, name: string): int
+{
+	if(state == nil || state.cfg == nil || name == "")
+		return -1;
+
+	if(cfgdata->settheme(state.cfg, name) < 0)
+		return -1;
+
+	state.theme = themedata->loadstate(state.cfg);
+	appanel->reloadtheme();
+
+	screen->rebuild(state);
+	return 0;
+}
+
 handletopbarcmd(state: ref IcState->AppState, cmd: int): int
 {
+	name: string;
+
 	if(state == nil)
 		return 0;
 
@@ -306,6 +355,13 @@ handletopbarcmd(state: ref IcState->AppState, cmd: int): int
 		topbar->close(state.topbar);
 		sssetup->open(state);
 		screen->rebuild(state);
+		return 1;
+	}
+
+	if(cmd == IcTopBar->CmdOptionsTheme){
+		name = topbar->selectedtheme();
+		topbar->close(state.topbar);
+		applytheme(state, name);
 		return 1;
 	}
 

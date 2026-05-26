@@ -52,14 +52,18 @@ MenusFileName: con "menus.cfg";
 cleanline: fn(s: string): string;
 splitkv: fn(s: string): (string, string, int);
 readfile: fn(path: string): string;
+writefile: fn(path, text: string): int;
 validfile: fn(path: string): int;
 endswith: fn(s, suffix: string): int;
 themename: fn(name: string): string;
 themefilename: fn(name: string): string;
 readstatetheme: fn(): string;
+writestatetheme: fn(name: string): int;
 stdthemepath: fn(name: string): string;
 userthemepath: fn(name: string): string;
 selectedthemepath: fn(name: string): (string, int);
+themeexists: fn(name: string): int;
+rebuildcfg: fn(c: ref IcState->ConfigState): int;
 
 init()
 {
@@ -148,6 +152,26 @@ readfile(path: string): string
 	return text;
 }
 
+writefile(path, text: string): int
+{
+	fd: ref Sys->FD;
+
+	if(path == "")
+		return -1;
+
+	fd = sys->create(path, Sys->OWRITE, 8r666);
+	if(fd == nil)
+		return -1;
+
+	if(sys->fprint(fd, "%s", text) < 0){
+		fd = nil;
+		return -1;
+	}
+
+	fd = nil;
+	return 0;
+}
+
 validfile(path: string): int
 {
 	rc: int;
@@ -231,6 +255,51 @@ readstatetheme(): string
 	return DefaultThemeName;
 }
 
+writestatetheme(name: string): int
+{
+	path, text, out, line, key, value: string;
+	i, start, ok, found: int;
+
+	name = themename(name);
+
+	if(!userdir->enabled())
+		return 0;
+
+	path = userdir->ensurepath(StateFileName);
+	if(path == "")
+		return -1;
+
+	text = readfile(path);
+	out = "";
+	found = 0;
+
+	start = 0;
+	for(i = 0; i <= len text; i++){
+		if(i < len text && text[i] != '\n')
+			continue;
+
+		line = text[start:i];
+		start = i + 1;
+
+		if(i == len text && line == "")
+			continue;
+
+		(key, value, ok) = splitkv(line);
+		value = value;
+
+		if(ok && key == "theme"){
+			out += "theme=" + name + "\n";
+			found = 1;
+		}else
+			out += line + "\n";
+	}
+
+	if(!found)
+		out = "theme=" + name + "\n" + out;
+
+	return writefile(path, out);
+}
+
 stdthemepath(name: string): string
 {
 	return "/lib/ic/" + themefilename(name);
@@ -261,29 +330,31 @@ selectedthemepath(name: string): (string, int)
 	return (DefaultThemeFile, IcConfigMod->OriginDefault);
 }
 
-loadstate(): ref IcState->ConfigState
+themeexists(name: string): int
 {
-	c: ref IcState->ConfigState;
+	name = themename(name);
+
+	if(validfile(userthemepath(name)))
+		return 1;
+
+	if(validfile(stdthemepath(name)))
+		return 1;
+
+	return name == DefaultThemeName && validfile(DefaultThemeFile);
+}
+
+rebuildcfg(c: ref IcState->ConfigState): int
+{
 	themeorigin: int;
 
-	c = ref IcState->ConfigState;
+	if(c == nil)
+		return -1;
 
-	c.home = userdir->home();
-	c.userenabled = c.home != "";
-
-	if(c.userenabled){
-		userdir->ensure();
-		c.userdir = userdir->dir();
-	}else
-		c.userdir = "";
-
-	c.theme = readstatetheme();
+	(c.themefile, themeorigin) = selectedthemepath(c.theme);
 
 	c.keysfile = DefaultKeysFile;
 	c.layoutfile = DefaultLayoutFile;
 	c.menusfile = DefaultMenusFile;
-
-	(c.themefile, themeorigin) = selectedthemepath(c.theme);
 
 	c.userthemefile = "";
 	c.userkeysfile = "";
@@ -299,7 +370,7 @@ loadstate(): ref IcState->ConfigState
 
 	c.cfg = cfgmod->new();
 	if(c.cfg == nil)
-		return c;
+		return -1;
 
 	cfgmod->overlay(c.cfg, DefaultThemeFile, IcConfigMod->OriginDefault);
 	if(c.themefile != DefaultThemeFile)
@@ -315,7 +386,49 @@ loadstate(): ref IcState->ConfigState
 		cfgmod->overlay(c.cfg, c.usermenusfile, IcConfigMod->OriginUser);
 	}
 
+	return 0;
+}
+
+loadstate(): ref IcState->ConfigState
+{
+	c: ref IcState->ConfigState;
+
+	c = ref IcState->ConfigState;
+
+	c.home = userdir->home();
+	c.userenabled = c.home != "";
+
+	if(c.userenabled){
+		userdir->ensure();
+		c.userdir = userdir->dir();
+	}else
+		c.userdir = "";
+
+	c.theme = readstatetheme();
+
+	c.screensavername = "";
+	c.screensaverenabled = -1;
+	c.screensaveridleticks = -1;
+
+	rebuildcfg(c);
+
 	return c;
+}
+
+settheme(c: ref IcState->ConfigState, name: string): int
+{
+	if(c == nil)
+		return -1;
+
+	name = themename(name);
+	if(!themeexists(name))
+		return -1;
+
+	if(writestatetheme(name) < 0)
+		return -1;
+
+	c.theme = name;
+	return rebuildcfg(c);
 }
 
 hasuserdir(c: ref IcState->ConfigState): int

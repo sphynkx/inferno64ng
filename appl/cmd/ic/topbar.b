@@ -96,17 +96,7 @@ IcMenuMod: module
 	newitem: fn(label, hotkey: string, targetid: int, command: string): Item;
 	newseparator: fn(): Item;
 	newsubmenu: fn(label, hotkey: string, submenuid: int): Item;
-
 	setdisabled: fn(it: Item, disabled: int): Item;
-	setchecked: fn(it: Item, checked: int): Item;
-	setradio: fn(it: Item, radio: int): Item;
-	setstatus: fn(it: Item, status: string): Item;
-
-	enabled: fn(it: Item): int;
-	checked: fn(it: Item): int;
-	radio: fn(it: Item): int;
-	separator: fn(it: Item): int;
-	submenu: fn(it: Item): int;
 
 	popupwidth: fn(items: array of Item): int;
 
@@ -120,6 +110,7 @@ IcMenuMod: module
 	selectedpopupitem: fn(p: ref Popup): Item;
 };
 
+sys: Sys;
 ui: IcUiMod;
 view: IcViewMod;
 icmenu: IcMenuMod;
@@ -144,9 +135,15 @@ DefaultBaseCode: con "1;38;2;20;25;30;48;2;210;235;255";
 DefaultFocusCode: con "1;38;2;0;0;0;48;2;170;225;255";
 DefaultDisabledCode: con "1;38;2;110;110;110;48;2;210;235;255";
 
+StdThemeDir: con "/lib/ic";
+ThemeSuffix: con ".theme";
+
 CommandOptionsScreensavers: con "options.screensavers";
+CommandOptionsThemes: con "options.themes";
 
 popup: ref IcMenuMod->Popup;
+themepopup: ref IcMenuMod->Popup;
+selectedthemename: string;
 
 basecode: fn(state: ref IcState->AppState): string;
 focuscode: fn(state: ref IcState->AppState): string;
@@ -159,6 +156,14 @@ fittext: fn(s: string, w: int): string;
 itemtext: fn(i: int): string;
 menuitemx: fn(i: int): int;
 
+startswith: fn(s, prefix: string): int;
+endswith: fn(s, suffix: string): int;
+themefromfile: fn(file: string): string;
+appendstr: fn(a: array of string, s: string): array of string;
+sortstrings: fn(a: array of string): array of string;
+readthemes: fn(path: string): array of string;
+appendthemeitems: fn(a: array of IcMenuMod->Item, names: array of string): array of IcMenuMod->Item;
+
 ensureids: fn(state: ref IcState->AppState, bar: ref IcState->TopBarState);
 ensurepopup: fn(state: ref IcState->AppState);
 hideall: fn(state: ref IcState->AppState, bar: ref IcState->TopBarState);
@@ -166,13 +171,23 @@ setlabel: fn(state: ref IcState->AppState, parentid, id, x, y, w: int, text, cod
 
 showbar: fn(state: ref IcState->AppState, bar: ref IcState->TopBarState, w: int);
 popupitems: fn(menuindex: int): array of IcMenuMod->Item;
+themeitems: fn(state: ref IcState->AppState): array of IcMenuMod->Item;
 openpopupfor: fn(state: ref IcState->AppState, bar: ref IcState->TopBarState): int;
+openthemepopup: fn(state: ref IcState->AppState): int;
 closepopup: fn(state: ref IcState->AppState);
+closethemepopup: fn(state: ref IcState->AppState);
+closeallpopups: fn(state: ref IcState->AppState);
 movefocus: fn(state: ref IcState->AppState, bar: ref IcState->TopBarState, delta: int);
 commandforitem: fn(it: IcMenuMod->Item): int;
+selectedmainitem: fn(): IcMenuMod->Item;
+isthemesitem: fn(it: IcMenuMod->Item): int;
 
 init()
 {
+	sys = load Sys Sys->PATH;
+	if(sys == nil)
+		raise "fail:load sys";
+
 	ui = load IcUiMod IcUiMod->PATH;
 	if(ui == nil)
 		raise "fail:load icurses/ui";
@@ -190,6 +205,8 @@ init()
 	icmenu->init();
 
 	popup = nil;
+	themepopup = nil;
+	selectedthemename = "";
 }
 
 basecode(state: ref IcState->AppState): string
@@ -260,6 +277,8 @@ toggle(bar: ref IcState->TopBarState)
 
 	if(popup != nil)
 		popup.active = 0;
+	if(themepopup != nil)
+		themepopup.active = 0;
 }
 
 close(bar: ref IcState->TopBarState)
@@ -271,6 +290,13 @@ close(bar: ref IcState->TopBarState)
 
 	if(popup != nil)
 		popup.active = 0;
+	if(themepopup != nil)
+		themepopup.active = 0;
+}
+
+selectedtheme(): string
+{
+	return selectedthemename;
 }
 
 spaces(n: int): string
@@ -328,6 +354,134 @@ menuitemx(i: int): int
 	return x;
 }
 
+startswith(s, prefix: string): int
+{
+	if(len prefix > len s)
+		return 0;
+
+	return s[0:len prefix] == prefix;
+}
+
+endswith(s, suffix: string): int
+{
+	if(len suffix > len s)
+		return 0;
+
+	return s[len s - len suffix:] == suffix;
+}
+
+themefromfile(file: string): string
+{
+	if(!endswith(file, ThemeSuffix))
+		return "";
+
+	return file[0:len file - len ThemeSuffix];
+}
+
+appendstr(a: array of string, s: string): array of string
+{
+	b: array of string;
+	i, n: int;
+
+	if(s == "")
+		return a;
+
+	if(a == nil){
+		b = array[1] of string;
+		b[0] = s;
+		return b;
+	}
+
+	n = len a;
+	b = array[n + 1] of string;
+
+	for(i = 0; i < n; i++)
+		b[i] = a[i];
+
+	b[n] = s;
+	return b;
+}
+
+sortstrings(a: array of string): array of string
+{
+	i, j: int;
+	t: string;
+
+	if(a == nil)
+		return array[0] of string;
+
+	for(i = 0; i < len a; i++){
+		for(j = i + 1; j < len a; j++){
+			if(a[j] < a[i]){
+				t = a[i];
+				a[i] = a[j];
+				a[j] = t;
+			}
+		}
+	}
+
+	return a;
+}
+
+readthemes(path: string): array of string
+{
+	fd: ref Sys->FD;
+	n, i: int;
+	dirs: array of Sys->Dir;
+	names: array of string;
+	name: string;
+
+	names = array[0] of string;
+
+	if(path == "")
+		return names;
+
+	fd = sys->open(path, Sys->OREAD);
+	if(fd == nil)
+		return names;
+
+	for(;;){
+		(n, dirs) = sys->dirread(fd);
+		if(n <= 0)
+			break;
+
+		for(i = 0; i < n; i++){
+			if((dirs[i].mode & Sys->DMDIR) != 0)
+				continue;
+
+			name = themefromfile(dirs[i].name);
+			if(name != "")
+				names = appendstr(names, name);
+		}
+	}
+
+	return sortstrings(names);
+}
+
+appendthemeitems(a: array of IcMenuMod->Item, names: array of string): array of IcMenuMod->Item
+{
+	b: array of IcMenuMod->Item;
+	i, n, old: int;
+
+	if(names == nil || len names == 0)
+		return a;
+
+	old = 0;
+	if(a != nil)
+		old = len a;
+
+	n = old + len names;
+	b = array[n] of IcMenuMod->Item;
+
+	for(i = 0; i < old; i++)
+		b[i] = a[i];
+
+	for(i = 0; i < len names; i++)
+		b[old + i] = icmenu->newitem(names[i], "", IcView->NoId, names[i]);
+
+	return b;
+}
+
 ensureids(state: ref IcState->AppState, bar: ref IcState->TopBarState)
 {
 	i: int;
@@ -350,20 +504,24 @@ ensureids(state: ref IcState->AppState, bar: ref IcState->TopBarState)
 
 ensurepopup(state: ref IcState->AppState)
 {
-	shadowid, popupid: int;
+	shadowid, popupid, themeshadowid, themepopupid: int;
 
 	if(state == nil || state.ui == nil || state.ui.tree == nil)
 		return;
 
-	if(popup != nil){
+	if(popup == nil){
+		shadowid = view->allocid(state.ui.tree);
+		popupid = view->allocid(state.ui.tree);
+		popup = icmenu->newpopup(state.mainid, shadowid, popupid);
+	}else
 		popup.parentid = state.mainid;
-		return;
-	}
 
-	shadowid = view->allocid(state.ui.tree);
-	popupid = view->allocid(state.ui.tree);
-
-	popup = icmenu->newpopup(state.mainid, shadowid, popupid);
+	if(themepopup == nil){
+		themeshadowid = view->allocid(state.ui.tree);
+		themepopupid = view->allocid(state.ui.tree);
+		themepopup = icmenu->newpopup(state.mainid, themeshadowid, themepopupid);
+	}else
+		themepopup.parentid = state.mainid;
 }
 
 hideall(state: ref IcState->AppState, bar: ref IcState->TopBarState)
@@ -374,8 +532,7 @@ hideall(state: ref IcState->AppState, bar: ref IcState->TopBarState)
 	if(state == nil || state.ui == nil || state.ui.tree == nil || bar == nil)
 		return;
 
-	if(popup != nil)
-		icmenu->closepopup(state.ui, popup);
+	closeallpopups(state);
 
 	if(bar.itemids != nil){
 		for(i = 0; i < len bar.itemids; i++){
@@ -472,8 +629,10 @@ popupitems(menuindex: int): array of IcMenuMod->Item
 
 	case menuindex {
 	MenuOptions =>
-		a = array[1] of IcMenuMod->Item;
+		a = array[2] of IcMenuMod->Item;
 		a[0] = icmenu->newitem("Screensavers", "", IcView->NoId, CommandOptionsScreensavers);
+		a[1] = icmenu->newsubmenu("Themes", "", IcView->NoId);
+		a[1].command = CommandOptionsThemes;
 		return a;
 
 	MenuLeft =>
@@ -504,6 +663,45 @@ popupitems(menuindex: int): array of IcMenuMod->Item
 	return array[0] of IcMenuMod->Item;
 }
 
+themeitems(state: ref IcState->AppState): array of IcMenuMod->Item
+{
+	stdnames, usernames: array of string;
+	items: array of IcMenuMod->Item;
+	it: IcMenuMod->Item;
+	userdir: string;
+
+	stdnames = readthemes(StdThemeDir);
+
+	userdir = "";
+	if(state != nil && state.cfg != nil && state.cfg.userdir != "")
+		userdir = state.cfg.userdir;
+
+	usernames = readthemes(userdir);
+
+	items = array[0] of IcMenuMod->Item;
+	items = appendthemeitems(items, stdnames);
+
+	if(usernames != nil && len usernames > 0){
+		if(items != nil && len items > 0){
+			a := array[len items + 1] of IcMenuMod->Item;
+			for(i := 0; i < len items; i++)
+				a[i] = items[i];
+			a[len items] = icmenu->newseparator();
+			items = a;
+		}
+
+		items = appendthemeitems(items, usernames);
+	}
+
+	if(items == nil || len items == 0){
+		items = array[1] of IcMenuMod->Item;
+		it = icmenu->newitem("No themes found", "", IcView->NoId, "");
+		items[0] = icmenu->setdisabled(it, 1);
+	}
+
+	return items;
+}
+
 openpopupfor(state: ref IcState->AppState, bar: ref IcState->TopBarState): int
 {
 	items: array of IcMenuMod->Item;
@@ -515,6 +713,8 @@ openpopupfor(state: ref IcState->AppState, bar: ref IcState->TopBarState): int
 	ensurepopup(state);
 	if(popup == nil)
 		return -1;
+
+	closethemepopup(state);
 
 	items = popupitems(bar.focus);
 
@@ -535,8 +735,66 @@ openpopupfor(state: ref IcState->AppState, bar: ref IcState->TopBarState): int
 	return 0;
 }
 
+openthemepopup(state: ref IcState->AppState): int
+{
+	items: array of IcMenuMod->Item;
+	x, y, w, h: int;
+
+	if(state == nil || state.ui == nil)
+		return -1;
+
+	ensurepopup(state);
+	if(popup == nil || themepopup == nil || !popup.active)
+		return -1;
+
+	items = themeitems(state);
+
+	w = icmenu->popupwidth(items);
+	x = popup.x + popup.w;
+	y = popup.y + popup.sel;
+	h = len items;
+	if(h <= 0)
+		h = 1;
+
+	if(x + w > state.width)
+		x = popup.x - w;
+	if(x < 0)
+		x = 0;
+
+	if(y + h > state.height)
+		y = state.height - h;
+	if(y < 1)
+		y = 1;
+
+	icmenu->setpopupstyle(themepopup, basecode(state), focuscode(state), disabledcode(state), shadowcode(state));
+
+	if(icmenu->openpopup(state.ui, themepopup, x, y, w, "", items, 0, animticks(state)) < 0)
+		return -1;
+
+	return 0;
+}
+
 closepopup(state: ref IcState->AppState)
 {
+	closethemepopup(state);
+
+	if(state != nil && state.ui != nil && popup != nil)
+		icmenu->closepopup(state.ui, popup);
+	else if(popup != nil)
+		popup.active = 0;
+}
+
+closethemepopup(state: ref IcState->AppState)
+{
+	if(state != nil && state.ui != nil && themepopup != nil)
+		icmenu->closepopup(state.ui, themepopup);
+	else if(themepopup != nil)
+		themepopup.active = 0;
+}
+
+closeallpopups(state: ref IcState->AppState)
+{
+	closethemepopup(state);
 	if(state != nil && state.ui != nil && popup != nil)
 		icmenu->closepopup(state.ui, popup);
 	else if(popup != nil)
@@ -568,6 +826,16 @@ commandforitem(it: IcMenuMod->Item): int
 	return IcTopBar->CmdHandled;
 }
 
+selectedmainitem(): IcMenuMod->Item
+{
+	return icmenu->selectedpopupitem(popup);
+}
+
+isthemesitem(it: IcMenuMod->Item): int
+{
+	return it.command == CommandOptionsThemes;
+}
+
 build(state: ref IcState->AppState, bar: ref IcState->TopBarState, rect: IcLayout->Rect): int
 {
 	w: int;
@@ -592,6 +860,9 @@ build(state: ref IcState->AppState, bar: ref IcState->TopBarState, rect: IcLayou
 	if(popup != nil && popup.active)
 		icmenu->buildpopup(state.ui, popup);
 
+	if(themepopup != nil && themepopup.active)
+		icmenu->buildpopup(state.ui, themepopup);
+
 	return 0;
 }
 
@@ -606,12 +877,48 @@ handlekey(state: ref IcState->AppState, bar: ref IcState->TopBarState, k: int): 
 	ensurepopup(state);
 
 	if(k == Kesc){
-		closepopup(state);
+		closeallpopups(state);
 		bar.active = 0;
 		return IcTopBar->CmdHandled;
 	}
 
+	if(themepopup != nil && themepopup.active){
+		if(k == Kleft){
+			closethemepopup(state);
+			return IcTopBar->CmdHandled;
+		}
+
+		r = icmenu->handlepopupkey(state.ui, themepopup, k);
+
+		if(r == IcMenuMod->PopupAccept){
+			it = icmenu->selectedpopupitem(themepopup);
+			selectedthemename = it.command;
+			closeallpopups(state);
+			return IcTopBar->CmdOptionsTheme;
+		}
+
+		if(r == IcMenuMod->PopupCancel){
+			closethemepopup(state);
+			return IcTopBar->CmdHandled;
+		}
+
+		if(r != IcMenuMod->PopupNone)
+			return IcTopBar->CmdHandled;
+	}
+
 	if(popup != nil && popup.active){
+		it = selectedmainitem();
+
+		if(k == Kright && isthemesitem(it)){
+			openthemepopup(state);
+			return IcTopBar->CmdHandled;
+		}
+
+		if((k == Kenter || k == Kreturn) && isthemesitem(it)){
+			openthemepopup(state);
+			return IcTopBar->CmdHandled;
+		}
+
 		if(k == Kleft){
 			closepopup(state);
 			movefocus(state, bar, -1);
@@ -661,11 +968,22 @@ handlekey(state: ref IcState->AppState, bar: ref IcState->TopBarState, k: int): 
 
 handletick(state: ref IcState->AppState, bar: ref IcState->TopBarState): int
 {
+	redraw: int;
+
 	if(state == nil || state.ui == nil || bar == nil || !bar.active)
 		return 0;
 
-	if(popup == nil || !popup.active)
-		return 0;
+	redraw = 0;
 
-	return icmenu->tickpopup(state.ui, popup, animticks(state));
+	if(popup != nil && popup.active){
+		if(icmenu->tickpopup(state.ui, popup, animticks(state)))
+			redraw = 1;
+	}
+
+	if(themepopup != nil && themepopup.active){
+		if(icmenu->tickpopup(state.ui, themepopup, animticks(state)))
+			redraw = 1;
+	}
+
+	return redraw;
 }
