@@ -40,10 +40,16 @@ Kdown: con 57363;
 Kleft: con 57364;
 Kright: con 57365;
 
+StageNone: con 0;
+StageShadow: con 1;
+StageMenu: con 2;
+
 DefaultBaseCode: con "1;38;2;20;25;30;48;2;210;235;255";
 DefaultFocusCode: con "1;38;2;0;0;0;48;2;170;225;255";
 
 submenuactive: int;
+submenustage: int;
+submenuwait: int;
 submenushadowid: int;
 submenubgid: int;
 submenuitemids: array of int;
@@ -51,18 +57,24 @@ submenuindex: int;
 
 basecode: fn(state: ref IcState->AppState): string;
 focuscode: fn(state: ref IcState->AppState): string;
+animticks: fn(state: ref IcState->AppState): int;
+
 spaces: fn(n: int): string;
 fittext: fn(s: string, w: int): string;
 itemtext: fn(i: int): string;
 submenuitemtext: fn(i: int): string;
 menuitemx: fn(i: int): int;
+
 ensureids: fn(state: ref IcState->AppState, bar: ref IcState->TopBarState);
 hideall: fn(state: ref IcState->AppState, bar: ref IcState->TopBarState);
 hidesubmenu: fn(state: ref IcState->AppState);
+
 setlabel: fn(state: ref IcState->AppState, id, x, y, w: int, text, code: string);
 showshadow: fn(state: ref IcState->AppState, id, x, y, w, h: int);
 showmenu: fn(state: ref IcState->AppState, bar: ref IcState->TopBarState, w: int);
 showsubmenu: fn(state: ref IcState->AppState, bar: ref IcState->TopBarState);
+opensubmenu: fn(state: ref IcState->AppState);
+closesubmenu: fn();
 
 init()
 {
@@ -78,6 +90,8 @@ init()
 	view->init();
 
 	submenuactive = 0;
+	submenustage = StageNone;
+	submenuwait = 0;
 	submenushadowid = -1;
 	submenubgid = -1;
 	submenuitemids = array[0] of int;
@@ -98,6 +112,14 @@ focuscode(state: ref IcState->AppState): string
 		return state.theme.menufocuscode;
 
 	return DefaultFocusCode;
+}
+
+animticks(state: ref IcState->AppState): int
+{
+	if(state != nil && state.theme != nil && state.theme.modalanimticks > 0)
+		return state.theme.modalanimticks;
+
+	return 0;
 }
 
 newbar(): ref IcState->TopBarState
@@ -128,8 +150,7 @@ toggle(bar: ref IcState->TopBarState)
 	if(bar.active && (bar.focus < 0 || bar.focus >= MenuCount))
 		bar.focus = 0;
 
-	submenuactive = 0;
-	submenuindex = 0;
+	closesubmenu();
 }
 
 close(bar: ref IcState->TopBarState)
@@ -138,8 +159,27 @@ close(bar: ref IcState->TopBarState)
 		return;
 
 	bar.active = 0;
+	closesubmenu();
+}
+
+closesubmenu()
+{
 	submenuactive = 0;
+	submenustage = StageNone;
+	submenuwait = 0;
 	submenuindex = 0;
+}
+
+opensubmenu(state: ref IcState->AppState)
+{
+	submenuactive = 1;
+	submenuindex = 0;
+	submenuwait = 0;
+
+	if(animticks(state) > 0)
+		submenustage = StageShadow;
+	else
+		submenustage = StageMenu;
 }
 
 spaces(n: int): string
@@ -362,9 +402,8 @@ showsubmenu(state: ref IcState->AppState, bar: ref IcState->TopBarState)
 	if(state == nil || state.ui == nil || state.ui.tree == nil || bar == nil)
 		return;
 
-	if(bar.focus != 3){
+	if(!submenuactive || bar.focus != 3){
 		hidesubmenu(state);
-		submenuactive = 0;
 		return;
 	}
 
@@ -377,6 +416,21 @@ showsubmenu(state: ref IcState->AppState, bar: ref IcState->TopBarState)
 	h = OptionItemCount;
 
 	showshadow(state, submenushadowid, x + 2, y + 1, w, h);
+
+	if(submenustage == StageShadow){
+		for(i = 0; i < OptionItemCount; i++){
+			if(submenuitemids != nil && i < len submenuitemids){
+				n := view->find(state.ui.tree, submenuitemids[i]);
+				if(n != nil)
+					view->hide(n);
+			}
+		}
+		n2 := view->find(state.ui.tree, submenubgid);
+		if(n2 != nil)
+			view->hide(n2);
+		return;
+	}
+
 	setlabel(state, submenubgid, x, y, w, spaces(w), normal);
 
 	for(i = 0; i < OptionItemCount; i++){
@@ -386,8 +440,6 @@ showsubmenu(state: ref IcState->AppState, bar: ref IcState->TopBarState)
 
 		setlabel(state, submenuitemids[i], x, y + i, w, submenuitemtext(i), code);
 	}
-
-	submenuactive = 1;
 }
 
 build(state: ref IcState->AppState, bar: ref IcState->TopBarState, rect: IcLayout->Rect): int
@@ -409,11 +461,7 @@ build(state: ref IcState->AppState, bar: ref IcState->TopBarState, rect: IcLayou
 		w = state.width;
 
 	showmenu(state, bar, w);
-
-	if(submenuactive)
-		showsubmenu(state, bar);
-	else
-		hidesubmenu(state);
+	showsubmenu(state, bar);
 
 	return 0;
 }
@@ -444,7 +492,7 @@ handlekey(state: ref IcState->AppState, bar: ref IcState->TopBarState, k: int): 
 		}
 
 		if(k == Kleft){
-			submenuactive = 0;
+			closesubmenu();
 			return 1;
 		}
 
@@ -468,9 +516,8 @@ handlekey(state: ref IcState->AppState, bar: ref IcState->TopBarState, k: int): 
 		return 1;
 	}
 
-	if((k == Kenter || k == Kreturn || k == Kdown) && bar.focus == 3){
-		submenuactive = 1;
-		submenuindex = 0;
+	if((k == Kenter || k == Kreturn || k == Kup || k == Kdown) && bar.focus == 3){
+		opensubmenu(state);
 		return 1;
 	}
 
@@ -479,5 +526,28 @@ handlekey(state: ref IcState->AppState, bar: ref IcState->TopBarState, k: int): 
 		return 1;
 	}
 
+	return 1;
+}
+
+handletick(state: ref IcState->AppState, bar: ref IcState->TopBarState): int
+{
+	delay: int;
+
+	if(state == nil || bar == nil || !bar.active || !submenuactive)
+		return 0;
+
+	if(submenustage != StageShadow)
+		return 0;
+
+	delay = animticks(state);
+	if(delay <= 0)
+		delay = 1;
+
+	submenuwait++;
+	if(submenuwait < delay)
+		return 0;
+
+	submenuwait = 0;
+	submenustage = StageMenu;
 	return 1;
 }

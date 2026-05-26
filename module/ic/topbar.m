@@ -13,4 +13,5 @@ IcTopBar: module
 	toggle: fn(bar: ref IcState->TopBarState);
 	close: fn(bar: ref IcState->TopBarState);
 	handlekey: fn(state: ref IcState->AppState, bar: ref IcState->TopBarState, k: int): int;
+	handletick: fn(state: ref IcState->AppState, bar: ref IcState->TopBarState): int;
 };

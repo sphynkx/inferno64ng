@@ -83,6 +83,7 @@ IcTopBar: module
 	toggle: fn(bar: ref IcState->TopBarState);
 	close: fn(bar: ref IcState->TopBarState);
 	handlekey: fn(state: ref IcState->AppState, bar: ref IcState->TopBarState, k: int): int;
+	handletick: fn(state: ref IcState->AppState, bar: ref IcState->TopBarState): int;
 };
 
 IcViewerMod: module
@@ -433,6 +434,12 @@ handletick(state: ref IcState->AppState): int
 
 	if(sssetup->active(state)){
 		if(sssetup->handletick(state))
+			redraw = 1;
+		return redraw;
+	}
+
+	if(topbar->active(state.topbar)){
+		if(topbar->handletick(state, state.topbar))
 			redraw = 1;
 		return redraw;
 	}
