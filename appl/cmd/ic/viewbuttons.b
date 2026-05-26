@@ -23,6 +23,14 @@ IcViewMod: module
 	show: fn(v: ref IcView->Node);
 };
 
+IcRuntimeTheme: module
+{
+	PATH: con "/dis/ic/runtheme.dis";
+
+	init: fn();
+	loadtheme: fn(): ref IcState->ThemeState;
+};
+
 ViewerButton: adt
 {
 	labelid: int;
@@ -33,6 +41,9 @@ ViewerButton: adt
 
 ui: IcUiMod;
 view: IcViewMod;
+runtheme: IcRuntimeTheme;
+
+theme: ref IcState->ThemeState;
 
 buttons: array of ViewerButton;
 activefkey: int;
@@ -42,15 +53,18 @@ ButtonCount: con 10;
 ButtonGap: con 1;
 FlashTicks: con 2;
 
-BottomCode: con "1;38;2;20;25;30;48;2;170;225;255";
-BottomActiveCode: con "1;38;2;255;120;210;48;2;170;225;255";
-BottomDisabledCode: con "38;2;120;120;120;48;2;170;225;255";
+DefaultBottomCode: con "1;38;2;20;25;30;48;2;170;225;255";
+DefaultBottomActiveCode: con "1;38;2;255;120;210;48;2;170;225;255";
+DefaultBottomDisabledCode: con "38;2;120;120;120;48;2;170;225;255";
 
 ensurebuttons: fn(u: ref IcUi->Ui);
 buttonx: fn(w, idx: int): int;
 buttonw: fn(w, idx: int): int;
 buttontext: fn(fkey: int, text: string, w: int): string;
 buttoncode: fn(b: ViewerButton): string;
+bottomcode: fn(): string;
+bottomactivecode: fn(): string;
+bottomdisabledcode: fn(): string;
 spaces: fn(n: int): string;
 fittext: fn(s: string, w: int): string;
 setlabel: fn(u: ref IcUi->Ui, parentid, id, x, y, w: int, text, code: string);
@@ -65,12 +79,49 @@ init()
 	if(view == nil)
 		raise "fail:load icurses/view";
 
+	runtheme = load IcRuntimeTheme IcRuntimeTheme->PATH;
+	if(runtheme == nil)
+		raise "fail:load ic/runtheme";
+
 	ui->init();
 	view->init();
+	runtheme->init();
+
+	theme = runtheme->loadtheme();
 
 	buttons = array[0] of ViewerButton;
 	activefkey = 0;
 	activewait = 0;
+}
+
+settheme(t: ref IcState->ThemeState)
+{
+	if(t != nil)
+		theme = t;
+}
+
+bottomcode(): string
+{
+	if(theme != nil && theme.commandbarcode != "")
+		return theme.commandbarcode;
+
+	return DefaultBottomCode;
+}
+
+bottomactivecode(): string
+{
+	if(theme != nil && theme.commandbaractivecode != "")
+		return theme.commandbaractivecode;
+
+	return DefaultBottomActiveCode;
+}
+
+bottomdisabledcode(): string
+{
+	if(theme != nil && theme.commandbardisabledcode != "")
+		return theme.commandbardisabledcode;
+
+	return DefaultBottomDisabledCode;
 }
 
 ensurebuttons(u: ref IcUi->Ui)
@@ -158,12 +209,12 @@ buttontext(fkey: int, text: string, w: int): string
 buttoncode(b: ViewerButton): string
 {
 	if(!b.enabled)
-		return BottomDisabledCode;
+		return bottomdisabledcode();
 
 	if(activewait > 0 && b.fkey == activefkey)
-		return BottomActiveCode;
+		return bottomactivecode();
 
-	return BottomCode;
+	return bottomcode();
 }
 
 spaces(n: int): string
@@ -219,7 +270,7 @@ draw(u: ref IcUi->Ui, parentid, bottomid, w, h: int)
 	if(u == nil || u.tree == nil)
 		return;
 
-	setlabel(u, parentid, bottomid, 0, h - 1, w, spaces(w), BottomCode);
+	setlabel(u, parentid, bottomid, 0, h - 1, w, spaces(w), bottomcode());
 
 	ensurebuttons(u);
 

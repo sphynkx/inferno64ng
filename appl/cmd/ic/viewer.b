@@ -195,6 +195,7 @@ IcViewButtonsMod: module
 	PATH: con "/dis/ic/viewbuttons.dis";
 
 	init: fn();
+	settheme: fn(theme: ref IcState->ThemeState);
 
 	draw: fn(u: ref IcUi->Ui, parentid, bottomid, w, h: int);
 	activate: fn(fkey: int);
@@ -232,6 +233,16 @@ IcViewSearchRunMod: module
 	searchsarg: fn(source: ref IcViewCommon->ViewerSource, v: ref IcState->ViewerState, h: int): string;
 };
 
+IcRuntimeTheme: module
+{
+	PATH: con "/dis/ic/runtheme.dis";
+
+	init: fn();
+
+	loadcfg: fn(): ref IcState->ConfigState;
+	loadtheme: fn(): ref IcState->ThemeState;
+};
+
 sys: Sys;
 appfw: IcursesApp;
 ui: IcUiMod;
@@ -245,14 +256,16 @@ statsmod: IcViewStatsMod;
 viewbuttons: IcViewButtonsMod;
 viewstatus: IcViewStatusMod;
 viewsearchrun: IcViewSearchRunMod;
+runtheme: IcRuntimeTheme;
 
 source: ref IcViewCommon->ViewerSource;
 
+theme: ref IcState->ThemeState;
 viewerbodyrows: int;
 
-TopCode: con "1;38;2;20;25;30;48;2;225;225;225";
-BodyCode: con "38;2;220;230;255;48;2;20;45;90";
-ErrorCode: con "1;38;2;255;120;120;48;2;20;45;90";
+DefaultTopCode: con "1;38;2;20;25;30;48;2;225;225;225";
+DefaultBodyCode: con "38;2;220;230;255;48;2;20;45;90";
+DefaultErrorCode: con "1;38;2;255;120;120;48;2;20;45;90";
 
 InitialPrefetchScreens: con 6;
 ScrollPrefetchScreens: con 8;
@@ -296,6 +309,11 @@ spaces: fn(n: int): string;
 fittext: fn(s: string, w: int): string;
 bodyh: fn(h: int): int;
 bodyid: fn(v: ref IcState->ViewerState): int;
+
+topcode: fn(): string;
+bodycode: fn(): string;
+errorcode: fn(): string;
+applytheme: fn(t: ref IcState->ThemeState);
 
 clampview: fn(v: ref IcState->ViewerState, h: int);
 ensureids: fn(u: ref IcUi->Ui, v: ref IcState->ViewerState);
@@ -371,6 +389,10 @@ init()
 	if(viewsearchrun == nil)
 		raise "fail:load ic/viewsearchrun";
 
+	runtheme = load IcRuntimeTheme IcRuntimeTheme->PATH;
+	if(runtheme == nil)
+		raise "fail:load ic/runtheme";
+
 	appfw->init("icview");
 	ui->init();
 	view->init();
@@ -383,9 +405,45 @@ init()
 	viewbuttons->init();
 	viewstatus->init();
 	viewsearchrun->init();
+	runtheme->init();
 
 	source = nil;
+	theme = runtheme->loadtheme();
+	viewbuttons->settheme(theme);
+
 	viewerbodyrows = 1;
+}
+
+topcode(): string
+{
+	if(theme != nil && theme.paneltopcode != "")
+		return theme.paneltopcode;
+
+	return DefaultTopCode;
+}
+
+bodycode(): string
+{
+	if(theme != nil && theme.panelbodycode != "")
+		return theme.panelbodycode;
+
+	return DefaultBodyCode;
+}
+
+errorcode(): string
+{
+	if(theme != nil && theme.panelmarkedcode != "")
+		return theme.panelmarkedcode;
+
+	return DefaultErrorCode;
+}
+
+applytheme(t: ref IcState->ThemeState)
+{
+	if(t != nil)
+		theme = t;
+
+	viewbuttons->settheme(theme);
 }
 
 newstate(): ref IcState->ViewerState
@@ -686,7 +744,7 @@ iserrorline(s: string): int
 drawviewer(u: ref IcUi->Ui, parentid: int, v: ref IcState->ViewerState, w, h: int)
 {
 	rows, id: int;
-	bodycode, content: string;
+	code, content: string;
 
 	if(u == nil || v == nil)
 		return;
@@ -705,20 +763,21 @@ drawviewer(u: ref IcUi->Ui, parentid: int, v: ref IcState->ViewerState, w, h: in
 
 	ui->setstatusrows(u, -1, -1);
 
-	setlabel(u, parentid, v.topid, 0, 0, w, viewstatus->toptext(source, v, viewerbodyrows), TopCode);
+	setlabel(u, parentid, v.topid, 0, 0, w, viewstatus->toptext(source, v, viewerbodyrows), topcode());
 
-	bodycode = BodyCode;
+	code = bodycode();
 	if(source != nil && source.error != "")
-		bodycode = ErrorCode;
+		code = errorcode();
 	if(v.lines != nil && len v.lines > 0 && iserrorline(v.lines[0]))
-		bodycode = ErrorCode;
+		code = errorcode();
 
 	id = bodyid(v);
 	if(id >= 0){
 		content = srcmod->visiblecontent(v.lines, 0, rows);
-		setbody(u, parentid, id, 0, 1, w, rows, v, content, bodycode);
+		setbody(u, parentid, id, 0, 1, w, rows, v, content, code);
 	}
 
+	viewbuttons->settheme(theme);
 	viewbuttons->draw(u, parentid, v.bottomid, w, h);
 
 	if(gotomod != nil && gotomod->active())
@@ -740,6 +799,9 @@ start(state: ref IcState->AppState, path: string, mode: int): int
 {
 	if(state == nil || path == "")
 		return -1;
+
+	if(state.theme != nil)
+		applytheme(state.theme);
 
 	closefile(source);
 	source = newsource(path);
@@ -777,6 +839,9 @@ build(state: ref IcState->AppState, parentid, w, h: int): int
 {
 	if(state == nil || state.ui == nil || state.viewer == nil || !state.viewer.active)
 		return -1;
+
+	if(state.theme != nil)
+		applytheme(state.theme);
 
 	drawviewer(state.ui, parentid, state.viewer, w, h);
 	return 0;
@@ -1007,6 +1072,9 @@ handlekey(state: ref IcState->AppState, k: int): int
 	if(state == nil || state.viewer == nil || !state.viewer.active)
 		return 0;
 
+	if(state.theme != nil)
+		applytheme(state.theme);
+
 	v = state.viewer;
 	rows = bodyh(state.height);
 
@@ -1172,6 +1240,9 @@ handletick(state: ref IcState->AppState): int
 	if(state == nil || state.viewer == nil || !state.viewer.active)
 		return 0;
 
+	if(state.theme != nil)
+		applytheme(state.theme);
+
 	changed = 0;
 
 	if(viewbuttons->handletick())
@@ -1214,6 +1285,9 @@ runfilemode(path: string, mode: int): int
 	closefile(source);
 	source = newsource(path);
 
+	theme = runtheme->loadtheme();
+	viewbuttons->settheme(theme);
+
 	v = newstate();
 	v.path = path;
 	v.mode = mode;
@@ -1255,6 +1329,7 @@ runfilemode(path: string, mode: int): int
 	st.width = appfw->width(ctx);
 	st.height = appfw->height(ctx);
 	st.viewer = v;
+	st.theme = theme;
 
 	v.active = 1;
 

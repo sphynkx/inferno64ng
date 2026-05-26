@@ -84,6 +84,7 @@ IcEditDraw: module
 	PATH: con "/dis/ic/editdraw.dis";
 
 	init: fn();
+	settheme: fn(theme: ref IcState->ThemeState);
 	draw: fn(u: ref IcUi->Ui, parentid: int, e: ref IcState->EditorState, w, h: int);
 	hide: fn(u: ref IcUi->Ui, e: ref IcState->EditorState);
 	handletick: fn(e: ref IcState->EditorState): int;
@@ -106,6 +107,14 @@ IcViewSearchMod: module
 	handletick: fn(u: ref IcUi->Ui, parentid, w, h: int): int;
 };
 
+IcRuntimeTheme: module
+{
+	PATH: con "/dis/ic/runtheme.dis";
+
+	init: fn();
+	loadtheme: fn(): ref IcState->ThemeState;
+};
+
 sys: Sys;
 appfw: IcursesApp;
 ui: IcUiMod;
@@ -114,6 +123,11 @@ source: IcEditSource;
 drawmod: IcEditDraw;
 keys: IcEditKeys;
 viewsearch: IcViewSearchMod;
+runtheme: IcRuntimeTheme;
+
+theme: ref IcState->ThemeState;
+
+applytheme: fn(t: ref IcState->ThemeState);
 
 init()
 {
@@ -149,6 +163,10 @@ init()
 	if(viewsearch == nil)
 		raise "fail:load ic/viewsearch";
 
+	runtheme = load IcRuntimeTheme IcRuntimeTheme->PATH;
+	if(runtheme == nil)
+		raise "fail:load ic/runtheme";
+
 	appfw->init("icedit");
 	ui->init();
 	common->init();
@@ -156,6 +174,18 @@ init()
 	drawmod->init();
 	keys->init();
 	viewsearch->init();
+	runtheme->init();
+
+	theme = runtheme->loadtheme();
+	drawmod->settheme(theme);
+}
+
+applytheme(t: ref IcState->ThemeState)
+{
+	if(t != nil)
+		theme = t;
+
+	drawmod->settheme(theme);
 }
 
 runfile(path: string): int
@@ -171,6 +201,9 @@ runfile(path: string): int
 
 	if(path == "")
 		return -1;
+
+	theme = runtheme->loadtheme();
+	drawmod->settheme(theme);
 
 	e = source->newstate(path, common->dirname(path));
 	if(e == nil)
@@ -198,6 +231,7 @@ runfile(path: string): int
 	w = appfw->width(ctx);
 	h = appfw->height(ctx);
 
+	drawmod->settheme(theme);
 	drawmod->draw(u, rootid, e, w, h);
 	appfw->draw(ctx);
 
@@ -213,6 +247,7 @@ runfile(path: string): int
 			if(r == 2)
 				running = 0;
 			else if(r != 0){
+				drawmod->settheme(theme);
 				drawmod->draw(u, rootid, e, w, h);
 				appfw->draw(ctx);
 			}
@@ -230,6 +265,7 @@ runfile(path: string): int
 			}
 
 			if(r){
+				drawmod->settheme(theme);
 				drawmod->draw(u, rootid, e, w, h);
 				appfw->draw(ctx);
 			}
@@ -238,6 +274,7 @@ runfile(path: string): int
 			if(resized){
 				w = nw;
 				h = nh;
+				drawmod->settheme(theme);
 				drawmod->draw(u, rootid, e, w, h);
 				appfw->draw(ctx);
 			}
@@ -254,6 +291,9 @@ start(state: ref IcState->AppState, path: string): int
 	if(state == nil || path == "")
 		return -1;
 
+	if(state.theme != nil)
+		applytheme(state.theme);
+
 	state.editor = source->newstate(path, common->dirname(path));
 	if(state.editor == nil)
 		return -1;
@@ -265,6 +305,9 @@ startnew(state: ref IcState->AppState, dir: string): int
 {
 	if(state == nil)
 		return -1;
+
+	if(state.theme != nil)
+		applytheme(state.theme);
 
 	state.editor = source->newstate("", dir);
 	if(state.editor == nil)
@@ -284,6 +327,9 @@ build(state: ref IcState->AppState, parentid, w, h: int): int
 	if(state == nil || state.ui == nil || state.editor == nil || !state.editor.active)
 		return -1;
 
+	if(state.theme != nil)
+		applytheme(state.theme);
+
 	drawmod->draw(state.ui, parentid, state.editor, w, h);
 	return 0;
 }
@@ -294,6 +340,9 @@ handlekey(state: ref IcState->AppState, k: int): int
 
 	if(state == nil || state.editor == nil)
 		return 0;
+
+	if(state.theme != nil)
+		applytheme(state.theme);
 
 	r = keys->handlekey(state, state.editor, k, state.height);
 
@@ -309,6 +358,9 @@ handletick(state: ref IcState->AppState): int
 
 	if(state == nil || state.editor == nil)
 		return 0;
+
+	if(state.theme != nil)
+		applytheme(state.theme);
 
 	r = 0;
 

@@ -26,6 +26,7 @@ TARG=\
 	mkdircmd.dis\
 	modal.dis\
 	panelinfo.dis\
+	runtheme.dis\
 	scr_clock.dis\
 	scr_flashlighter.dis\
 	scr_matrix.dis\
@@ -73,6 +74,7 @@ SYSMODULES=\
 	ic/modal.m\
 	ic/mkdircmd.m\
 	ic/panelinfo.m\
+	ic/runtheme.m\
 	ic/scr.m\
 	ic/screen.m\
 	ic/screensaver.m\

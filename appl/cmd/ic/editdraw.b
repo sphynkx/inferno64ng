@@ -95,20 +95,22 @@ editblock: IcEditBlock;
 view: IcViewMod;
 ui: IcUiMod;
 
-TopCode: con "1;38;2;20;25;30;48;2;225;225;225";
-MenuCode: con "1;38;2;20;25;30;48;2;210;235;255";
-BodyCode: con "38;2;220;230;255;48;2;20;45;90";
-BottomCode: con "1;38;2;20;25;30;48;2;170;225;255";
-BottomActiveCode: con "1;38;2;255;120;210;48;2;170;225;255";
-BottomDisabledCode: con "38;2;120;120;120;48;2;170;225;255";
-CursorCode: con "1;38;2;0;0;0;48;2;255;235;80";
-SelectionCode: con "1;38;2;0;0;0;48;2;170;225;255";
+theme: ref IcState->ThemeState;
 
-ModalCode: con "1;38;2;20;20;20;48;2;225;225;225";
-ModalTitleCode: con "1;38;2;255;255;255;48;2;40;105;160";
-ModalInputCode: con "1;38;2;255;255;255;48;2;55;160;220";
-ModalButtonCode: con "1;38;2;0;0;0;48;2;170;225;255";
-ModalShadowCode: con "38;2;120;120;120;48;2;0;0;0";
+DefaultTopCode: con "1;38;2;20;25;30;48;2;225;225;225";
+DefaultMenuCode: con "1;38;2;20;25;30;48;2;210;235;255";
+DefaultBodyCode: con "38;2;220;230;255;48;2;20;45;90";
+DefaultBottomCode: con "1;38;2;20;25;30;48;2;170;225;255";
+DefaultBottomActiveCode: con "1;38;2;255;120;210;48;2;170;225;255";
+DefaultBottomDisabledCode: con "38;2;120;120;120;48;2;170;225;255";
+DefaultCursorCode: con "1;38;2;0;0;0;48;2;255;235;80";
+DefaultSelectionCode: con "1;38;2;0;0;0;48;2;170;225;255";
+
+DefaultModalCode: con "1;38;2;20;20;20;48;2;225;225;225";
+DefaultModalTitleCode: con "1;38;2;255;255;255;48;2;40;105;160";
+DefaultModalInputCode: con "1;38;2;255;255;255;48;2;55;160;220";
+DefaultModalButtonCode: con "1;38;2;0;0;0;48;2;170;225;255";
+DefaultModalShadowCode: con "38;2;120;120;120;48;2;0;0;0";
 
 ensureids: fn(u: ref IcUi->Ui, e: ref IcState->EditorState);
 ensurebuttonids: fn(u: ref IcUi->Ui, e: ref IcState->EditorState);
@@ -135,6 +137,20 @@ drawbuttonbar: fn(u: ref IcUi->Ui, parentid: int, e: ref IcState->EditorState, w
 drawselection: fn(u: ref IcUi->Ui, parentid: int, e: ref IcState->EditorState, rows, w: int);
 drawmodal: fn(u: ref IcUi->Ui, parentid: int, e: ref IcState->EditorState, w, h: int, title, line1, inputline, line3: string, input: int);
 drawmodeoverlay: fn(u: ref IcUi->Ui, parentid: int, e: ref IcState->EditorState, w, h: int);
+
+topcode: fn(): string;
+menucode: fn(): string;
+bodycode: fn(): string;
+bottomcode: fn(): string;
+bottomactivecode: fn(): string;
+bottomdisabledcode: fn(): string;
+cursorcode: fn(): string;
+selectioncode: fn(): string;
+modalcode: fn(): string;
+modaltitlecode: fn(): string;
+modalinputcode: fn(): string;
+modalbuttoncode: fn(): string;
+modalshadowcode: fn(): string;
 
 init()
 {
@@ -168,6 +184,118 @@ init()
 	editblock->init();
 	view->init();
 	ui->init();
+
+	theme = nil;
+}
+
+settheme(t: ref IcState->ThemeState)
+{
+	if(t != nil)
+		theme = t;
+}
+
+topcode(): string
+{
+	if(theme != nil && theme.paneltopcode != "")
+		return theme.paneltopcode;
+
+	return DefaultTopCode;
+}
+
+menucode(): string
+{
+	if(theme != nil && theme.menuwindowcode != "")
+		return theme.menuwindowcode;
+
+	return DefaultMenuCode;
+}
+
+bodycode(): string
+{
+	if(theme != nil && theme.panelbodycode != "")
+		return theme.panelbodycode;
+
+	return DefaultBodyCode;
+}
+
+bottomcode(): string
+{
+	if(theme != nil && theme.commandbarcode != "")
+		return theme.commandbarcode;
+
+	return DefaultBottomCode;
+}
+
+bottomactivecode(): string
+{
+	if(theme != nil && theme.commandbaractivecode != "")
+		return theme.commandbaractivecode;
+
+	return DefaultBottomActiveCode;
+}
+
+bottomdisabledcode(): string
+{
+	if(theme != nil && theme.commandbardisabledcode != "")
+		return theme.commandbardisabledcode;
+
+	return DefaultBottomDisabledCode;
+}
+
+cursorcode(): string
+{
+	if(theme != nil && theme.modalfocuscode != "")
+		return theme.modalfocuscode;
+
+	return DefaultCursorCode;
+}
+
+selectioncode(): string
+{
+	if(theme != nil && theme.menufocuscode != "")
+		return theme.menufocuscode;
+
+	return DefaultSelectionCode;
+}
+
+modalcode(): string
+{
+	if(theme != nil && theme.modaltextcode != "")
+		return theme.modaltextcode;
+
+	return DefaultModalCode;
+}
+
+modaltitlecode(): string
+{
+	if(theme != nil && theme.modalframecode != "")
+		return theme.modalframecode;
+
+	return DefaultModalTitleCode;
+}
+
+modalinputcode(): string
+{
+	if(theme != nil && theme.modalfieldcode != "")
+		return theme.modalfieldcode;
+
+	return DefaultModalInputCode;
+}
+
+modalbuttoncode(): string
+{
+	if(theme != nil && theme.modalbuttonfocuscode != "")
+		return theme.modalbuttonfocuscode;
+
+	return DefaultModalButtonCode;
+}
+
+modalshadowcode(): string
+{
+	if(theme != nil && theme.modalshadowcode != "")
+		return theme.modalshadowcode;
+
+	return DefaultModalShadowCode;
 }
 
 ensureids(u: ref IcUi->Ui, e: ref IcState->EditorState)
@@ -454,7 +582,7 @@ cursorarg(e: ref IcState->EditorState, rows: int): string
 	return "search_line=" + string row + "\n"
 		+ "search_start=" + string start + "\n"
 		+ "search_end=" + string end + "\n"
-		+ "search_code=" + CursorCode + "\n";
+		+ "search_code=" + cursorcode() + "\n";
 }
 
 buttonx(w, idx: int): int
@@ -487,12 +615,12 @@ buttontext(b: IcEditCommon->EditorButton, w: int): string
 buttoncode(e: ref IcState->EditorState, b: IcEditCommon->EditorButton): string
 {
 	if(!b.enabled)
-		return BottomDisabledCode;
+		return bottomdisabledcode();
 
 	if(e != nil && e.activewait > 0 && e.activefkey == b.fkey)
-		return BottomActiveCode;
+		return bottomactivecode();
 
-	return BottomCode;
+	return bottomcode();
 }
 
 drawbuttonbar(u: ref IcUi->Ui, parentid: int, e: ref IcState->EditorState, w, h: int)
@@ -503,7 +631,7 @@ drawbuttonbar(u: ref IcUi->Ui, parentid: int, e: ref IcState->EditorState, w, h:
 	if(u == nil || e == nil)
 		return;
 
-	setlabel(u, parentid, e.bottomid, 0, h - 1, w, common->spaces(w), BottomCode);
+	setlabel(u, parentid, e.bottomid, 0, h - 1, w, common->spaces(w), bottomcode());
 
 	ensurebuttonids(u, e);
 
@@ -543,7 +671,7 @@ drawselection(u: ref IcUi->Ui, parentid: int, e: ref IcState->EditorState, rows,
 		if(end <= start)
 			continue;
 
-		setshadow(u, parentid, e.selectionids[i], start, 1 + i, end - start, 1, SelectionCode);
+		setshadow(u, parentid, e.selectionids[i], start, 1 + i, end - start, 1, selectioncode());
 	}
 }
 
@@ -572,28 +700,28 @@ drawmodal(u: ref IcUi->Ui, parentid: int, e: ref IcState->EditorState, w, h: int
 		y = 1;
 
 	if(e.modalstage > 0){
-		setshadow(u, parentid, e.overlayids[0], x + mw, y + 1, 1, mh - 1, ModalShadowCode);
-		setshadow(u, parentid, e.overlayids[1], x + 1, y + mh, mw, 1, ModalShadowCode);
+		setshadow(u, parentid, e.overlayids[0], x + mw, y + 1, 1, mh - 1, modalshadowcode());
+		setshadow(u, parentid, e.overlayids[1], x + 1, y + mh, mw, 1, modalshadowcode());
 	}
 
 	top = "╔" + common->repeat("═", mw - 2) + "╗";
 	bottom = "╚" + common->repeat("═", mw - 2) + "╝";
 	empty = "║" + common->spaces(mw - 2) + "║";
 
-	setlabel(u, parentid, e.overlayids[2], x, y, mw, top, ModalTitleCode);
-	setlabel(u, parentid, e.overlayids[3], x, y + 1, mw, "║ " + common->fittext(title, mw - 4) + " ║", ModalTitleCode);
-	setlabel(u, parentid, e.overlayids[4], x, y + 2, mw, empty, ModalCode);
-	setlabel(u, parentid, e.overlayids[5], x, y + 3, mw, "║ " + common->fittext(line1, mw - 4) + " ║", ModalCode);
+	setlabel(u, parentid, e.overlayids[2], x, y, mw, top, modaltitlecode());
+	setlabel(u, parentid, e.overlayids[3], x, y + 1, mw, "║ " + common->fittext(title, mw - 4) + " ║", modaltitlecode());
+	setlabel(u, parentid, e.overlayids[4], x, y + 2, mw, empty, modalcode());
+	setlabel(u, parentid, e.overlayids[5], x, y + 3, mw, "║ " + common->fittext(line1, mw - 4) + " ║", modalcode());
 
 	if(input)
-		setlabel(u, parentid, e.overlayids[6], x, y + 4, mw, "║ " + common->fittext(inputline, mw - 4) + " ║", ModalInputCode);
+		setlabel(u, parentid, e.overlayids[6], x, y + 4, mw, "║ " + common->fittext(inputline, mw - 4) + " ║", modalinputcode());
 	else
-		setlabel(u, parentid, e.overlayids[6], x, y + 4, mw, "║ " + common->fittext(inputline, mw - 4) + " ║", ModalCode);
+		setlabel(u, parentid, e.overlayids[6], x, y + 4, mw, "║ " + common->fittext(inputline, mw - 4) + " ║", modalcode());
 
-	setlabel(u, parentid, e.overlayids[7], x, y + 5, mw, "║ " + common->fittext(line3, mw - 4) + " ║", ModalCode);
-	setlabel(u, parentid, e.overlayids[8], x, y + 6, mw, empty, ModalCode);
-	setlabel(u, parentid, e.overlayids[9], x, y + 7, mw, "║ " + common->fittext("OK: Enter    Cancel: Esc", mw - 4) + " ║", ModalButtonCode);
-	setlabel(u, parentid, e.overlayids[10], x, y + 8, mw, bottom, ModalCode);
+	setlabel(u, parentid, e.overlayids[7], x, y + 5, mw, "║ " + common->fittext(line3, mw - 4) + " ║", modalcode());
+	setlabel(u, parentid, e.overlayids[8], x, y + 6, mw, empty, modalcode());
+	setlabel(u, parentid, e.overlayids[9], x, y + 7, mw, "║ " + common->fittext("OK: Enter    Cancel: Esc", mw - 4) + " ║", modalbuttoncode());
+	setlabel(u, parentid, e.overlayids[10], x, y + 8, mw, bottom, modalcode());
 }
 
 drawmodeoverlay(u: ref IcUi->Ui, parentid: int, e: ref IcState->EditorState, w, h: int)
@@ -662,12 +790,12 @@ draw(u: ref IcUi->Ui, parentid: int, e: ref IcState->EditorState, w, h: int)
 	ui->setstatusrows(u, -1, -1);
 
 	if(e.mode == IcEditCommon->ModeMenu)
-		setlabel(u, parentid, e.topid, 0, 0, w, " File   Edit   Search   Command   Format   Windows   Settings", MenuCode);
+		setlabel(u, parentid, e.topid, 0, 0, w, " File   Edit   Search   Command   Format   Windows   Settings", menucode());
 	else
-		setlabel(u, parentid, e.topid, 0, 0, w, toptext(e), TopCode);
+		setlabel(u, parentid, e.topid, 0, 0, w, toptext(e), topcode());
 
 	content = visiblecontent(e, rows, w);
-	setbody(u, parentid, e.bodyid, 0, 1, w, rows, e, content, BodyCode);
+	setbody(u, parentid, e.bodyid, 0, 1, w, rows, e, content, bodycode());
 
 	drawselection(u, parentid, e, rows, w);
 
