@@ -35,7 +35,6 @@ TARG=\
 	sssetup.dis\
 	theme.dis\
 	topbar.dis\
-	topmenu.dis\
 	userdir.dis\
 	userstate.dis\
 	viewbuttons.dis\
@@ -82,7 +81,6 @@ SYSMODULES=\
 	ic/state.m\
 	ic/theme.m\
 	ic/topbar.m\
-	ic/topmenu.m\
 	ic/userdir.m\
 	ic/userstate.m\
 	ic/viewbuttons.m\

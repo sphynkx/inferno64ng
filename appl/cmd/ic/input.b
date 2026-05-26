@@ -78,6 +78,11 @@ IcTopBar: module
 {
 	PATH: con "/dis/ic/topbar.dis";
 
+	CmdNone: con 0;
+	CmdHandled: con 1;
+
+	CmdOptionsScreensavers: con 1001;
+
 	init: fn();
 	active: fn(bar: ref IcState->TopBarState): int;
 	toggle: fn(bar: ref IcState->TopBarState);
@@ -129,7 +134,6 @@ IcScreenSaver: module
 	stop: fn(state: ref IcState->AppState): int;
 	resetidle: fn(state: ref IcState->AppState);
 	handletick: fn(state: ref IcState->AppState): int;
-	reload: fn(state: ref IcState->AppState): int;
 };
 
 IcSsSetup: module
@@ -180,6 +184,7 @@ ViewFlashDelayMs: con 80;
 flashfkey: fn(state: ref IcState->AppState, fkey: int);
 flashviewkey: fn(state: ref IcState->AppState);
 viewtoedit: fn(state: ref IcState->AppState): int;
+handletopbarcmd: fn(state: ref IcState->AppState, cmd: int): int;
 
 init()
 {
@@ -292,6 +297,21 @@ viewtoedit(state: ref IcState->AppState): int
 	return 0;
 }
 
+handletopbarcmd(state: ref IcState->AppState, cmd: int): int
+{
+	if(state == nil)
+		return 0;
+
+	if(cmd == IcTopBar->CmdOptionsScreensavers){
+		topbar->close(state.topbar);
+		sssetup->open(state);
+		screen->rebuild(state);
+		return 1;
+	}
+
+	return 0;
+}
+
 handlekey(state: ref IcState->AppState, k: int): int
 {
 	r: int;
@@ -352,14 +372,11 @@ handlekey(state: ref IcState->AppState, k: int): int
 
 	if(topbar->active(state.topbar)){
 		r = topbar->handlekey(state, state.topbar, k);
-		if(r == 2){
-			sssetup->open(state);
-			topbar->close(state.topbar);
-			screen->rebuild(state);
-			return 0;
-		}
 
-		if(r){
+		if(handletopbarcmd(state, r))
+			return 0;
+
+		if(r != IcTopBar->CmdNone){
 			screen->rebuild(state);
 			return 0;
 		}
@@ -433,14 +450,18 @@ handletick(state: ref IcState->AppState): int
 	redraw = 0;
 
 	if(sssetup->active(state)){
-		if(sssetup->handletick(state))
+		if(sssetup->handletick(state)){
+			screen->rebuild(state);
 			redraw = 1;
+		}
 		return redraw;
 	}
 
 	if(topbar->active(state.topbar)){
-		if(topbar->handletick(state, state.topbar))
+		if(topbar->handletick(state, state.topbar)){
+			screen->rebuild(state);
 			redraw = 1;
+		}
 		return redraw;
 	}
 

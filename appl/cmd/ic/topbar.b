@@ -7,7 +7,7 @@ IcUiMod: module
 	PATH: con "/dis/lib/icurses/ui.dis";
 
 	init: fn();
-	node: fn(u: ref IcUi->Ui, parentid, id: int, kind: string, x, y, w, h: int): int;
+	group: fn(u: ref IcUi->Ui, parentid, id: int, x, y, w, h: int): int;
 	label: fn(u: ref IcUi->Ui, parentid, id: int, x, y, w: int, text: string): int;
 };
 
@@ -26,11 +26,111 @@ IcViewMod: module
 	allocid: fn(t: ref IcView->Tree): int;
 };
 
+IcMenuMod: module
+{
+	PATH: con "/dis/lib/icurses/menu.dis";
+
+	KindCommand:   con 0;
+	KindSeparator: con 1;
+	KindSubmenu:   con 2;
+
+	FlagDisabled: con 1;
+	FlagChecked:  con 2;
+	FlagRadio:    con 4;
+
+	PopupNone:    con 0;
+	PopupHandled: con 1;
+	PopupAccept:  con 2;
+	PopupCancel:  con 3;
+
+	PopupStageNone:   con 0;
+	PopupStageShadow: con 1;
+	PopupStageMenu:   con 2;
+
+	Item: adt
+	{
+		kind:      int;
+		flags:     int;
+
+		label:     string;
+		hotkey:    string;
+
+		targetid:  int;
+		command:   string;
+
+		submenuid: int;
+		status:    string;
+	};
+
+	Popup: adt
+	{
+		active:    int;
+		stage:     int;
+		wait:      int;
+
+		parentid:  int;
+		shadowid: int;
+		id:        int;
+
+		x:         int;
+		y:         int;
+		w:         int;
+		h:         int;
+
+		dx:        int;
+		dy:        int;
+
+		items:     array of Item;
+		sel:       int;
+
+		itemids:   array of int;
+
+		basecode:     string;
+		focuscode:    string;
+		disabledcode: string;
+		shadowcode:   string;
+	};
+
+	init: fn();
+
+	newitem: fn(label, hotkey: string, targetid: int, command: string): Item;
+	newseparator: fn(): Item;
+	newsubmenu: fn(label, hotkey: string, submenuid: int): Item;
+
+	setdisabled: fn(it: Item, disabled: int): Item;
+	setchecked: fn(it: Item, checked: int): Item;
+	setradio: fn(it: Item, radio: int): Item;
+	setstatus: fn(it: Item, status: string): Item;
+
+	enabled: fn(it: Item): int;
+	checked: fn(it: Item): int;
+	radio: fn(it: Item): int;
+	separator: fn(it: Item): int;
+	submenu: fn(it: Item): int;
+
+	popupwidth: fn(items: array of Item): int;
+
+	newpopup: fn(parentid, shadowid, id: int): ref Popup;
+	setpopupstyle: fn(p: ref Popup, basecode, focuscode, disabledcode, shadowcode: string): int;
+	openpopup: fn(u: ref IcUi->Ui, p: ref Popup, x, y, w: int, title: string, items: array of Item, sel, animticks: int): int;
+	buildpopup: fn(u: ref IcUi->Ui, p: ref Popup): int;
+	tickpopup: fn(u: ref IcUi->Ui, p: ref Popup, delay: int): int;
+	closepopup: fn(u: ref IcUi->Ui, p: ref Popup): int;
+	handlepopupkey: fn(u: ref IcUi->Ui, p: ref Popup, k: int): int;
+	selectedpopupitem: fn(p: ref Popup): Item;
+};
+
 ui: IcUiMod;
 view: IcViewMod;
+icmenu: IcMenuMod;
 
 MenuCount: con 5;
-OptionItemCount: con 1;
+
+MenuLeft: con 0;
+MenuFile: con 1;
+MenuCommand: con 2;
+MenuOptions: con 3;
+MenuRight: con 4;
 
 Kesc: con 27;
 Kenter: con 10;
@@ -40,41 +140,36 @@ Kdown: con 57363;
 Kleft: con 57364;
 Kright: con 57365;
 
-StageNone: con 0;
-StageShadow: con 1;
-StageMenu: con 2;
-
 DefaultBaseCode: con "1;38;2;20;25;30;48;2;210;235;255";
 DefaultFocusCode: con "1;38;2;0;0;0;48;2;170;225;255";
+DefaultDisabledCode: con "1;38;2;110;110;110;48;2;210;235;255";
 
-submenuactive: int;
-submenustage: int;
-submenuwait: int;
-submenushadowid: int;
-submenubgid: int;
-submenuitemids: array of int;
-submenuindex: int;
+CommandOptionsScreensavers: con "options.screensavers";
+
+popup: ref IcMenuMod->Popup;
 
 basecode: fn(state: ref IcState->AppState): string;
 focuscode: fn(state: ref IcState->AppState): string;
+disabledcode: fn(state: ref IcState->AppState): string;
+shadowcode: fn(state: ref IcState->AppState): string;
 animticks: fn(state: ref IcState->AppState): int;
 
 spaces: fn(n: int): string;
 fittext: fn(s: string, w: int): string;
 itemtext: fn(i: int): string;
-submenuitemtext: fn(i: int): string;
 menuitemx: fn(i: int): int;
 
 ensureids: fn(state: ref IcState->AppState, bar: ref IcState->TopBarState);
+ensurepopup: fn(state: ref IcState->AppState);
 hideall: fn(state: ref IcState->AppState, bar: ref IcState->TopBarState);
-hidesubmenu: fn(state: ref IcState->AppState);
+setlabel: fn(state: ref IcState->AppState, parentid, id, x, y, w: int, text, code: string);
 
-setlabel: fn(state: ref IcState->AppState, id, x, y, w: int, text, code: string);
-showshadow: fn(state: ref IcState->AppState, id, x, y, w, h: int);
-showmenu: fn(state: ref IcState->AppState, bar: ref IcState->TopBarState, w: int);
-showsubmenu: fn(state: ref IcState->AppState, bar: ref IcState->TopBarState);
-opensubmenu: fn(state: ref IcState->AppState);
-closesubmenu: fn();
+showbar: fn(state: ref IcState->AppState, bar: ref IcState->TopBarState, w: int);
+popupitems: fn(menuindex: int): array of IcMenuMod->Item;
+openpopupfor: fn(state: ref IcState->AppState, bar: ref IcState->TopBarState): int;
+closepopup: fn(state: ref IcState->AppState);
+movefocus: fn(state: ref IcState->AppState, bar: ref IcState->TopBarState, delta: int);
+commandforitem: fn(it: IcMenuMod->Item): int;
 
 init()
 {
@@ -86,16 +181,15 @@ init()
 	if(view == nil)
 		raise "fail:load icurses/view";
 
+	icmenu = load IcMenuMod IcMenuMod->PATH;
+	if(icmenu == nil)
+		raise "fail:load icurses/menu";
+
 	ui->init();
 	view->init();
+	icmenu->init();
 
-	submenuactive = 0;
-	submenustage = StageNone;
-	submenuwait = 0;
-	submenushadowid = -1;
-	submenubgid = -1;
-	submenuitemids = array[0] of int;
-	submenuindex = 0;
+	popup = nil;
 }
 
 basecode(state: ref IcState->AppState): string
@@ -112,6 +206,20 @@ focuscode(state: ref IcState->AppState): string
 		return state.theme.menufocuscode;
 
 	return DefaultFocusCode;
+}
+
+disabledcode(state: ref IcState->AppState): string
+{
+	state = state;
+	return DefaultDisabledCode;
+}
+
+shadowcode(state: ref IcState->AppState): string
+{
+	if(state != nil && state.theme != nil && state.theme.modalshadowcode != "")
+		return state.theme.modalshadowcode;
+
+	return "";
 }
 
 animticks(state: ref IcState->AppState): int
@@ -150,7 +258,8 @@ toggle(bar: ref IcState->TopBarState)
 	if(bar.active && (bar.focus < 0 || bar.focus >= MenuCount))
 		bar.focus = 0;
 
-	closesubmenu();
+	if(popup != nil)
+		popup.active = 0;
 }
 
 close(bar: ref IcState->TopBarState)
@@ -159,27 +268,9 @@ close(bar: ref IcState->TopBarState)
 		return;
 
 	bar.active = 0;
-	closesubmenu();
-}
 
-closesubmenu()
-{
-	submenuactive = 0;
-	submenustage = StageNone;
-	submenuwait = 0;
-	submenuindex = 0;
-}
-
-opensubmenu(state: ref IcState->AppState)
-{
-	submenuactive = 1;
-	submenuindex = 0;
-	submenuwait = 0;
-
-	if(animticks(state) > 0)
-		submenustage = StageShadow;
-	else
-		submenustage = StageMenu;
+	if(popup != nil)
+		popup.active = 0;
 }
 
 spaces(n: int): string
@@ -211,26 +302,16 @@ fittext(s: string, w: int): string
 itemtext(i: int): string
 {
 	case i {
-	0 =>
+	MenuLeft =>
 		return " Left ";
-	1 =>
+	MenuFile =>
 		return " File ";
-	2 =>
+	MenuCommand =>
 		return " Command ";
-	3 =>
+	MenuOptions =>
 		return " Options ";
-	4 =>
+	MenuRight =>
 		return " Right ";
-	}
-
-	return " ";
-}
-
-submenuitemtext(i: int): string
-{
-	case i {
-	0 =>
-		return " Screensavers ";
 	}
 
 	return " ";
@@ -254,6 +335,9 @@ ensureids(state: ref IcState->AppState, bar: ref IcState->TopBarState)
 	if(state == nil || state.ui == nil || state.ui.tree == nil || bar == nil)
 		return;
 
+	if(bar.id <= 0)
+		bar.id = view->allocid(state.ui.tree);
+
 	if(bar.backgroundid <= 0)
 		bar.backgroundid = view->allocid(state.ui.tree);
 
@@ -262,18 +346,24 @@ ensureids(state: ref IcState->AppState, bar: ref IcState->TopBarState)
 		for(i = 0; i < MenuCount; i++)
 			bar.itemids[i] = view->allocid(state.ui.tree);
 	}
+}
 
-	if(submenushadowid <= 0)
-		submenushadowid = view->allocid(state.ui.tree);
+ensurepopup(state: ref IcState->AppState)
+{
+	shadowid, popupid: int;
 
-	if(submenubgid <= 0)
-		submenubgid = view->allocid(state.ui.tree);
+	if(state == nil || state.ui == nil || state.ui.tree == nil)
+		return;
 
-	if(submenuitemids == nil || len submenuitemids != OptionItemCount){
-		submenuitemids = array[OptionItemCount] of int;
-		for(i = 0; i < OptionItemCount; i++)
-			submenuitemids[i] = view->allocid(state.ui.tree);
+	if(popup != nil){
+		popup.parentid = state.mainid;
+		return;
 	}
+
+	shadowid = view->allocid(state.ui.tree);
+	popupid = view->allocid(state.ui.tree);
+
+	popup = icmenu->newpopup(state.mainid, shadowid, popupid);
 }
 
 hideall(state: ref IcState->AppState, bar: ref IcState->TopBarState)
@@ -283,6 +373,9 @@ hideall(state: ref IcState->AppState, bar: ref IcState->TopBarState)
 
 	if(state == nil || state.ui == nil || state.ui.tree == nil || bar == nil)
 		return;
+
+	if(popup != nil)
+		icmenu->closepopup(state.ui, popup);
 
 	if(bar.itemids != nil){
 		for(i = 0; i < len bar.itemids; i++){
@@ -296,35 +389,12 @@ hideall(state: ref IcState->AppState, bar: ref IcState->TopBarState)
 	if(n != nil)
 		view->hide(n);
 
-	hidesubmenu(state);
-}
-
-hidesubmenu(state: ref IcState->AppState)
-{
-	i: int;
-	n: ref IcView->Node;
-
-	if(state == nil || state.ui == nil || state.ui.tree == nil)
-		return;
-
-	n = view->find(state.ui.tree, submenushadowid);
+	n = view->find(state.ui.tree, bar.id);
 	if(n != nil)
 		view->hide(n);
-
-	n = view->find(state.ui.tree, submenubgid);
-	if(n != nil)
-		view->hide(n);
-
-	if(submenuitemids != nil){
-		for(i = 0; i < len submenuitemids; i++){
-			n = view->find(state.ui.tree, submenuitemids[i]);
-			if(n != nil)
-				view->hide(n);
-		}
-	}
 }
 
-setlabel(state: ref IcState->AppState, id, x, y, w: int, text, code: string)
+setlabel(state: ref IcState->AppState, parentid, id, x, y, w: int, text, code: string)
 {
 	n: ref IcView->Node;
 
@@ -332,7 +402,7 @@ setlabel(state: ref IcState->AppState, id, x, y, w: int, text, code: string)
 		return;
 
 	if(view->find(state.ui.tree, id) == nil)
-		ui->label(state.ui, state.mainid, id, x, y, w, text);
+		ui->label(state.ui, parentid, id, x, y, w, text);
 
 	n = view->find(state.ui.tree, id);
 	if(n == nil)
@@ -342,32 +412,16 @@ setlabel(state: ref IcState->AppState, id, x, y, w: int, text, code: string)
 	view->settext(n, fittext(text, w));
 	view->setcode(n, code);
 	view->show(n);
-	view->bringtofront(state.ui.tree, id);
 }
 
-showshadow(state: ref IcState->AppState, id, x, y, w, h: int)
-{
-	n: ref IcView->Node;
-
-	if(state == nil || state.ui == nil || state.ui.tree == nil || id <= 0)
-		return;
-
-	if(view->find(state.ui.tree, id) == nil)
-		ui->node(state.ui, state.mainid, id, "shadow", x, y, w, h);
-
-	n = view->find(state.ui.tree, id);
-	if(n == nil)
-		return;
-
-	view->setbounds(n, x, y, w, h);
-	view->show(n);
-	view->bringtofront(state.ui.tree, id);
-}
-
-showmenu(state: ref IcState->AppState, bar: ref IcState->TopBarState, w: int)
+showbar(state: ref IcState->AppState, bar: ref IcState->TopBarState, w: int)
 {
 	i, x, iw: int;
+	n: ref IcView->Node;
 	code, normal, focusc: string;
+
+	if(state == nil || state.ui == nil || state.ui.tree == nil || bar == nil)
+		return;
 
 	if(w <= 0)
 		return;
@@ -375,7 +429,16 @@ showmenu(state: ref IcState->AppState, bar: ref IcState->TopBarState, w: int)
 	normal = basecode(state);
 	focusc = focuscode(state);
 
-	setlabel(state, bar.backgroundid, 0, 0, w, spaces(w), normal);
+	if(view->find(state.ui.tree, bar.id) == nil)
+		ui->group(state.ui, state.mainid, bar.id, 0, 0, w, 1);
+
+	n = view->find(state.ui.tree, bar.id);
+	if(n != nil){
+		view->setbounds(n, 0, 0, w, 1);
+		view->show(n);
+	}
+
+	setlabel(state, bar.id, bar.backgroundid, 0, 0, w, spaces(w), normal);
 
 	x = 1;
 	for(i = 0; i < MenuCount; i++){
@@ -389,57 +452,120 @@ showmenu(state: ref IcState->AppState, bar: ref IcState->TopBarState, w: int)
 		if(bar.focus == i)
 			code = focusc;
 
-		setlabel(state, bar.itemids[i], x, 0, iw, itemtext(i), code);
+		setlabel(state, bar.id, bar.itemids[i], x, 0, iw, itemtext(i), code);
 		x += iw + 1;
+	}
+
+	view->bringtofront(state.ui.tree, bar.id);
+	view->bringtofront(state.ui.tree, bar.backgroundid);
+
+	if(bar.itemids != nil){
+		for(i = 0; i < len bar.itemids; i++)
+			view->bringtofront(state.ui.tree, bar.itemids[i]);
 	}
 }
 
-showsubmenu(state: ref IcState->AppState, bar: ref IcState->TopBarState)
+popupitems(menuindex: int): array of IcMenuMod->Item
 {
-	x, y, w, h, i: int;
-	normal, focusc, code: string;
+	a: array of IcMenuMod->Item;
+	it: IcMenuMod->Item;
 
-	if(state == nil || state.ui == nil || state.ui.tree == nil || bar == nil)
-		return;
+	case menuindex {
+	MenuOptions =>
+		a = array[1] of IcMenuMod->Item;
+		a[0] = icmenu->newitem("Screensavers", "", IcView->NoId, CommandOptionsScreensavers);
+		return a;
 
-	if(!submenuactive || bar.focus != 3){
-		hidesubmenu(state);
-		return;
+	MenuLeft =>
+		a = array[1] of IcMenuMod->Item;
+		it = icmenu->newitem("No left commands yet", "", IcView->NoId, "");
+		a[0] = icmenu->setdisabled(it, 1);
+		return a;
+
+	MenuFile =>
+		a = array[1] of IcMenuMod->Item;
+		it = icmenu->newitem("No file commands yet", "", IcView->NoId, "");
+		a[0] = icmenu->setdisabled(it, 1);
+		return a;
+
+	MenuCommand =>
+		a = array[1] of IcMenuMod->Item;
+		it = icmenu->newitem("No command items yet", "", IcView->NoId, "");
+		a[0] = icmenu->setdisabled(it, 1);
+		return a;
+
+	MenuRight =>
+		a = array[1] of IcMenuMod->Item;
+		it = icmenu->newitem("No right commands yet", "", IcView->NoId, "");
+		a[0] = icmenu->setdisabled(it, 1);
+		return a;
 	}
 
-	normal = basecode(state);
-	focusc = focuscode(state);
+	return array[0] of IcMenuMod->Item;
+}
 
-	x = menuitemx(3);
+openpopupfor(state: ref IcState->AppState, bar: ref IcState->TopBarState): int
+{
+	items: array of IcMenuMod->Item;
+	x, y, w: int;
+
+	if(state == nil || state.ui == nil || bar == nil)
+		return -1;
+
+	ensurepopup(state);
+	if(popup == nil)
+		return -1;
+
+	items = popupitems(bar.focus);
+
+	x = menuitemx(bar.focus);
 	y = 1;
-	w = len submenuitemtext(0);
-	h = OptionItemCount;
+	w = icmenu->popupwidth(items);
 
-	showshadow(state, submenushadowid, x + 2, y + 1, w, h);
+	if(x + w > state.width)
+		x = state.width - w;
+	if(x < 0)
+		x = 0;
 
-	if(submenustage == StageShadow){
-		for(i = 0; i < OptionItemCount; i++){
-			if(submenuitemids != nil && i < len submenuitemids){
-				n := view->find(state.ui.tree, submenuitemids[i]);
-				if(n != nil)
-					view->hide(n);
-			}
-		}
-		n2 := view->find(state.ui.tree, submenubgid);
-		if(n2 != nil)
-			view->hide(n2);
+	icmenu->setpopupstyle(popup, basecode(state), focuscode(state), disabledcode(state), shadowcode(state));
+
+	if(icmenu->openpopup(state.ui, popup, x, y, w, "", items, 0, animticks(state)) < 0)
+		return -1;
+
+	return 0;
+}
+
+closepopup(state: ref IcState->AppState)
+{
+	if(state != nil && state.ui != nil && popup != nil)
+		icmenu->closepopup(state.ui, popup);
+	else if(popup != nil)
+		popup.active = 0;
+}
+
+movefocus(state: ref IcState->AppState, bar: ref IcState->TopBarState, delta: int)
+{
+	if(bar == nil)
 		return;
-	}
 
-	setlabel(state, submenubgid, x, y, w, spaces(w), normal);
+	bar.focus += delta;
 
-	for(i = 0; i < OptionItemCount; i++){
-		code = normal;
-		if(submenuindex == i)
-			code = focusc;
+	while(bar.focus < 0)
+		bar.focus += MenuCount;
 
-		setlabel(state, submenuitemids[i], x, y + i, w, submenuitemtext(i), code);
-	}
+	while(bar.focus >= MenuCount)
+		bar.focus -= MenuCount;
+
+	if(popup != nil && popup.active)
+		openpopupfor(state, bar);
+}
+
+commandforitem(it: IcMenuMod->Item): int
+{
+	if(it.command == CommandOptionsScreensavers)
+		return IcTopBar->CmdOptionsScreensavers;
+
+	return IcTopBar->CmdHandled;
 }
 
 build(state: ref IcState->AppState, bar: ref IcState->TopBarState, rect: IcLayout->Rect): int
@@ -450,6 +576,7 @@ build(state: ref IcState->AppState, bar: ref IcState->TopBarState, rect: IcLayou
 		return -1;
 
 	ensureids(state, bar);
+	ensurepopup(state);
 
 	if(!bar.active){
 		hideall(state, bar);
@@ -460,94 +587,85 @@ build(state: ref IcState->AppState, bar: ref IcState->TopBarState, rect: IcLayou
 	if(w <= 0)
 		w = state.width;
 
-	showmenu(state, bar, w);
-	showsubmenu(state, bar);
+	showbar(state, bar, w);
+
+	if(popup != nil && popup.active)
+		icmenu->buildpopup(state.ui, popup);
 
 	return 0;
 }
 
 handlekey(state: ref IcState->AppState, bar: ref IcState->TopBarState, k: int): int
 {
+	r: int;
+	it: IcMenuMod->Item;
+
 	if(state == nil || bar == nil || !bar.active)
-		return 0;
+		return IcTopBar->CmdNone;
+
+	ensurepopup(state);
 
 	if(k == Kesc){
-		close(bar);
-		return 1;
+		closepopup(state);
+		bar.active = 0;
+		return IcTopBar->CmdHandled;
 	}
 
-	if(submenuactive){
-		if(k == Kup){
-			submenuindex--;
-			if(submenuindex < 0)
-				submenuindex = OptionItemCount - 1;
-			return 1;
-		}
-
-		if(k == Kdown){
-			submenuindex++;
-			if(submenuindex >= OptionItemCount)
-				submenuindex = 0;
-			return 1;
-		}
-
+	if(popup != nil && popup.active){
 		if(k == Kleft){
-			closesubmenu();
-			return 1;
+			closepopup(state);
+			movefocus(state, bar, -1);
+			return IcTopBar->CmdHandled;
 		}
 
-		if(k == Kenter || k == Kreturn)
-			return 2;
+		if(k == Kright){
+			closepopup(state);
+			movefocus(state, bar, 1);
+			return IcTopBar->CmdHandled;
+		}
 
-		return 1;
+		r = icmenu->handlepopupkey(state.ui, popup, k);
+
+		if(r == IcMenuMod->PopupAccept){
+			it = icmenu->selectedpopupitem(popup);
+			closepopup(state);
+			return commandforitem(it);
+		}
+
+		if(r == IcMenuMod->PopupCancel){
+			closepopup(state);
+			return IcTopBar->CmdHandled;
+		}
+
+		if(r != IcMenuMod->PopupNone)
+			return IcTopBar->CmdHandled;
 	}
 
 	if(k == Kleft){
-		bar.focus--;
-		if(bar.focus < 0)
-			bar.focus = MenuCount - 1;
-		return 1;
+		movefocus(state, bar, -1);
+		return IcTopBar->CmdHandled;
 	}
 
 	if(k == Kright){
-		bar.focus++;
-		if(bar.focus >= MenuCount)
-			bar.focus = 0;
-		return 1;
+		movefocus(state, bar, 1);
+		return IcTopBar->CmdHandled;
 	}
 
-	if((k == Kenter || k == Kreturn || k == Kup || k == Kdown) && bar.focus == 3){
-		opensubmenu(state);
-		return 1;
+	if(k == Kenter || k == Kreturn || k == Kup || k == Kdown){
+		openpopupfor(state, bar);
+		return IcTopBar->CmdHandled;
 	}
 
-	if(k == Kenter || k == Kreturn){
-		close(bar);
-		return 1;
-	}
-
-	return 1;
+	return IcTopBar->CmdHandled;
 }
 
 handletick(state: ref IcState->AppState, bar: ref IcState->TopBarState): int
 {
-	delay: int;
-
-	if(state == nil || bar == nil || !bar.active || !submenuactive)
+	if(state == nil || state.ui == nil || bar == nil || !bar.active)
 		return 0;
 
-	if(submenustage != StageShadow)
+	if(popup == nil || !popup.active)
 		return 0;
 
-	delay = animticks(state);
-	if(delay <= 0)
-		delay = 1;
-
-	submenuwait++;
-	if(submenuwait < delay)
-		return 0;
-
-	submenuwait = 0;
-	submenustage = StageMenu;
-	return 1;
+	return icmenu->tickpopup(state.ui, popup, animticks(state));
 }

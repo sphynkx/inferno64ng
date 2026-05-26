@@ -12,6 +12,15 @@ IcMenu: module
 	FlagChecked:  con 2;
 	FlagRadio:    con 4;
 
+	PopupNone:    con 0;
+	PopupHandled: con 1;
+	PopupAccept:  con 2;
+	PopupCancel:  con 3;
+
+	PopupStageNone:   con 0;
+	PopupStageShadow: con 1;
+	PopupStageMenu:   con 2;
+
 	Item: adt
 	{
 		kind:      int;
@@ -25,6 +34,35 @@ IcMenu: module
 
 		submenuid: int;
 		status:    string;
+	};
+
+	Popup: adt
+	{
+		active:    int;
+		stage:     int;
+		wait:      int;
+
+		parentid:  int;
+		shadowid: int;
+		id:        int;
+
+		x:         int;
+		y:         int;
+		w:         int;
+		h:         int;
+
+		dx:        int;
+		dy:        int;
+
+		items:     array of Item;
+		sel:       int;
+
+		itemids:   array of int;
+
+		basecode:     string;
+		focuscode:    string;
+		disabledcode: string;
+		shadowcode:   string;
 	};
 
 	init: fn();
@@ -45,6 +83,15 @@ IcMenu: module
 	submenu: fn(it: Item): int;
 
 	popupwidth: fn(items: array of Item): int;
+
+	newpopup: fn(parentid, shadowid, id: int): ref Popup;
+	setpopupstyle: fn(p: ref Popup, basecode, focuscode, disabledcode, shadowcode: string): int;
+	openpopup: fn(u: ref IcUi->Ui, p: ref Popup, x, y, w: int, title: string, items: array of Item, sel, animticks: int): int;
+	buildpopup: fn(u: ref IcUi->Ui, p: ref Popup): int;
+	tickpopup: fn(u: ref IcUi->Ui, p: ref Popup, delay: int): int;
+	closepopup: fn(u: ref IcUi->Ui, p: ref Popup): int;
+	handlepopupkey: fn(u: ref IcUi->Ui, p: ref Popup, k: int): int;
+	selectedpopupitem: fn(p: ref Popup): Item;
 
 	popupmenu: fn(u: ref IcUi->Ui, parentid, id: int, x, y, w: int, title: string, items: array of Item, sel: int): int;
 	setpopupmenu: fn(u: ref IcUi->Ui, id: int, items: array of Item, sel: int): int;
