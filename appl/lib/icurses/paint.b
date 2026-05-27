@@ -48,6 +48,9 @@ modalfocuscode: fn(n: ref IcView->Node): string;
 modalbuttoncode: fn(n: ref IcView->Node): string;
 modalbuttonfocuscode: fn(n: ref IcView->Node): string;
 
+positionarg: fn(s, key: string, def: string): string;
+drawstyledtext: fn(r: ref IcPaint->Renderer, x, y, maxw: int, text, basecode, overlay: string);
+
 hline: fn(r: ref IcPaint->Renderer, x, y, w: int, ch, code: string);
 vline: fn(r: ref IcPaint->Renderer, x, y, h: int, ch, code: string);
 barfill: fn(size, value, total: int): int;
@@ -890,6 +893,76 @@ paramstr(s, key, def: string): string
 	return def;
 }
 
+positionarg(s, key: string, def: string): string
+{
+	i, j: int;
+	prefix: string;
+
+	prefix = key + "=";
+
+	for(i = 0; i < len s; i++){
+		if(i > 0 && s[i - 1] != '\n')
+			continue;
+
+		if(i + len prefix > len s)
+			continue;
+
+		if(s[i:i + len prefix] != prefix)
+			continue;
+
+		j = i + len prefix;
+		while(j < len s && s[j] != '\n' && s[j] != '\r')
+			j++;
+
+		if(j > i + len prefix)
+			return s[i + len prefix:j];
+
+		return def;
+	}
+
+	return def;
+}
+
+drawstyledtext(r: ref IcPaint->Renderer, x, y, maxw: int, text, basecode, overlay: string)
+{
+	i, n, pos, ok, mode: int;
+	prefix, ch, code: string;
+
+	if(r == nil || text == "" || maxw <= 0){
+		putslimit(r, x, y, maxw, text, basecode);
+		return;
+	}
+
+	n = len text;
+	if(n > maxw)
+		n = maxw;
+
+	mode = paramint(overlay, "cursor", -1);
+	pos = paramint(overlay, "pos", -1);
+	ch = positionarg(overlay, "ch", "");
+	prefix = positionarg(overlay, "base", "");
+	code = "";
+
+	if(prefix != "")
+		basecode = prefix;
+
+	code = basecode;
+	if(ch != "")
+		ch = ch[0:1];
+
+	ok = mode == 1 && pos >= 0 && pos < n;
+
+	for(i = 0; i < n; i++){
+		if(ok && i == pos){
+			if(ch != "" && i < len text)
+				putc(r, x + i, y, text[i:i + 1], overlay);
+			else
+				putc(r, x + i, y, text[i:i + 1], overlay);
+		}else
+			putc(r, x + i, y, text[i:i + 1], code);
+	}
+}
+
 drawtextviewline(r: ref IcPaint->Renderer, x, y, w: int, text, basecode, searchcode: string, hstart, hend: int)
 {
 	i, n: int;
@@ -1071,7 +1144,7 @@ drawwindow(r: ref IcPaint->Renderer, t: ref IcView->Tree, n: ref IcView->Node)
 drawbutton(r: ref IcPaint->Renderer, t: ref IcView->Tree, n: ref IcView->Node)
 {
 	x, y, w: int;
-	label, s, code: string;
+	label, s, code, overlay: string;
 
 	if(r == nil || t == nil || n == nil)
 		return;
@@ -1098,13 +1171,18 @@ drawbutton(r: ref IcPaint->Renderer, t: ref IcView->Tree, n: ref IcView->Node)
 		code = CodeButton;
 
 	fillrect(r, x, y, w, 1, " ", code);
-	putslimit(r, x, y, w, s, code);
+
+	overlay = styleat(n, 1, "");
+	if(overlay != "")
+		drawstyledtext(r, x, y, w, s, code, overlay);
+	else
+		putslimit(r, x, y, w, s, code);
 }
 
 drawlabel(r: ref IcPaint->Renderer, t: ref IcView->Tree, n: ref IcView->Node)
 {
 	x, y, w: int;
-	text, code: string;
+	text, code, overlay: string;
 
 	if(r == nil || t == nil || n == nil)
 		return;
@@ -1124,7 +1202,12 @@ drawlabel(r: ref IcPaint->Renderer, t: ref IcView->Tree, n: ref IcView->Node)
 		code = CodeWindow;
 
 	fillrect(r, x, y, w, 1, " ", code);
-	putslimit(r, x, y, w, text, code);
+
+	overlay = styleat(n, 1, "");
+	if(overlay != "")
+		drawstyledtext(r, x, y, w, text, code, overlay);
+	else
+		putslimit(r, x, y, w, text, code);
 }
 
 drawhbar(r: ref IcPaint->Renderer, t: ref IcView->Tree, n: ref IcView->Node)

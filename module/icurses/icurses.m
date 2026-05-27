@@ -24,6 +24,31 @@ Icurses: module
 	Kpgdown:     con 57367;
 	Kbacktab:    con 57368;
 
+	Kshiftup:        con 57762;
+	Kshiftdown:      con 57763;
+	Kshiftleft:      con 57764;
+	Kshiftright:     con 57765;
+
+	Kaltup:          con 57778;
+	Kaltdown:        con 57779;
+	Kaltleft:        con 57780;
+	Kaltright:       con 57781;
+
+	Kaltshiftup:     con 57794;
+	Kaltshiftdown:   con 57795;
+	Kaltshiftleft:   con 57796;
+	Kaltshiftright:  con 57797;
+
+	Kctrlup:         con 57810;
+	Kctrldown:       con 57811;
+	Kctrlleft:       con 57812;
+	Kctrlright:      con 57813;
+
+	Kctrlshiftup:    con 57826;
+	Kctrlshiftdown:  con 57827;
+	Kctrlshiftleft:  con 57828;
+	Kctrlshiftright: con 57829;
+
 	Kf1:         con 57409;
 	Kf2:         con 57410;
 	Kf3:         con 57411;

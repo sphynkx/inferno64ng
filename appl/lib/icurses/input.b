@@ -12,6 +12,9 @@ InputMagic: con 26017;
 DefaultCommand: con "input.submit";
 DefaultWidth: con 32;
 
+CursorStyleBlock: con 0;
+CursorStyleBackground: con 1;
+
 findnode: fn(u: ref IcUi->Ui, id: int): ref IcView->Node;
 isinput: fn(n: ref IcView->Node): int;
 clamp: fn(v, lo, hi: int): int;
@@ -19,6 +22,9 @@ limittext: fn(s: string, maxlen: int): string;
 rawtext: fn(n: ref IcView->Node): string;
 rawlabel: fn(n: ref IcView->Node): string;
 fieldwidth: fn(n: ref IcView->Node): int;
+cursorstyle: fn(n: ref IcView->Node): int;
+basecode: fn(n: ref IcView->Node): string;
+cursorcode: fn(n: ref IcView->Node): string;
 renderfield: fn(n: ref IcView->Node): string;
 rendertext: fn(n: ref IcView->Node): string;
 rendernode: fn(n: ref IcView->Node);
@@ -141,6 +147,42 @@ fieldwidth(n: ref IcView->Node): int
 	return w;
 }
 
+cursorstyle(n: ref IcView->Node): int
+{
+	if(n == nil)
+		return CursorStyleBackground;
+
+	if(n.frame == IcView->FrameDefault)
+		return CursorStyleBackground;
+
+	return n.frame;
+}
+
+basecode(n: ref IcView->Node): string
+{
+	if(n == nil)
+		return "";
+
+	if(n.code != "")
+		return n.code;
+
+	return "";
+}
+
+cursorcode(n: ref IcView->Node): string
+{
+	if(n == nil)
+		return "";
+
+	if(n.styles != nil && len n.styles > 0 && n.styles[0] != "")
+		return n.styles[0];
+
+	if(n.code != "")
+		return n.code;
+
+	return "";
+}
+
 renderfield(n: ref IcView->Node): string
 {
 	s, logical, out: string;
@@ -156,7 +198,7 @@ renderfield(n: ref IcView->Node): string
 	cur = clamp(n.iarg0, 0, len s);
 	fw = fieldwidth(n);
 
-	if(view->isenabled(n))
+	if(view->isenabled(n) && cursorstyle(n) == CursorStyleBlock)
 		logical = s[0:cur] + "|" + s[cur:];
 	else
 		logical = s;
@@ -208,10 +250,61 @@ rendertext(n: ref IcView->Node): string
 
 rendernode(n: ref IcView->Node)
 {
+	cur, fw, start, pos: int;
+	s, prefix, field, out, base, ccode, ch: string;
+
 	if(n == nil)
 		return;
 
 	view->settext(n, rendertext(n));
+
+	if(!view->isenabled(n))
+		return;
+
+	if(cursorstyle(n) != CursorStyleBackground)
+		return;
+
+	s = rawtext(n);
+	cur = clamp(n.iarg0, 0, len s);
+	fw = fieldwidth(n);
+
+	start = 0;
+	if(cur >= fw)
+		start = cur - fw + 1;
+	if(start < 0)
+		start = 0;
+
+	prefix = rawlabel(n);
+	if(prefix != "")
+		prefix += " ";
+	prefix += "[";
+
+	field = renderfield(n);
+	out = prefix + field + "]";
+
+	base = basecode(n);
+	ccode = cursorcode(n);
+	if(ccode == "")
+		ccode = base;
+
+	pos = len prefix + (cur - start);
+	if(pos < len prefix)
+		pos = len prefix;
+	if(pos >= len prefix + fw)
+		pos = len prefix + fw - 1;
+	if(pos < 0 || pos >= len out)
+		return;
+
+	ch = out[pos:pos+1];
+
+	if(n.styles == nil || len n.styles < 2){
+		n.styles = array[2] of string;
+		n.styles[0] = ccode;
+		n.styles[1] = sys->sprint("cursor=%d;base=%s;pos=%d;ch=%s", CursorStyleBackground, base, pos, ch);
+	}else{
+		n.styles[0] = ccode;
+		n.styles[1] = sys->sprint("cursor=%d;base=%s;pos=%d;ch=%s", CursorStyleBackground, base, pos, ch);
+	}
 }
 
 setrawtext(n: ref IcView->Node, s: string)
@@ -379,12 +472,23 @@ isprintable(k: int): int
 	# accented Latin, etc. arrive as values above 127.
 	#
 	# Keep Inferno's special keyboard constants out of text input. They live
-	# in the private-use range around Khome..Kdel.
+	# in the private-use range around Khome..Kdel and added modified arrows.
 	#
 	if(k < 32)
 		return 0;
 
 	if(k >= Icurses->Khome && k <= Icurses->Kdel)
+		return 0;
+
+	if(k == Icurses->Kshiftup || k == Icurses->Kshiftdown || k == Icurses->Kshiftleft || k == Icurses->Kshiftright)
+		return 0;
+	if(k == Icurses->Kaltup || k == Icurses->Kaltdown || k == Icurses->Kaltleft || k == Icurses->Kaltright)
+		return 0;
+	if(k == Icurses->Kaltshiftup || k == Icurses->Kaltshiftdown || k == Icurses->Kaltshiftleft || k == Icurses->Kaltshiftright)
+		return 0;
+	if(k == Icurses->Kctrlup || k == Icurses->Kctrldown || k == Icurses->Kctrlleft || k == Icurses->Kctrlright)
+		return 0;
+	if(k == Icurses->Kctrlshiftup || k == Icurses->Kctrlshiftdown || k == Icurses->Kctrlshiftleft || k == Icurses->Kctrlshiftright)
 		return 0;
 
 	return 1;
@@ -422,6 +526,14 @@ input(u: ref IcUi->Ui, parentid, id: int,
 
 	view->setcontent(n, text);
 	view->setargs(n, label, len text, maxlen, InputMagic);
+	n.frame = CursorStyleBackground;
+
+	if(n.styles == nil || len n.styles < 2){
+		n.styles = array[2] of string;
+		n.styles[0] = "";
+		n.styles[1] = "";
+	}
+
 	rendernode(n);
 
 	return 0;
