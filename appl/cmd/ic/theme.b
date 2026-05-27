@@ -56,10 +56,10 @@ loadstate(cfg: ref IcState->ConfigState): ref IcState->ThemeState
 	t.modalbuttoncode = cfgdata->get(cfg, ThemeSection, "modal_button_code", "1;38;2;20;20;20;48;2;235;235;235");
 	t.modalbuttonfocuscode = cfgdata->get(cfg, ThemeSection, "modal_button_focus_code", "1;38;2;0;0;0;48;2;170;225;255");
 
-	t.commandbarcode = cfgdata->get(cfg, ThemeSection, "command_bar_code", "1;38;2;20;25;30;48;2;170;225;255");
-	t.commandbaractivecode = cfgdata->get(cfg, ThemeSection, "command_bar_active_code", "1;38;2;255;120;210;48;2;170;225;255");
-	t.commandbardisabledcode = cfgdata->get(cfg, ThemeSection, "command_bar_disabled_code", "38;2;120;120;120;48;2;170;225;255");
-	t.commandlinecode = cfgdata->get(cfg, ThemeSection, "command_line_code", "38;2;220;230;255;48;2;20;45;90");
+	t.commandbarcode = cfgdata->get(cfg, ThemeSection, "command_bar_code", t.paneltopcode);
+	t.commandbaractivecode = cfgdata->get(cfg, ThemeSection, "command_bar_active_code", t.panelfocuscode);
+	t.commandbardisabledcode = cfgdata->get(cfg, ThemeSection, "command_bar_disabled_code", t.paneltopcode);
+	t.commandlinecode = cfgdata->get(cfg, ThemeSection, "command_line_code", t.panelbodycode);
 
 	return t;
 }

@@ -1024,7 +1024,7 @@ hidedecorations(state: ref IcState->AppState, p: ref IcState->PanelState)
 drawdecorations(state: ref IcState->AppState, p: ref IcState->PanelState)
 {
 	bodyrows, x0, y0, i, need: int;
-	topcode, body: string;
+	topcode, body, frame: string;
 
 	if(state == nil || state.ui == nil || p == nil || p.panel == nil)
 		return;
@@ -1037,11 +1037,12 @@ drawdecorations(state: ref IcState->AppState, p: ref IcState->PanelState)
 
 	topcode = topframecode(state);
 	body = bodycode(state);
+	frame = topframecode(state);
 
 	setdecorlabel(state, p, DecorationTop, 0, 0, p.panel.w, topframetext(p), topcode);
 
 	if(p.panel.opts.showinfobar && visibleinforows(p) > 0 && p.panel.h >= 2){
-		setdecorlabel(state, p, DecorationInfoSeparator, 0, p.panel.h - 2, p.panel.w, infoseparator(p), body);
+		setdecorlabel(state, p, DecorationInfoSeparator, 0, p.panel.h - 2, p.panel.w, infoseparator(p), frame);
 		setdecorlabel(state, p, DecorationInfoText, 0, p.panel.h - 1, p.panel.w, infotextline(p), body);
 	}
 
@@ -1050,7 +1051,7 @@ drawdecorations(state: ref IcState->AppState, p: ref IcState->PanelState)
 		y0 = 1 + visiblecommandrows(p);
 
 		for(i = 0; i < bodyrows; i++)
-			setdecorlabel(state, p, DecorationBodyStart + i, x0, y0 + i, 1, "│", body);
+			setdecorlabel(state, p, DecorationBodyStart + i, x0, y0 + i, 1, "│", frame);
 	}
 }
 

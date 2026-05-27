@@ -1,231 +1,31 @@
-# theme defaults
-#
-# SGR color format:
-#   foreground truecolor: 38;2;R;G;B
-#   background truecolor: 48;2;R;G;B
-#   bold: 1
-#   reset/default: 0
-#
-# Example:
-#   1;38;2;0;0;0;48;2;170;225;255
-#
-# Do not use ';' for inline comments after values.
-
 [theme]
-
-panel_top_code=1;38;2;20;25;30;48;2;225;225;225
-panel_body_code=38;2;220;230;255;48;2;20;45;90
-panel_focus_code=1;38;2;0;0;0;48;2;170;225;255
-panel_title_code=1;38;2;255;230;120;48;2;20;45;90
-panel_marked_code=1;38;2;255;120;210;48;2;20;45;90
-panel_marked_focus_code=1;38;2;220;0;0;48;2;170;225;255
-menu_window_code=1;38;2;20;25;30;48;2;210;235;255
-menu_focus_code=1;38;2;0;0;0;48;2;170;225;255
-
 frame_style=1
 panel_shadow=0
+
+panel_top_code=1;38;2;255;255;255;48;2;20;45;90
+panel_body_code=38;2;220;230;255;48;2;20;45;90
+panel_focus_code=1;38;2;0;0;0;48;2;170;225;255
+panel_title_code=1;38;2;255;255;255;48;2;20;45;90
+panel_marked_code=1;38;2;255;230;120;48;2;20;45;90
+panel_marked_focus_code=1;38;2;220;0;0;48;2;170;225;255
+
+menu_window_code=1;38;2;255;255;255;48;2;20;45;90
+menu_focus_code=1;38;2;0;0;0;48;2;170;225;255
+
 modal_anim_ticks=3
 
 modal_copy_code=38;2;25;25;25;48;2;210;210;210
 modal_overwrite_code=38;2;40;15;35;48;2;255;185;225
 modal_frame_code=1;38;2;80;80;80;48;2;210;210;210
 modal_text_code=38;2;25;25;25;48;2;210;210;210
-modal_shadow_code=38;2;0;0;0;48;2;80;80;80
+modal_shadow_code=38;2;80;80;80;48;2;80;80;80
+
 modal_field_code=38;2;20;20;20;48;2;245;245;245
 modal_focus_code=1;38;2;0;0;0;48;2;170;225;255
 modal_button_code=1;38;2;20;20;20;48;2;235;235;235
 modal_button_focus_code=1;38;2;0;0;0;48;2;170;225;255
 
-viewer_goto_window_code=38;2;20;20;20;48;2;210;210;210
-viewer_goto_frame_code=1;38;2;35;35;35;48;2;210;210;210
-viewer_goto_frame_h=─
-viewer_goto_frame_v=│
-viewer_goto_frame_nw=┌
-viewer_goto_frame_ne=┐
-viewer_goto_frame_sw=└
-viewer_goto_frame_se=┘
-viewer_goto_text_code=38;2;20;20;20;48;2;210;210;210
-viewer_goto_field_code=1;38;2;255;255;255;48;2;55;160;220
-viewer_goto_field_focus_code=1;38;2;255;255;255;48;2;35;135;205
-viewer_goto_focus_code=1;38;2;0;0;0;48;2;170;225;255
-viewer_goto_button_code=1;38;2;20;20;20;48;2;235;235;235
-viewer_goto_button_focus_code=1;38;2;0;0;0;48;2;170;225;255
-viewer_goto_shadow_code=38;2;120;120;120;48;2;0;0;0
-
-viewer_search_window_code=38;2;20;20;20;48;2;210;210;210
-viewer_search_frame_code=1;38;2;35;35;35;48;2;210;210;210
-viewer_search_text_code=38;2;20;20;20;48;2;210;210;210
-viewer_search_field_code=1;38;2;255;255;255;48;2;55;160;220
-viewer_search_field_focus_code=1;38;2;255;255;255;48;2;35;135;205
-viewer_search_focus_code=1;38;2;0;0;0;48;2;170;225;255
-viewer_search_button_code=1;38;2;20;20;20;48;2;235;235;235
-viewer_search_button_focus_code=1;38;2;0;0;0;48;2;170;225;255
-viewer_search_disabled_code=38;2;120;120;120;48;2;210;210;210
-viewer_search_shadow_code=38;2;120;120;120;48;2;0;0;0
-viewer_search_frame_h=─
-viewer_search_frame_v=│
-viewer_search_frame_nw=┌
-viewer_search_frame_ne=┐
-viewer_search_frame_sw=└
-viewer_search_frame_se=┘
-
-viewer_codepage_window_code=38;2;20;20;20;48;2;210;210;210
-viewer_codepage_frame_code=1;38;2;35;35;35;48;2;210;210;210
-viewer_codepage_text_code=38;2;20;20;20;48;2;210;210;210
-viewer_codepage_focus_code=1;38;2;0;0;0;48;2;170;225;255
-viewer_codepage_shadow_code=38;2;120;120;120;48;2;0;0;0
-viewer_codepage_frame_h=─
-viewer_codepage_frame_v=│
-viewer_codepage_frame_nw=┌
-viewer_codepage_frame_ne=┐
-viewer_codepage_frame_sw=└
-viewer_codepage_frame_se=┘
-
-viewer_search_match_code=1;38;2;0;0;0;48;2;170;225;255
-
-editor_cursor_code=1;38;2;0;0;0;48;2;255;235;80
-
 command_bar_code=1;38;2;20;25;30;48;2;170;225;255
 command_bar_active_code=1;38;2;255;120;210;48;2;170;225;255
 command_bar_disabled_code=38;2;120;120;120;48;2;170;225;255
 command_line_code=38;2;220;230;255;48;2;20;45;90
-
-
-[screensaver]
-
-# Master switch for screensaver system.
-# 0 disables screensaver completely.
-enabled=1
-
-# Active screensaver implementation name.
-##name=flashlighter
-##name=matrix
-name=clock
-
-# Idle timeout in UI ticks before screensaver starts.
-# 0 disables screensaver without changing "enabled".
-idle_ticks=300
-
-[flashlighter]
-
-# Number of simultaneous light spots.
-# Recommended values: 1..3
-beam_count=2
-
-# Minimum and maximum horizontal radius of a light spot, in terminal cells.
-radius_min=20
-radius_max=24
-
-# Vertical radius as percent of horizontal radius.
-# 100 means a circle.
-# Less than 100 makes horizontally stretched ellipses.
-# Greater than 100 allows vertically stretched ellipses.
-radius_y_percent_min=95
-radius_y_percent_max=125
-
-# Minimum and maximum beam movement speed per tick.
-speed_min=4
-speed_max=7
-
-# Minimum and maximum beam lifetime in ticks.
-# Larger values give longer, smoother trajectories.
-beam_life_min=70
-beam_life_max=160
-
-# Preferred angle range for movement, in degrees.
-# 0 means horizontal, 90 means vertical.
-# Values around 25..65 favor natural diagonal motion.
-preferred_angle_min=15
-preferred_angle_max=45
-
-# Probability in percent to choose angle from preferred range.
-# Remaining probability uses the full 0..90 range.
-preferred_angle_percent=76
-
-# Parabola bend amplitude as percent of beam radius.
-# Higher values produce stronger curved trajectories.
-curve_min_amp_percent=18
-curve_max_amp_percent=42
-
-# Darkness of the shadowed background around the beam.
-# Lower value means darker shadow.
-shadow_percent=35
-
-# Fallback SGR code used for deep shadow if source cell code
-# cannot be darkened analytically.
-shadow_code=38;2;80;80;80;48;2;0;0;0
-
-[matrix]
-
-# Charset selection:
-# auto    - use unicode chars only when terminal reports usable UTF-8.
-# ascii   - force ASCII-safe charset.
-# unicode - force Matrix-like Unicode charset.
-charset=auto
-
-# ASCII-safe character set.
-ascii_chars=0123456789+=&%$?#ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz
-
-# Unicode Matrix-like character set.
-unicode_chars=モエヤキオカ7ケサスz152ヨタワ4ネヌナ98ヒ0ホア3ウ セ¦:"꞊ミラリ╌ツテニハソ▪—<>0|+*コシマムメ
-
-# Background left behind stream tails.
-background_code=0;30;40
-
-# Stream brightness SGR codes.
-head_code=38;2;220;255;220;40
-bright_code=38;2;100;255;140;40
-mid_code=38;2;0;190;70;40
-dim_code=38;2;0;100;35;40
-tail_code=38;2;0;40;15;40
-
-# Number of independent falling streams.
-stream_count=32
-
-# Minimum and maximum stream tail length, in terminal rows.
-tail_min=6
-tail_max=22
-
-# Minimum and maximum per-stream delay, in UI ticks.
-# Smaller values make streams faster.
-delay_min_ticks=1
-delay_max_ticks=5
-
-# Initial stream head depth above the top edge.
-start_depth_max=12
-
-# Chance in percent that a stream moves two rows on one update.
-step_chance_percent=25
-
-[clock]
-
-# Background used by the clock screensaver.
-background_code=0;30;40
-
-# Segment color for large digital digits.
-segment_code=1;38;2;0;255;0;40
-
-# Date line color.
-date_code=38;2;110;210;80;40
-
-# Segment character policy:
-# auto    - Unicode block when terminal is suitable, ASCII otherwise.
-# unicode - force unicode_segment_char.
-# ascii   - force ascii_segment_char.
-# Any other non-empty value is used as the segment character directly.
-#
-segment_char=auto
-#segment_char=unicode
-
-unicode_segment_char=█
-ascii_segment_char=#
-blank_char= 
-
-# Show simple date line under clock.
-show_date=1
-
-# Movement tuning.
-# move_delay_ticks controls how often position changes.
-# move_step controls distance per movement update.
-move_delay_ticks=3
-move_step=1

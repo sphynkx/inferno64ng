@@ -46,7 +46,7 @@ view: IcViewMod;
 
 FlashTicks: con 2;
 ButtonCount: con 10;
-ButtonGap: con 1;
+ButtonGap: con 0;
 
 ensurebuttons: fn(state: ref IcState->AppState, bar: ref IcState->BottomBarState);
 buttonx: fn(rect: IcLayout->Rect, idx: int): int;
@@ -132,6 +132,9 @@ commandlinecode(state: ref IcState->AppState): string
 	if(state != nil && state.theme != nil && state.theme.commandlinecode != "")
 		return state.theme.commandlinecode;
 
+	if(state != nil && state.theme != nil && state.theme.panelbodycode != "")
+		return state.theme.panelbodycode;
+
 	return "38;2;220;230;255;48;2;20;45;90";
 }
 
@@ -139,6 +142,9 @@ commandbarcode(state: ref IcState->AppState): string
 {
 	if(state != nil && state.theme != nil && state.theme.commandbarcode != "")
 		return state.theme.commandbarcode;
+
+	if(state != nil && state.theme != nil && state.theme.paneltopcode != "")
+		return state.theme.paneltopcode;
 
 	return "1;38;2;20;25;30;48;2;170;225;255";
 }
@@ -148,6 +154,9 @@ commandbaractivecode(state: ref IcState->AppState): string
 	if(state != nil && state.theme != nil && state.theme.commandbaractivecode != "")
 		return state.theme.commandbaractivecode;
 
+	if(state != nil && state.theme != nil && state.theme.panelfocuscode != "")
+		return state.theme.panelfocuscode;
+
 	return "1;38;2;255;120;210;48;2;170;225;255";
 }
 
@@ -155,6 +164,9 @@ commandbardisabledcode(state: ref IcState->AppState): string
 {
 	if(state != nil && state.theme != nil && state.theme.commandbardisabledcode != "")
 		return state.theme.commandbardisabledcode;
+
+	if(state != nil && state.theme != nil && state.theme.paneltopcode != "")
+		return state.theme.paneltopcode;
 
 	return "38;2;120;120;120;48;2;170;225;255";
 }

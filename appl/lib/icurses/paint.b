@@ -64,6 +64,8 @@ appendline: fn(a: array of string, s: string): array of string;
 addword: fn(a: array of string, line, word: string, width: int): (array of string, string);
 
 framechars: fn(style: int): array of string;
+nodecode: fn(n: ref IcView->Node, def: string): string;
+nodestyle: fn(n: ref IcView->Node, idx: int, def: string): string;
 
 splitlines: fn(text: string): array of string;
 
@@ -978,6 +980,22 @@ drawtextview(r: ref IcPaint->Renderer, t: ref IcView->Tree, n: ref IcView->Node)
 	}
 }
 
+nodecode(n: ref IcView->Node, def: string): string
+{
+	if(n != nil && n.code != "")
+		return n.code;
+
+	return def;
+}
+
+nodestyle(n: ref IcView->Node, idx: int, def: string): string
+{
+	if(n != nil && n.styles != nil && idx >= 0 && idx < len n.styles && n.styles[idx] != "")
+		return n.styles[idx];
+
+	return def;
+}
+
 drawshadow(r: ref IcPaint->Renderer, t: ref IcView->Tree, n: ref IcView->Node)
 {
 	x, y, w, h: int;
@@ -1003,8 +1021,8 @@ drawshadow(r: ref IcPaint->Renderer, t: ref IcView->Tree, n: ref IcView->Node)
 
 drawwindow(r: ref IcPaint->Renderer, t: ref IcView->Tree, n: ref IcView->Node)
 {
-	x, y, w, h, tx, tw, style: int;
-	title: string;
+	x, y, w, h, tx, style: int;
+	title, windowcode, framecode, titlecode: string;
 	fc: array of string;
 
 	if(r == nil || t == nil || n == nil)
@@ -1024,27 +1042,27 @@ drawwindow(r: ref IcPaint->Renderer, t: ref IcView->Tree, n: ref IcView->Node)
 
 	fc = framechars(style);
 
-	fillrect(r, x, y, w, h, " ", CodeWindow);
+	windowcode = nodecode(n, CodeWindow);
+	framecode = nodestyle(n, 0, CodeFrame);
+	titlecode = nodestyle(n, 1, CodeTitle);
 
-	hline(r, x, y, w, fc[0], CodeFrame);
-	hline(r, x, y + h - 1, w, fc[0], CodeFrame);
-	vline(r, x, y, h, fc[1], CodeFrame);
-	vline(r, x + w - 1, y, h, fc[1], CodeFrame);
+	fillrect(r, x, y, w, h, " ", windowcode);
 
-	putc(r, x, y, fc[2], CodeFrame);
-	putc(r, x + w - 1, y, fc[3], CodeFrame);
-	putc(r, x, y + h - 1, fc[4], CodeFrame);
-	putc(r, x + w - 1, y + h - 1, fc[5], CodeFrame);
+	hline(r, x, y, w, fc[0], framecode);
+	hline(r, x, y + h - 1, w, fc[0], framecode);
+	vline(r, x, y, h, fc[1], framecode);
+	vline(r, x + w - 1, y, h, fc[1], framecode);
+
+	putc(r, x, y, fc[2], framecode);
+	putc(r, x + w - 1, y, fc[3], framecode);
+	putc(r, x, y + h - 1, fc[4], framecode);
+	putc(r, x + w - 1, y + h - 1, fc[5], framecode);
 
 	title = view->gettext(n);
 	if(title != ""){
-		title = " " + title + " ";
-		tw = w - 4;
-		if(tw < 1)
-			tw = 1;
 		tx = x + 2;
 		if(tx < x + w - 1)
-			putslimit(r, tx, y, tw, title, CodeTitle);
+			putslimit(r, tx, y, w - 4, title, titlecode);
 	}
 
 	drawcontent(r, t, n);

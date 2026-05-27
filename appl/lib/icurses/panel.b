@@ -28,6 +28,7 @@ framecode: fn(p: ref IcPanel->Panel): string;
 markedfocuscode: fn(p: ref IcPanel->Panel): string;
 
 setlabel: fn(u: ref IcUi->Ui, id, x, y, w: int, text, code: string);
+setwindowstyles: fn(u: ref IcUi->Ui, p: ref IcPanel->Panel);
 finditem: fn(m: ref IcPanel->Model, itemid: int): int;
 getitem: fn(m: ref IcPanel->Model, itemid: int): IcPanel->Item;
 sameparent: fn(it: IcPanel->Item, parentid: int): int;
@@ -1263,6 +1264,8 @@ build(u: ref IcUi->Ui, parentid: int, p: ref IcPanel->Panel): int
 	if(n != nil && p.opts.showframe)
 		view->setframe(n, p.opts.framestyle);
 
+	setwindowstyles(u, p);
+
 	x0 = 0;
 	y0 = 0;
 	innerw = p.w;
@@ -1314,6 +1317,23 @@ setlabel(u: ref IcUi->Ui, id, x, y, w: int, text, code: string)
 	view->show(n);
 }
 
+setwindowstyles(u: ref IcUi->Ui, p: ref IcPanel->Panel)
+{
+	n: ref IcView->Node;
+
+	if(u == nil || u.tree == nil || p == nil || p.id < 0)
+		return;
+
+	n = view->find(u.tree, p.id);
+	if(n == nil)
+		return;
+
+	view->setcode(n, windowcode(p));
+
+	n.styles = array[2] of string;
+	n.styles[0] = framecode(p);
+	n.styles[1] = titlecode(p);
+}
 
 render(u: ref IcUi->Ui, p: ref IcPanel->Panel): int
 {
@@ -1347,6 +1367,8 @@ render(u: ref IcUi->Ui, p: ref IcPanel->Panel): int
 		if(p.opts.showframe)
 			view->setframe(n, p.opts.framestyle);
 	}
+
+	setwindowstyles(u, p);
 
 	n = view->find(u.tree, p.titleid);
 	if(n != nil){
