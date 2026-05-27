@@ -152,6 +152,12 @@ IcState: module
 
 		inputlabel: string;
 		input: string;
+		inputpos: int;
+		inputhistorysection: string;
+		inputhistoryopen: int;
+		inputhistorysel: int;
+		inputhistoryitems: array of string;
+		inputhistoryids: array of int;
 
 		checkbox: string;
 		checked: int;

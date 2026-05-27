@@ -22,6 +22,7 @@ TARG=\
 	icedit.dis\
 	icview.dis\
 	input.dis\
+	inputhist.dis\
 	layout.dis\
 	mkdircmd.dis\
 	modal.dis\
@@ -70,6 +71,7 @@ SYSMODULES=\
 	ic/editsource.m\
 	ic/fsmodel.m\
 	ic/input.m\
+	ic/inputhist.m\
 	ic/layout.m\
 	ic/modal.m\
 	ic/mkdircmd.m\

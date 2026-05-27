@@ -8,7 +8,8 @@ IcUiMod: module
 
 	init: fn();
 	node: fn(u: ref IcUi->Ui, parentid, id: int, kind: string, x, y, w, h: int): int;
-	modal: fn(u: ref IcUi->Ui, parentid, shadowid, id: int, x, y, w, h: int, title, message, inputlabel, input, checkbox: string, checked, focus, kind: int, button0, button1, button2: string, buttoncount: int, dx, dy: int, styles: array of string): int;
+	label: fn(u: ref IcUi->Ui, parentid, id: int, x, y, w: int, text: string): int;
+	modal: fn(u: ref IcUi->Ui, parentid, shadowid, id: int, x, y, w, h: int, title, message, inputlabel, input, checkbox: string, checked, focus, kind: int, button0, button1, button2: string, buttoncount, dx, dy: int, styles: array of string): int;
 };
 
 IcViewMod: module
@@ -22,12 +23,41 @@ IcViewMod: module
 	hidetree: fn(t: ref IcView->Tree, id: int);
 	bringtofront: fn(t: ref IcView->Tree, id: int): int;
 	find: fn(t: ref IcView->Tree, id: int): ref IcView->Node;
+	setbounds: fn(v: ref IcView->Node, x, y, w, h: int);
+	settext: fn(v: ref IcView->Node, text: string);
 	setcode: fn(v: ref IcView->Node, code: string);
+	show: fn(v: ref IcView->Node);
+	hide: fn(v: ref IcView->Node);
+};
+
+IcInputHistoryMod: module
+{
+	PATH: con "/dis/ic/inputhist.dis";
+
+	History: adt
+	{
+		section: string;
+		items: array of string;
+		sel: int;
+		maxitems: int;
+	};
+
+	init: fn();
+	new: fn(section: string, maxitems: int): ref History;
+	loadhist: fn(h: ref History): int;
+	savehist: fn(h: ref History): int;
+	add: fn(h: ref History, text: string): int;
+	count: fn(h: ref History): int;
+	current: fn(h: ref History): string;
+	prev: fn(h: ref History): string;
+	next: fn(h: ref History): string;
 };
 
 sys: Sys;
 ui: IcUiMod;
 view: IcViewMod;
+
+histmod: IcInputHistoryMod;
 
 StageNone: con 0;
 StageShadow: con 1;
@@ -43,6 +73,11 @@ BackspaceKey: con 8;
 DeleteKey: con 127;
 LeftKey: con 57364;
 RightKey: con 57365;
+HomeKey: con 57360;
+EndKey: con 57361;
+UpKey: con 57362;
+DownKey: con 57363;
+CtrlDownKey: con 57811;
 
 initstate: fn(state: ref IcState->AppState);
 disposewindow: fn(state: ref IcState->AppState);
@@ -66,6 +101,18 @@ focusprev: fn(m: ref IcState->ModalState);
 activatefocus: fn(m: ref IcState->ModalState): int;
 hotkey: fn(k: int, h: string): int;
 printable: fn(k: int): int;
+clampinputpos: fn(m: ref IcState->ModalState);
+inputhistorysection: fn(m: ref IcState->ModalState): string;
+loadinputhistory: fn(m: ref IcState->ModalState);
+saveinputhistory: fn(m: ref IcState->ModalState);
+inputfieldtext: fn(m: ref IcState->ModalState): string;
+inputhistorytext: fn(m: ref IcState->ModalState): string;
+resetinputhistory: fn(m: ref IcState->ModalState);
+ensureinputhistoryids: fn(state: ref IcState->AppState, rows: int): int;
+hideinputhistory: fn(state: ref IcState->AppState);
+drawinputhistory: fn(state: ref IcState->AppState);
+sethistorylabel: fn(state: ref IcState->AppState, id, x, y, w: int, text, code: string);
+inputmovehistory: fn(m: ref IcState->ModalState, dir: int);
 setresult: fn(m: ref IcState->ModalState, r: int): int;
 
 init()
@@ -82,8 +129,13 @@ init()
 	if(view == nil)
 		raise "fail:load icurses/view";
 
+	histmod = load IcInputHistoryMod IcInputHistoryMod->PATH;
+	if(histmod == nil)
+		raise "fail:load ic/inputhist";
+
 	ui->init();
 	view->init();
+	histmod->init();
 }
 
 initstate(state: ref IcState->AppState)
@@ -105,6 +157,12 @@ initstate(state: ref IcState->AppState)
 	state.modal.message = "";
 	state.modal.inputlabel = "";
 	state.modal.input = "";
+	state.modal.inputpos = 0;
+	state.modal.inputhistorysection = "";
+	state.modal.inputhistoryopen = 0;
+	state.modal.inputhistorysel = -1;
+	state.modal.inputhistoryitems = array[0] of string;
+	state.modal.inputhistoryids = array[0] of int;
 	state.modal.checkbox = "";
 	state.modal.checked = 0;
 
@@ -363,10 +421,12 @@ drawwindow(state: ref IcState->AppState): int
 	m.canvasid = view->allocid(state.ui.tree);
 
 	if(ui->modal(state.ui, state.modalid, m.shadowid, m.canvasid, m.x, m.y, m.w, m.h,
-		m.title, m.message, m.inputlabel, m.input, m.checkbox,
+		m.title, m.message, m.inputlabel, inputfieldtext(m), m.checkbox,
 		m.checked, m.focus, m.kind,
 		m.button0, m.button1, m.button2, m.buttoncount, 2, 1, stylecodes(state)) < 0)
 		return -1;
+
+	drawinputhistory(state);
 
 	view->showtree(state.ui.tree, state.modalid);
 	view->bringtofront(state.ui.tree, state.modalid);
@@ -402,6 +462,7 @@ draw(state: ref IcState->AppState): int
 showcopyconfirm(state: ref IcState->AppState, count: int, direction, target: string): int
 {
 	initstate(state);
+	resetinputhistory(state.modal);
 
 	state.modal.active = 1;
 	state.modal.kind = IcModal->KindCopyConfirm;
@@ -409,6 +470,8 @@ showcopyconfirm(state: ref IcState->AppState, count: int, direction, target: str
 	state.modal.message = "Copy " + string count + " item(s)  " + direction;
 	state.modal.inputlabel = "Copy to:";
 	state.modal.input = target;
+	state.modal.inputpos = len state.modal.input;
+	loadinputhistory(state.modal);
 	state.modal.checkbox = "Overwrite all";
 	state.modal.checked = 0;
 	state.modal.focus = IcModal->FocusInput;
@@ -429,6 +492,7 @@ showcopyconfirm(state: ref IcState->AppState, count: int, direction, target: str
 showmoveconfirm(state: ref IcState->AppState, count: int, direction, target: string): int
 {
 	initstate(state);
+	resetinputhistory(state.modal);
 
 	state.modal.active = 1;
 	state.modal.kind = IcModal->KindMoveConfirm;
@@ -436,6 +500,8 @@ showmoveconfirm(state: ref IcState->AppState, count: int, direction, target: str
 	state.modal.message = "Move " + string count + " item(s)  " + direction;
 	state.modal.inputlabel = "Move to:";
 	state.modal.input = target;
+	state.modal.inputpos = len state.modal.input;
+	loadinputhistory(state.modal);
 	state.modal.checkbox = "Overwrite all";
 	state.modal.checked = 0;
 	state.modal.focus = IcModal->FocusInput;
@@ -456,13 +522,15 @@ showmoveconfirm(state: ref IcState->AppState, count: int, direction, target: str
 showdeleteconfirm(state: ref IcState->AppState, count: int, target: string): int
 {
 	initstate(state);
+	resetinputhistory(state.modal);
 
 	state.modal.active = 1;
 	state.modal.kind = IcModal->KindDeleteConfirm;
 	state.modal.title = "Delete";
 	state.modal.message = "Delete " + string count + " item(s)?";
-	state.modal.inputlabel = "Delete:";
-	state.modal.input = target;
+	state.modal.inputlabel = "";
+	state.modal.input = "";
+	state.modal.inputpos = 0;
 	state.modal.checkbox = "";
 	state.modal.checked = 0;
 	state.modal.focus = IcModal->FocusButton0;
@@ -477,12 +545,14 @@ showdeleteconfirm(state: ref IcState->AppState, count: int, target: string): int
 	state.modal.hotkey1 = "C";
 	state.modal.hotkey2 = "";
 
+	target = target;
 	return draw(state);
 }
 
 showmkdirconfirm(state: ref IcState->AppState, basepath: string): int
 {
 	initstate(state);
+	resetinputhistory(state.modal);
 
 	state.modal.active = 1;
 	state.modal.kind = IcModal->KindMkdirConfirm;
@@ -490,6 +560,8 @@ showmkdirconfirm(state: ref IcState->AppState, basepath: string): int
 	state.modal.message = "Create new directory";
 	state.modal.inputlabel = "Name:";
 	state.modal.input = "";
+	state.modal.inputpos = 0;
+	loadinputhistory(state.modal);
 	state.modal.checkbox = "";
 	state.modal.checked = 0;
 	state.modal.focus = IcModal->FocusInput;
@@ -680,6 +752,335 @@ setresult(m: ref IcState->ModalState, r: int): int
 	return r;
 }
 
+clampinputpos(m: ref IcState->ModalState)
+{
+	if(m == nil)
+		return;
+
+	if(m.inputpos < 0)
+		m.inputpos = 0;
+
+	if(m.inputpos > len m.input)
+		m.inputpos = len m.input;
+}
+
+inputhistorysection(m: ref IcState->ModalState): string
+{
+	if(m == nil)
+		return "";
+
+	case m.kind {
+	IcModal->KindCopyConfirm =>
+		return "copy";
+	IcModal->KindMoveConfirm =>
+		return "move";
+	IcModal->KindMkdirConfirm =>
+		return "mkdir";
+	}
+
+	return "";
+}
+
+loadinputhistory(m: ref IcState->ModalState)
+{
+	h: ref IcInputHistoryMod->History;
+
+	if(m == nil || histmod == nil)
+		return;
+
+	m.inputhistorysection = inputhistorysection(m);
+	m.inputhistoryopen = 0;
+	m.inputhistorysel = -1;
+	m.inputhistoryitems = array[0] of string;
+
+	if(m.inputhistorysection == "")
+		return;
+
+	h = histmod->new(m.inputhistorysection, 32);
+	if(h == nil)
+		return;
+
+	histmod->loadhist(h);
+
+	if(h.items != nil)
+		m.inputhistoryitems = h.items;
+}
+
+resetinputhistory(m: ref IcState->ModalState)
+{
+	if(m == nil)
+		return;
+
+	m.inputhistorysection = "";
+	m.inputhistoryopen = 0;
+	m.inputhistorysel = -1;
+	m.inputhistoryitems = array[0] of string;
+}
+
+saveinputhistory(m: ref IcState->ModalState)
+{
+	h: ref IcInputHistoryMod->History;
+
+	if(m == nil || histmod == nil)
+		return;
+
+	case m.kind {
+	IcModal->KindCopyConfirm or
+	IcModal->KindMoveConfirm or
+	IcModal->KindMkdirConfirm =>
+		;
+	* =>
+		return;
+	}
+
+	if(m.inputhistorysection == "")
+		m.inputhistorysection = inputhistorysection(m);
+
+	if(m.inputhistorysection == "")
+		return;
+
+	h = histmod->new(m.inputhistorysection, 32);
+	if(h == nil)
+		return;
+
+	histmod->loadhist(h);
+	histmod->add(h, m.input);
+}
+
+inputfieldtext(m: ref IcState->ModalState): string
+{
+	s, trigger: string;
+	fieldw, textw, start, cursor: int;
+
+	if(m == nil)
+		return "";
+
+	trigger = "[v]";
+
+	fieldw = m.w - 6;
+	if(fieldw < 12)
+		fieldw = 12;
+
+	textw = fieldw - len trigger - 1;
+	if(textw < 4)
+		textw = 4;
+
+	clampinputpos(m);
+
+	s = m.input;
+	cursor = m.inputpos;
+	start = 0;
+
+	if(cursor >= textw)
+		start = cursor - textw + 1;
+
+	if(start < 0)
+		start = 0;
+	if(start > len s)
+		start = len s;
+
+	if(len s[start:] > textw)
+		s = s[start:start + textw];
+	else
+		s = s[start:];
+
+	cursor -= start;
+	if(cursor < 0)
+		cursor = 0;
+	if(cursor > len s)
+		cursor = len s;
+
+	if(m.focus == IcModal->FocusInput && !m.inputhistoryopen){
+		if(cursor >= len s)
+			s += " ";
+		s = s[0:cursor] + " " + s[cursor + 1:];
+	}
+
+	while(len s < textw)
+		s += " ";
+
+	return s + " " + trigger;
+}
+
+inputhistorytext(m: ref IcState->ModalState): string
+{
+	out: string;
+	i: int;
+
+	if(m == nil || !m.inputhistoryopen || m.inputhistoryitems == nil)
+		return "";
+
+	out = "";
+
+	for(i = 0; i < len m.inputhistoryitems && i < 5; i++){
+		if(i == m.inputhistorysel)
+			out += "> ";
+		else
+			out += "  ";
+
+		out += m.inputhistoryitems[i];
+
+		if(i + 1 < len m.inputhistoryitems && i + 1 < 5)
+			out += "\n";
+	}
+
+	return out;
+}
+
+inputmovehistory(m: ref IcState->ModalState, dir: int)
+{
+	if(m == nil || m.inputhistoryitems == nil || len m.inputhistoryitems == 0)
+		return;
+
+	if(!m.inputhistoryopen){
+		m.inputhistoryopen = 1;
+		m.inputhistorysel = 0;
+		return;
+	}
+
+	m.inputhistorysel += dir;
+
+	if(m.inputhistorysel < 0)
+		m.inputhistorysel = len m.inputhistoryitems - 1;
+	if(m.inputhistorysel >= len m.inputhistoryitems)
+		m.inputhistorysel = 0;
+}
+
+ensureinputhistoryids(state: ref IcState->AppState, rows: int): int
+{
+	i, n: int;
+	a: array of int;
+
+	if(state == nil || state.ui == nil || state.ui.tree == nil || state.modal == nil)
+		return -1;
+
+	if(rows < 0)
+		rows = 0;
+
+	if(state.modal.inputhistoryids != nil && len state.modal.inputhistoryids >= rows)
+		return 0;
+
+	n = 0;
+	if(state.modal.inputhistoryids != nil)
+		n = len state.modal.inputhistoryids;
+
+	a = array[rows] of int;
+
+	for(i = 0; i < n && i < rows; i++)
+		a[i] = state.modal.inputhistoryids[i];
+
+	for(; i < rows; i++)
+		a[i] = view->allocid(state.ui.tree);
+
+	state.modal.inputhistoryids = a;
+	return 0;
+}
+
+sethistorylabel(state: ref IcState->AppState, id, x, y, w: int, text, code: string)
+{
+	n: ref IcView->Node;
+
+	if(state == nil || state.ui == nil || state.ui.tree == nil || state.modal == nil)
+		return;
+
+	if(state.modal.canvasid < 0 || id < 0)
+		return;
+
+	if(view->find(state.ui.tree, id) == nil)
+		ui->label(state.ui, state.modal.canvasid, id, x, y, w, text);
+
+	n = view->find(state.ui.tree, id);
+	if(n == nil)
+		return;
+
+	view->setbounds(n, x, y, w, 1);
+	view->settext(n, text);
+	view->setcode(n, code);
+	view->show(n);
+}
+
+hideinputhistory(state: ref IcState->AppState)
+{
+	i: int;
+	n: ref IcView->Node;
+
+	if(state == nil || state.ui == nil || state.ui.tree == nil || state.modal == nil)
+		return;
+
+	if(state.modal.inputhistoryids == nil)
+		return;
+
+	for(i = 0; i < len state.modal.inputhistoryids; i++){
+		n = view->find(state.ui.tree, state.modal.inputhistoryids[i]);
+		if(n != nil)
+			view->hide(n);
+	}
+}
+
+drawinputhistory(state: ref IcState->AppState)
+{
+	m: ref IcState->ModalState;
+	i, rows, w, x, y: int;
+	text, code, focuscode: string;
+
+	if(state == nil || state.modal == nil)
+		return;
+
+	m = state.modal;
+
+	if(!m.inputhistoryopen || m.inputhistoryitems == nil || len m.inputhistoryitems == 0){
+		hideinputhistory(state);
+		return;
+	}
+
+	if(m.canvasid < 0){
+		hideinputhistory(state);
+		return;
+	}
+
+	rows = len m.inputhistoryitems;
+	if(rows > 5)
+		rows = 5;
+
+	if(rows <= 0){
+		hideinputhistory(state);
+		return;
+	}
+
+	if(ensureinputhistoryids(state, rows) < 0)
+		return;
+
+	#
+	# Coordinates here must be relative to the modal canvas, not to the screen.
+	# The input field is drawn by ui->modal inside the modal window content area.
+	#
+	x = 2;
+	y = 5;
+	w = m.w - 4;
+
+	if(w < 12)
+		w = 12;
+
+	code = "";
+	focuscode = "";
+	if(state.theme != nil){
+		code = state.theme.modalfieldcode;
+		focuscode = state.theme.modalfocuscode;
+	}
+
+	for(i = 0; i < rows; i++){
+		if(i == m.inputhistorysel)
+			text = "> " + m.inputhistoryitems[i];
+		else
+			text = "  " + m.inputhistoryitems[i];
+
+		if(i == m.inputhistorysel)
+			sethistorylabel(state, m.inputhistoryids[i], x, y + i, w, text, focuscode);
+		else
+			sethistorylabel(state, m.inputhistoryids[i], x, y + i, w, text, code);
+	}
+}
+
 handlekey(state: ref IcState->AppState, k: int): int
 {
 	m: ref IcState->ModalState;
@@ -693,6 +1094,39 @@ handlekey(state: ref IcState->AppState, k: int): int
 	if(m.animstage != StageWindow)
 		return IcModal->ResultNone;
 
+	if(m.inputhistoryopen){
+		if(k == EscapeKey){
+			m.inputhistoryopen = 0;
+			m.inputhistorysel = -1;
+			drawwindow(state);
+			return IcModal->ResultNone;
+		}
+
+		if(k == UpKey){
+			inputmovehistory(m, -1);
+			drawwindow(state);
+			return IcModal->ResultNone;
+		}
+
+		if(k == DownKey){
+			inputmovehistory(m, 1);
+			drawwindow(state);
+			return IcModal->ResultNone;
+		}
+
+		if(k == EnterKey || k == ReturnKey){
+			if(m.inputhistorysel >= 0 && m.inputhistorysel < len m.inputhistoryitems){
+				m.input = m.inputhistoryitems[m.inputhistorysel];
+				m.inputpos = len m.input;
+			}
+
+			m.inputhistoryopen = 0;
+			m.inputhistorysel = -1;
+			drawwindow(state);
+			return IcModal->ResultNone;
+		}
+	}
+
 	if(k == EscapeKey)
 		return setresult(m, IcModal->ResultCancel);
 
@@ -700,6 +1134,8 @@ handlekey(state: ref IcState->AppState, k: int): int
 		if(hotkey(k, m.hotkey0)){
 			if(m.kind == IcModal->KindOverwrite)
 				return setresult(m, IcModal->ResultOverwrite);
+
+			saveinputhistory(m);
 			return setresult(m, IcModal->ResultOk);
 		}
 
@@ -711,6 +1147,76 @@ handlekey(state: ref IcState->AppState, k: int): int
 
 		if(hotkey(k, m.hotkey2))
 			return setresult(m, IcModal->ResultCancel);
+	}
+
+	if(m.focus == IcModal->FocusInput){
+		if(k == CtrlDownKey){
+			if(m.inputhistoryitems != nil && len m.inputhistoryitems > 0){
+				m.inputhistoryopen = 1;
+				if(m.inputhistorysel < 0)
+					m.inputhistorysel = 0;
+				drawwindow(state);
+			}
+			return IcModal->ResultNone;
+		}
+
+		if(k == LeftKey){
+			m.inputpos--;
+			clampinputpos(m);
+			drawwindow(state);
+			return IcModal->ResultNone;
+		}
+
+		if(k == RightKey){
+			m.inputpos++;
+			clampinputpos(m);
+			drawwindow(state);
+			return IcModal->ResultNone;
+		}
+
+		if(k == HomeKey){
+			m.inputpos = 0;
+			drawwindow(state);
+			return IcModal->ResultNone;
+		}
+
+		if(k == EndKey){
+			m.inputpos = len m.input;
+			drawwindow(state);
+			return IcModal->ResultNone;
+		}
+
+		if(k == BackspaceKey){
+			clampinputpos(m);
+			if(m.inputpos > 0){
+				m.input = m.input[0:m.inputpos - 1] + m.input[m.inputpos:];
+				m.inputpos--;
+			}
+			drawwindow(state);
+			return IcModal->ResultNone;
+		}
+
+		if(k == DeleteKey){
+			clampinputpos(m);
+			if(m.inputpos < len m.input)
+				m.input = m.input[0:m.inputpos] + m.input[m.inputpos + 1:];
+
+			drawwindow(state);
+			return IcModal->ResultNone;
+		}
+
+		if(printable(k)){
+			clampinputpos(m);
+			m.input = m.input[0:m.inputpos] + sys->sprint("%c", k) + m.input[m.inputpos:];
+			m.inputpos++;
+			drawwindow(state);
+			return IcModal->ResultNone;
+		}
+
+		if(k == EnterKey || k == ReturnKey){
+			saveinputhistory(m);
+			return setresult(m, IcModal->ResultOk);
+		}
 	}
 
 	if(k == TabKey || k == RightKey){
@@ -731,23 +1237,10 @@ handlekey(state: ref IcState->AppState, k: int): int
 		return IcModal->ResultNone;
 	}
 
-	if(m.focus == IcModal->FocusInput){
-		if(k == BackspaceKey || k == DeleteKey){
-			if(len m.input > 0)
-				m.input = m.input[0:len m.input - 1];
-			drawwindow(state);
-			return IcModal->ResultNone;
-		}
-
-		if(printable(k)){
-			m.input += sys->sprint("%c", k);
-			drawwindow(state);
-			return IcModal->ResultNone;
-		}
-	}
-
 	if(k == SpaceKey){
 		r = activatefocus(m);
+		if(r == IcModal->ResultOk)
+			saveinputhistory(m);
 		if(r == IcModal->ResultNone)
 			drawwindow(state);
 		return setresult(m, r);
@@ -755,6 +1248,8 @@ handlekey(state: ref IcState->AppState, k: int): int
 
 	if(k == EnterKey || k == ReturnKey){
 		r = activatefocus(m);
+		if(r == IcModal->ResultOk)
+			saveinputhistory(m);
 		if(r == IcModal->ResultNone)
 			drawwindow(state);
 		return setresult(m, r);
