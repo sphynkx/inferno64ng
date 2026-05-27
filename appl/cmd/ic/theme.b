@@ -51,8 +51,9 @@ loadstate(cfg: ref IcState->ConfigState): ref IcState->ThemeState
 	t.modaltextcode = cfgdata->get(cfg, ThemeSection, "modal_text_code", "38;2;25;25;25;48;2;210;210;210");
 	t.modalshadowcode = cfgdata->get(cfg, ThemeSection, "modal_shadow_code", "38;2;80;80;80;48;2;80;80;80");
 
-	t.modalfieldcode = cfgdata->get(cfg, ThemeSection, "modal_field_code", "38;2;20;20;20;48;2;245;245;245");
+	t.modalfieldcode = cfgdata->get(cfg, ThemeSection, "modal_field_code", "1;38;2;255;255;255;48;2;55;160;220");
 	t.modalfocuscode = cfgdata->get(cfg, ThemeSection, "modal_focus_code", "1;38;2;0;0;0;48;2;170;225;255");
+	t.modalcursorcode = cfgdata->get(cfg, ThemeSection, "modal_cursor_code", "1;38;2;255;255;255;48;2;220;80;40");
 	t.modalbuttoncode = cfgdata->get(cfg, ThemeSection, "modal_button_code", "1;38;2;20;20;20;48;2;235;235;235");
 	t.modalbuttonfocuscode = cfgdata->get(cfg, ThemeSection, "modal_button_focus_code", "1;38;2;0;0;0;48;2;170;225;255");
 
@@ -60,6 +61,27 @@ loadstate(cfg: ref IcState->ConfigState): ref IcState->ThemeState
 	t.commandbaractivecode = cfgdata->get(cfg, ThemeSection, "command_bar_active_code", t.panelfocuscode);
 	t.commandbardisabledcode = cfgdata->get(cfg, ThemeSection, "command_bar_disabled_code", t.paneltopcode);
 	t.commandlinecode = cfgdata->get(cfg, ThemeSection, "command_line_code", t.panelbodycode);
+
+	t.viewergotowindowcode = cfgdata->get(cfg, ThemeSection, "viewer_goto_window_code", t.modaltextcode);
+	t.viewergotoframecode = cfgdata->get(cfg, ThemeSection, "viewer_goto_frame_code", t.modalframecode);
+	t.viewergototextcode = cfgdata->get(cfg, ThemeSection, "viewer_goto_text_code", t.modaltextcode);
+	t.viewergotofieldcode = cfgdata->get(cfg, ThemeSection, "viewer_goto_field_code", t.modalfieldcode);
+	t.viewergotofieldfocuscode = cfgdata->get(cfg, ThemeSection, "viewer_goto_field_focus_code", t.modalfocuscode);
+	t.viewergotofocuscode = cfgdata->get(cfg, ThemeSection, "viewer_goto_focus_code", t.modalfocuscode);
+	t.viewergotobuttoncode = cfgdata->get(cfg, ThemeSection, "viewer_goto_button_code", t.modalbuttoncode);
+	t.viewergotobuttonfocuscode = cfgdata->get(cfg, ThemeSection, "viewer_goto_button_focus_code", t.modalbuttonfocuscode);
+	t.viewergotoshadowcode = cfgdata->get(cfg, ThemeSection, "viewer_goto_shadow_code", t.modalshadowcode);
+
+	t.viewersearchwindowcode = cfgdata->get(cfg, ThemeSection, "viewer_search_window_code", t.modaltextcode);
+	t.viewersearchframecode = cfgdata->get(cfg, ThemeSection, "viewer_search_frame_code", t.modalframecode);
+	t.viewersearchtextcode = cfgdata->get(cfg, ThemeSection, "viewer_search_text_code", t.modaltextcode);
+	t.viewersearchfieldcode = cfgdata->get(cfg, ThemeSection, "viewer_search_field_code", t.modalfieldcode);
+	t.viewersearchfieldfocuscode = cfgdata->get(cfg, ThemeSection, "viewer_search_field_focus_code", t.modalfocuscode);
+	t.viewersearchfocuscode = cfgdata->get(cfg, ThemeSection, "viewer_search_focus_code", t.modalfocuscode);
+	t.viewersearchbuttoncode = cfgdata->get(cfg, ThemeSection, "viewer_search_button_code", t.modalbuttoncode);
+	t.viewersearchbuttonfocuscode = cfgdata->get(cfg, ThemeSection, "viewer_search_button_focus_code", t.modalbuttonfocuscode);
+	t.viewersearchdisabledcode = cfgdata->get(cfg, ThemeSection, "viewer_search_disabled_code", t.modaltextcode);
+	t.viewersearchshadowcode = cfgdata->get(cfg, ThemeSection, "viewer_search_shadow_code", t.modalshadowcode);
 
 	return t;
 }

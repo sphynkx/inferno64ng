@@ -955,9 +955,9 @@ drawstyledtext(r: ref IcPaint->Renderer, x, y, maxw: int, text, basecode, overla
 	for(i = 0; i < n; i++){
 		if(ok && i == pos){
 			if(ch != "" && i < len text)
-				putc(r, x + i, y, text[i:i + 1], overlay);
+				putc(r, x + i, y, text[i:i + 1], code);
 			else
-				putc(r, x + i, y, text[i:i + 1], overlay);
+				putc(r, x + i, y, text[i:i + 1], code);
 		}else
 			putc(r, x + i, y, text[i:i + 1], code);
 	}
@@ -1085,10 +1085,7 @@ drawshadow(r: ref IcPaint->Renderer, t: ref IcView->Tree, n: ref IcView->Node)
 	if(w <= 0 || h <= 0)
 		return;
 
-	code = view->getcode(n);
-	if(code == "")
-		code = CodeShadow;
-
+	code = nodecode(n, CodeShadow);
 	shaderect(r, x, y, w, h, code);
 }
 

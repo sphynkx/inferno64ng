@@ -21,6 +21,7 @@ modal_text_code=38;2;45;30;10;48;2;235;210;160
 modal_shadow_code=38;2;90;60;20;48;2;90;60;20
 
 modal_field_code=38;2;35;20;5;48;2;255;245;220
+modal_cursor_code=1;38;2;255;255;255;48;2;220;80;40
 modal_focus_code=1;38;2;0;0;0;48;2;255;190;70
 modal_button_code=1;38;2;40;25;5;48;2;240;205;130
 modal_button_focus_code=1;38;2;0;0;0;48;2;255;190;70

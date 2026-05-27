@@ -84,7 +84,30 @@ IcViewGotoMod: module
 {
 	PATH: con "/dis/ic/viewgoto.dis";
 
+	Style: adt
+	{
+		windowcode: string;
+		framecode: string;
+		textcode: string;
+		fieldcode: string;
+		fieldfocuscode: string;
+		focuscode: string;
+		buttoncode: string;
+		buttonfocuscode: string;
+		shadowcode: string;
+
+		animticks: int;
+
+		frameh: string;
+		framev: string;
+		framenw: string;
+		framene: string;
+		framesw: string;
+		framese: string;
+	};
+
 	init: fn();
+	setstyle: fn(style: Style);
 
 	open: fn(u: ref IcUi->Ui, parentid, w, h: int);
 	close: fn(u: ref IcUi->Ui);
@@ -313,6 +336,7 @@ bodyid: fn(v: ref IcState->ViewerState): int;
 topcode: fn(): string;
 bodycode: fn(): string;
 errorcode: fn(): string;
+gotostyle: fn(t: ref IcState->ThemeState): IcViewGotoMod->Style;
 applytheme: fn(t: ref IcState->ThemeState);
 
 clampview: fn(v: ref IcState->ViewerState, h: int);
@@ -409,7 +433,7 @@ init()
 
 	source = nil;
 	theme = runtheme->loadtheme();
-	viewbuttons->settheme(theme);
+	applytheme(theme);
 
 	viewerbodyrows = 1;
 }
@@ -438,13 +462,58 @@ errorcode(): string
 	return DefaultErrorCode;
 }
 
+gotostyle(t: ref IcState->ThemeState): IcViewGotoMod->Style
+{
+	s: IcViewGotoMod->Style;
+
+	s.windowcode = "";
+	s.framecode = "";
+	s.textcode = "";
+	s.fieldcode = "";
+	s.fieldfocuscode = "";
+	s.focuscode = "";
+	s.buttoncode = "";
+	s.buttonfocuscode = "";
+	s.shadowcode = "";
+
+	s.animticks = -1;
+
+	s.frameh = "─";
+	s.framev = "│";
+	s.framenw = "┌";
+	s.framene = "┐";
+	s.framesw = "└";
+	s.framese = "┘";
+
+	if(t == nil)
+		return s;
+
+	s.windowcode = t.viewergotowindowcode;
+	s.framecode = t.viewergotoframecode;
+	s.textcode = t.viewergototextcode;
+	s.fieldcode = t.viewergotofieldcode;
+	s.fieldfocuscode = t.viewergotofieldfocuscode;
+	s.focuscode = t.viewergotofocuscode;
+	s.buttoncode = t.viewergotobuttoncode;
+	s.buttonfocuscode = t.viewergotobuttonfocuscode;
+	s.shadowcode = t.viewergotoshadowcode;
+
+	s.animticks = t.modalanimticks;
+
+	return s;
+}
+
 applytheme(t: ref IcState->ThemeState)
 {
 	if(t != nil)
 		theme = t;
 
 	viewbuttons->settheme(theme);
+
+	if(gotomod != nil)
+		gotomod->setstyle(gotostyle(theme));
 }
+
 
 newstate(): ref IcState->ViewerState
 {
@@ -1286,7 +1355,7 @@ runfilemode(path: string, mode: int): int
 	source = newsource(path);
 
 	theme = runtheme->loadtheme();
-	viewbuttons->settheme(theme);
+	applytheme(theme);
 
 	v = newstate();
 	v.path = path;

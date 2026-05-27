@@ -35,6 +35,7 @@ IcViewCommon: module
 		inputid: int;
 		typeids: array of int;
 		buttonids: array of int;
+		historyids: array of int;
 
 		x: int;
 		y: int;
@@ -42,6 +43,11 @@ IcViewCommon: module
 		h: int;
 
 		input: string;
+		inputpos: int;
+		inputhistoryopen: int;
+		inputhistorysel: int;
+		inputhistoryitems: array of string;
+
 		mode: int;
 		focus: int;
 		result: int;
@@ -94,6 +100,7 @@ IcViewCommon: module
 		inputid: int;
 		optionids: array of int;
 		buttonids: array of int;
+		historyids: array of int;
 
 		x: int;
 		y: int;
@@ -102,6 +109,9 @@ IcViewCommon: module
 
 		input: string;
 		inputpos: int;
+		inputhistoryopen: int;
+		inputhistorysel: int;
+		inputhistoryitems: array of string;
 
 		focus: int;
 

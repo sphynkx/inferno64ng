@@ -60,12 +60,34 @@ IcState: module
 		modalfieldcode: string;
 		modalfocuscode: string;
 		modalbuttoncode: string;
+		modalcursorcode: string;
 		modalbuttonfocuscode: string;
 
 		commandbarcode: string;
 		commandbaractivecode: string;
 		commandbardisabledcode: string;
 		commandlinecode: string;
+
+		viewergotowindowcode: string;
+		viewergotoframecode: string;
+		viewergototextcode: string;
+		viewergotofieldcode: string;
+		viewergotofieldfocuscode: string;
+		viewergotofocuscode: string;
+		viewergotobuttoncode: string;
+		viewergotobuttonfocuscode: string;
+		viewergotoshadowcode: string;
+
+		viewersearchwindowcode: string;
+		viewersearchframecode: string;
+		viewersearchtextcode: string;
+		viewersearchfieldcode: string;
+		viewersearchfieldfocuscode: string;
+		viewersearchfocuscode: string;
+		viewersearchbuttoncode: string;
+		viewersearchbuttonfocuscode: string;
+		viewersearchdisabledcode: string;
+		viewersearchshadowcode: string;
 	};
 
 	FsEntry: adt
