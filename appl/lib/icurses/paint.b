@@ -830,7 +830,7 @@ paramint(s, key: string, def: int): int
 	prefix = key + "=";
 
 	for(i = 0; i < len s; i++){
-		if(i > 0 && s[i - 1] != '\n')
+		if(i > 0 && s[i - 1] != '\n' && s[i - 1] != ';')
 			continue;
 
 		if(i + len prefix > len s)
@@ -893,6 +893,7 @@ paramstr(s, key, def: string): string
 	return def;
 }
 
+
 positionarg(s, key: string, def: string): string
 {
 	i, j: int;
@@ -923,12 +924,16 @@ positionarg(s, key: string, def: string): string
 	return def;
 }
 
+
 drawstyledtext(r: ref IcPaint->Renderer, x, y, maxw: int, text, basecode, overlay: string)
 {
 	i, n, pos, ok, mode: int;
-	prefix, ch, code: string;
+	cursorcode, ch: string;
 
-	if(r == nil || text == "" || maxw <= 0){
+	if(r == nil || maxw <= 0)
+		return;
+
+	if(text == ""){
 		putslimit(r, x, y, maxw, text, basecode);
 		return;
 	}
@@ -940,13 +945,12 @@ drawstyledtext(r: ref IcPaint->Renderer, x, y, maxw: int, text, basecode, overla
 	mode = paramint(overlay, "cursor", -1);
 	pos = paramint(overlay, "pos", -1);
 	ch = positionarg(overlay, "ch", "");
-	prefix = positionarg(overlay, "base", "");
-	code = "";
+	cursorcode = positionarg(overlay, "base", "");
 
-	if(prefix != "")
-		basecode = prefix;
-
-	code = basecode;
+	if(basecode == "")
+		basecode = CodeWindow;
+	if(cursorcode == "")
+		cursorcode = basecode;
 	if(ch != "")
 		ch = ch[0:1];
 
@@ -954,12 +958,12 @@ drawstyledtext(r: ref IcPaint->Renderer, x, y, maxw: int, text, basecode, overla
 
 	for(i = 0; i < n; i++){
 		if(ok && i == pos){
-			if(ch != "" && i < len text)
-				putc(r, x + i, y, text[i:i + 1], code);
+			if(ch != "")
+				putc(r, x + i, y, ch, cursorcode);
 			else
-				putc(r, x + i, y, text[i:i + 1], code);
+				putc(r, x + i, y, text[i:i + 1], cursorcode);
 		}else
-			putc(r, x + i, y, text[i:i + 1], code);
+			putc(r, x + i, y, text[i:i + 1], basecode);
 	}
 }
 
@@ -1175,6 +1179,7 @@ drawbutton(r: ref IcPaint->Renderer, t: ref IcView->Tree, n: ref IcView->Node)
 	else
 		putslimit(r, x, y, w, s, code);
 }
+
 
 drawlabel(r: ref IcPaint->Renderer, t: ref IcView->Tree, n: ref IcView->Node)
 {

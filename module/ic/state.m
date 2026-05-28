@@ -73,6 +73,7 @@ IcState: module
 		viewergototextcode: string;
 		viewergotofieldcode: string;
 		viewergotofieldfocuscode: string;
+		viewergotocursorcode: string;
 		viewergotofocuscode: string;
 		viewergotobuttoncode: string;
 		viewergotobuttonfocuscode: string;

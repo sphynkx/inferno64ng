@@ -67,11 +67,11 @@ loadstate(cfg: ref IcState->ConfigState): ref IcState->ThemeState
 	t.viewergototextcode = cfgdata->get(cfg, ThemeSection, "viewer_goto_text_code", t.modaltextcode);
 	t.viewergotofieldcode = cfgdata->get(cfg, ThemeSection, "viewer_goto_field_code", t.modalfieldcode);
 	t.viewergotofieldfocuscode = cfgdata->get(cfg, ThemeSection, "viewer_goto_field_focus_code", t.modalfocuscode);
+	t.viewergotocursorcode = cfgdata->get(cfg, ThemeSection, "viewer_goto_cursor_code", t.modalcursorcode);
 	t.viewergotofocuscode = cfgdata->get(cfg, ThemeSection, "viewer_goto_focus_code", t.modalfocuscode);
 	t.viewergotobuttoncode = cfgdata->get(cfg, ThemeSection, "viewer_goto_button_code", t.modalbuttoncode);
 	t.viewergotobuttonfocuscode = cfgdata->get(cfg, ThemeSection, "viewer_goto_button_focus_code", t.modalbuttonfocuscode);
 	t.viewergotoshadowcode = cfgdata->get(cfg, ThemeSection, "viewer_goto_shadow_code", t.modalshadowcode);
-
 	t.viewersearchwindowcode = cfgdata->get(cfg, ThemeSection, "viewer_search_window_code", t.modaltextcode);
 	t.viewersearchframecode = cfgdata->get(cfg, ThemeSection, "viewer_search_frame_code", t.modalframecode);
 	t.viewersearchtextcode = cfgdata->get(cfg, ThemeSection, "viewer_search_text_code", t.modaltextcode);

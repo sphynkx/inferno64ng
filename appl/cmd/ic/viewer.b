@@ -92,6 +92,7 @@ IcViewGotoMod: module
 		fieldcode: string;
 		fieldfocuscode: string;
 		focuscode: string;
+		cursorcode: string;
 		buttoncode: string;
 		buttonfocuscode: string;
 		shadowcode: string;
@@ -472,6 +473,7 @@ gotostyle(t: ref IcState->ThemeState): IcViewGotoMod->Style
 	s.fieldcode = "";
 	s.fieldfocuscode = "";
 	s.focuscode = "";
+	s.cursorcode = "";
 	s.buttoncode = "";
 	s.buttonfocuscode = "";
 	s.shadowcode = "";
@@ -494,6 +496,7 @@ gotostyle(t: ref IcState->ThemeState): IcViewGotoMod->Style
 	s.fieldcode = t.viewergotofieldcode;
 	s.fieldfocuscode = t.viewergotofieldfocuscode;
 	s.focuscode = t.viewergotofocuscode;
+	s.cursorcode = t.viewergotocursorcode;
 	s.buttoncode = t.viewergotobuttoncode;
 	s.buttonfocuscode = t.viewergotobuttonfocuscode;
 	s.shadowcode = t.viewergotoshadowcode;

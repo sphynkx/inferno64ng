@@ -184,6 +184,7 @@ initstyle()
 	style.fieldcode = "1;38;2;255;255;255;48;2;55;160;220";
 	style.fieldfocuscode = "1;38;2;255;255;255;48;2;35;135;205";
 	style.focuscode = "1;38;2;0;0;0;48;2;170;225;255";
+	style.cursorcode = "1;38;2;255;255;255;48;2;220;80;40";
 	style.buttoncode = "1;38;2;20;20;20;48;2;235;235;235";
 	style.buttonfocuscode = "1;38;2;0;0;0;48;2;170;225;255";
 	style.shadowcode = "";
@@ -214,6 +215,7 @@ setstyle(s: Style)
 	style.fieldcode = setstylevalue(style.fieldcode, s.fieldcode);
 	style.fieldfocuscode = setstylevalue(style.fieldfocuscode, s.fieldfocuscode);
 	style.focuscode = setstylevalue(style.focuscode, s.focuscode);
+	style.cursorcode = setstylevalue(style.cursorcode, s.cursorcode);
 	style.buttoncode = setstylevalue(style.buttoncode, s.buttoncode);
 	style.buttonfocuscode = setstylevalue(style.buttonfocuscode, s.buttonfocuscode);
 	style.shadowcode = setstylevalue(style.shadowcode, s.shadowcode);
@@ -520,7 +522,9 @@ fieldtext(w: int): string
 
 cursoroverlay(pos: int): string
 {
-	return "cursor=1;base=" + style.focuscode + ";pos=" + string pos + ";ch=";
+	return "cursor=1\n"
+		+ "pos=" + string pos + "\n"
+		+ "base=" + style.cursorcode + "\n";
 }
 
 fieldcursorpos(w: int): int

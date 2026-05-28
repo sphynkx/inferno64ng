@@ -13,6 +13,7 @@ IcViewGoto: module
 		fieldcode: string;
 		fieldfocuscode: string;
 		focuscode: string;
+		cursorcode: string;
 		buttoncode: string;
 		buttonfocuscode: string;
 		shadowcode: string;
