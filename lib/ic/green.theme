@@ -25,6 +25,7 @@ modal_cursor_code=1;38;2;255;255;255;48;2;180;80;20
 modal_focus_code=1;38;2;0;0;0;48;2;120;230;160
 modal_button_code=1;38;2;20;50;30;48;2;185;235;195
 modal_button_focus_code=1;38;2;0;0;0;48;2;120;230;160
+viewer_goto_cursor_code=1;38;2;255;255;255;48;2;20;180;40
 
 command_bar_code=1;38;2;15;40;25;48;2;120;230;160
 command_bar_active_code=1;38;2;255;255;255;48;2;25;130;70
