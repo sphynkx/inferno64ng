@@ -126,19 +126,37 @@ IcViewSearchMod: module
 {
 	PATH: con "/dis/ic/viewsearch.dis";
 
-	init: fn();
+	Style: adt
+	{
+		windowcode: string;
+		framecode: string;
+		textcode: string;
+		fieldcode: string;
+		fieldfocuscode: string;
+		focuscode: string;
+		cursorcode: string;
+		buttoncode: string;
+		buttonfocuscode: string;
+		disabledcode: string;
+		shadowcode: string;
+		frameh: string;
+		framev: string;
+		framenw: string;
+		framene: string;
+		framesw: string;
+		framese: string;
+	};
 
+	init: fn();
+	setstyle: fn(style: Style);
 	open: fn(u: ref IcUi->Ui, parentid, w, h: int, pattern: string);
 	alert: fn(u: ref IcUi->Ui, parentid, w, h: int, text: string);
 	close: fn(u: ref IcUi->Ui);
-
 	active: fn(): int;
 	isalert: fn(): int;
-
 	draw: fn(u: ref IcUi->Ui, parentid, w, h: int): int;
 	handletick: fn(u: ref IcUi->Ui, parentid, w, h: int): int;
 	handlekey: fn(u: ref IcUi->Ui, parentid, w, h, k: int): int;
-
 	options: fn(): IcViewCommon->SearchOptions;
 	pattern: fn(): string;
 };
@@ -338,6 +356,7 @@ topcode: fn(): string;
 bodycode: fn(): string;
 errorcode: fn(): string;
 gotostyle: fn(t: ref IcState->ThemeState): IcViewGotoMod->Style;
+searchstyle: fn(t: ref IcState->ThemeState): IcViewSearchMod->Style;
 applytheme: fn(t: ref IcState->ThemeState);
 
 clampview: fn(v: ref IcState->ViewerState, h: int);
@@ -506,6 +525,47 @@ gotostyle(t: ref IcState->ThemeState): IcViewGotoMod->Style
 	return s;
 }
 
+searchstyle(t: ref IcState->ThemeState): IcViewSearchMod->Style
+{
+	s: IcViewSearchMod->Style;
+
+	s.windowcode = "";
+	s.framecode = "";
+	s.textcode = "";
+	s.fieldcode = "";
+	s.fieldfocuscode = "";
+	s.focuscode = "";
+	s.cursorcode = "";
+	s.buttoncode = "";
+	s.buttonfocuscode = "";
+	s.disabledcode = "";
+	s.shadowcode = "";
+
+	s.frameh = "─";
+	s.framev = "│";
+	s.framenw = "┌";
+	s.framene = "┐";
+	s.framesw = "└";
+	s.framese = "┘";
+
+	if(t == nil)
+		return s;
+
+	s.windowcode = t.viewersearchwindowcode;
+	s.framecode = t.viewersearchframecode;
+	s.textcode = t.viewersearchtextcode;
+	s.fieldcode = t.viewersearchfieldcode;
+	s.fieldfocuscode = t.viewersearchfieldfocuscode;
+	s.focuscode = t.viewersearchfocuscode;
+	s.cursorcode = t.modalcursorcode;
+	s.buttoncode = t.viewersearchbuttoncode;
+	s.buttonfocuscode = t.viewersearchbuttonfocuscode;
+	s.disabledcode = t.viewersearchdisabledcode;
+	s.shadowcode = t.viewersearchshadowcode;
+
+	return s;
+}
+
 applytheme(t: ref IcState->ThemeState)
 {
 	if(t != nil)
@@ -515,6 +575,9 @@ applytheme(t: ref IcState->ThemeState)
 
 	if(gotomod != nil)
 		gotomod->setstyle(gotostyle(theme));
+
+	if(viewsearch != nil)
+		viewsearch->setstyle(searchstyle(theme));
 }
 
 

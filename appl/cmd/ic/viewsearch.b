@@ -34,6 +34,7 @@ SearchStyle: adt
 	fieldcode: string;
 	fieldfocuscode: string;
 	focuscode: string;
+	cursorcode: string;
 	buttoncode: string;
 	buttonfocuscode: string;
 	disabledcode: string;
@@ -81,6 +82,7 @@ LeftKey: con 57364;
 RightKey: con 57365;
 
 initstyle: fn();
+setstylevalue: fn(cur, next: string): string;
 loadtheme: fn();
 loadthemefile: fn(path: string);
 applythemevalue: fn(section, key, value: string);
@@ -106,6 +108,8 @@ midframe: fn(w: int): string;
 setlabel: fn(u: ref IcUi->Ui, parentid, id, x, y, w: int, text, code: string);
 checkbox: fn(checked: int, label: string): string;
 fieldtext: fn(w: int): string;
+fieldcursorpos: fn(w: int): int;
+cursoroverlay: fn(pos: int): string;
 buttontext: fn(kind: int): string;
 focusnext: fn();
 focusprev: fn();
@@ -184,17 +188,45 @@ initstyle()
 	style.fieldcode = "1;38;2;255;255;255;48;2;55;160;220";
 	style.fieldfocuscode = "1;38;2;255;255;255;48;2;35;135;205";
 	style.focuscode = "1;38;2;0;0;0;48;2;170;225;255";
+	style.cursorcode = "1;38;2;255;255;255;48;2;220;80;40";
 	style.buttoncode = "1;38;2;20;20;20;48;2;235;235;235";
 	style.buttonfocuscode = "1;38;2;0;0;0;48;2;170;225;255";
 	style.disabledcode = "38;2;120;120;120;48;2;210;210;210";
 	style.shadowcode = "38;2;120;120;120;48;2;0;0;0";
-
 	style.frameh = "─";
 	style.framev = "│";
 	style.framenw = "┌";
 	style.framene = "┐";
 	style.framesw = "└";
 	style.framese = "┘";
+}
+
+setstylevalue(cur, next: string): string
+{
+	if(next != "")
+		return next;
+	return cur;
+}
+
+setstyle(s: SearchStyle)
+{
+	style.windowcode = setstylevalue(style.windowcode, s.windowcode);
+	style.framecode = setstylevalue(style.framecode, s.framecode);
+	style.textcode = setstylevalue(style.textcode, s.textcode);
+	style.fieldcode = setstylevalue(style.fieldcode, s.fieldcode);
+	style.fieldfocuscode = setstylevalue(style.fieldfocuscode, s.fieldfocuscode);
+	style.focuscode = setstylevalue(style.focuscode, s.focuscode);
+	style.cursorcode = setstylevalue(style.cursorcode, s.cursorcode);
+	style.buttoncode = setstylevalue(style.buttoncode, s.buttoncode);
+	style.buttonfocuscode = setstylevalue(style.buttonfocuscode, s.buttonfocuscode);
+	style.disabledcode = setstylevalue(style.disabledcode, s.disabledcode);
+	style.shadowcode = setstylevalue(style.shadowcode, s.shadowcode);
+	style.frameh = setstylevalue(style.frameh, s.frameh);
+	style.framev = setstylevalue(style.framev, s.framev);
+	style.framenw = setstylevalue(style.framenw, s.framenw);
+	style.framene = setstylevalue(style.framene, s.framene);
+	style.framesw = setstylevalue(style.framesw, s.framesw);
+	style.framese = setstylevalue(style.framese, s.framese);
 }
 
 loadtheme()
@@ -339,6 +371,8 @@ applythemevalue(section, key, value: string)
 		style.fieldfocuscode = value;
 	else if(key == "viewer_search_focus_code")
 		style.focuscode = value;
+	else if(key == "viewer_search_cursor_code")
+		style.cursorcode = value;
 	else if(key == "viewer_search_button_code")
 		style.buttoncode = value;
 	else if(key == "viewer_search_button_focus_code")
@@ -618,14 +652,71 @@ checkbox(checked: int, label: string): string
 fieldtext(w: int): string
 {
 	v: string;
+	textw, start, cursor: int;
 
 	clampinputpos();
 
-	if(s.focus != IcViewCommon->SearchFocusInput)
-		return fittext(s.input, w);
+	if(w < 1)
+		return "";
 
-	v = s.input[0:s.inputpos] + "|" + s.input[s.inputpos:];
-	return fittext(v, w);
+	textw = w;
+	if(textw < 1)
+		textw = 1;
+
+	v = s.input;
+	cursor = s.inputpos;
+	start = 0;
+
+	if(cursor >= textw)
+		start = cursor - textw + 1;
+
+	if(start < 0)
+		start = 0;
+	if(start > len v)
+		start = len v;
+
+	if(len v[start:] > textw)
+		v = v[start:start + textw];
+	else
+		v = v[start:];
+
+	while(len v < textw)
+		v += " ";
+
+	return v;
+}
+
+fieldcursorpos(w: int): int
+{
+	textw, start, cursor: int;
+
+	textw = w;
+	if(textw < 1)
+		textw = 1;
+
+	clampinputpos();
+
+	cursor = s.inputpos;
+	start = 0;
+
+	if(cursor >= textw)
+		start = cursor - textw + 1;
+
+	cursor -= start;
+
+	if(cursor < 0)
+		cursor = 0;
+	if(cursor >= textw)
+		cursor = textw - 1;
+
+	return cursor;
+}
+
+cursoroverlay(pos: int): string
+{
+	return "cursor=1\n"
+		+ "pos=" + string pos + "\n"
+		+ "base=" + style.cursorcode + "\n";
 }
 
 buttontext(kind: int): string
@@ -753,7 +844,8 @@ drawshadow(u: ref IcUi->Ui, parentid, x, y, w, h: int): int
 
 drawwindow(u: ref IcUi->Ui, parentid, x, y, w, h: int): int
 {
-	bodyw, bx, row, bgid: int;
+	bodyw, bx, row, bgid, cpos: int;
+	n: ref IcView->Node;
 
 	ensureids(u);
 
@@ -774,6 +866,19 @@ drawwindow(u: ref IcUi->Ui, parentid, x, y, w, h: int): int
 		setlabel(u, s.windowid, s.inputid, 4, 2, bodyw, fieldtext(bodyw), style.fieldfocuscode);
 	else
 		setlabel(u, s.windowid, s.inputid, 4, 2, bodyw, fieldtext(bodyw), style.fieldcode);
+
+	n = view->find(u.tree, s.inputid);
+	if(n != nil){
+		n.styles = array[0] of string;
+
+		if(s.focus == IcViewCommon->SearchFocusInput){
+			cpos = fieldcursorpos(bodyw);
+			n.styles = array[] of {
+				"",
+				cursoroverlay(cpos)
+			};
+		}
+	}
 
 	setlabel(u, s.windowid, s.optionids[0], 4, 4, bodyw,
 		checkbox(s.case_sensitive, "Case sensitive"),
