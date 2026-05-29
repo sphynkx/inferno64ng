@@ -2,13 +2,16 @@ implement IcViewSearch;
 
 include "ic/viewsearch.m";
 
-IcUiMod: module {
+IcUiMod: module
+{
 	PATH: con "/dis/lib/icurses/ui.dis";
 	init: fn();
 	node: fn(u: ref IcUi->Ui, parentid, id: int, kind: string, x, y, w, h: int): int;
 	label: fn(u: ref IcUi->Ui, parentid, id: int, x, y, w: int, text: string): int;
 };
-IcViewMod: module {
+
+IcViewMod: module
+{
 	PATH: con "/dis/lib/icurses/view.dis";
 	init: fn();
 	allocid: fn(t: ref IcView->Tree): int;
@@ -17,16 +20,37 @@ IcViewMod: module {
 	settext: fn(v: ref IcView->Node, text: string);
 	setcode: fn(v: ref IcView->Node, code: string);
 	show: fn(v: ref IcView->Node);
+	hide: fn(v: ref IcView->Node);
 	removetree: fn(t: ref IcView->Tree, id: int): int;
 	bringtofront: fn(t: ref IcView->Tree, id: int): int;
+};
+
+IcInputHistoryMod: module
+{
+	PATH: con "/dis/ic/inputhist.dis";
+
+	History: adt
+	{
+		section: string;
+		items: array of string;
+		sel: int;
+		maxitems: int;
+	};
+
+	init: fn();
+	new: fn(section: string, maxitems: int): ref History;
+	loadhist: fn(h: ref History): int;
+	add: fn(h: ref History, text: string): int;
 };
 
 sys: Sys;
 ui: IcUiMod;
 view: IcViewMod;
+histmod: IcInputHistoryMod;
 
 s: IcViewCommon->SearchDialogState;
 style: Style;
+hist: ref IcInputHistoryMod->History;
 
 StageNone: con 0;
 StageShadow: con 1;
@@ -43,6 +67,9 @@ UserConfigDir: con "ic";
 ThemeFileName: con "theme.cfg";
 DefaultUserName: con "inferno";
 
+HistorySection: con "search_view";
+HistoryMaxItems: con 32;
+
 TabKey: con 9;
 EnterKey: con 10;
 ReturnKey: con 13;
@@ -54,6 +81,7 @@ UpKey: con 57362;
 DownKey: con 57363;
 LeftKey: con 57364;
 RightKey: con 57365;
+CtrlDownKey: con 57811;
 
 initstyle: fn();
 setstylevalue: fn(cur, next: string): string;
@@ -85,6 +113,14 @@ checkbox: fn(checked: int, label: string): string;
 fieldtext: fn(w: int): string;
 fieldcursorpos: fn(w: int): int;
 cursoroverlay: fn(pos: int): string;
+
+loadhistory: fn();
+savehistory: fn();
+ensurehistoryids: fn(u: ref IcUi->Ui, rows: int);
+hidehistory: fn(u: ref IcUi->Ui);
+removehistory: fn(u: ref IcUi->Ui);
+drawhistory: fn(u: ref IcUi->Ui);
+
 buttontext: fn(kind: int): string;
 focusnext: fn();
 focusprev: fn();
@@ -107,16 +143,26 @@ init()
 	sys = load Sys Sys->PATH;
 	if(sys == nil)
 		raise "fail:load sys";
+
 	ui = load IcUiMod IcUiMod->PATH;
 	if(ui == nil)
 		raise "fail:load icurses/ui";
+
 	view = load IcViewMod IcViewMod->PATH;
 	if(view == nil)
 		raise "fail:load icurses/view";
+
+	histmod = load IcInputHistoryMod IcInputHistoryMod->PATH;
+	if(histmod == nil)
+		raise "fail:load ic/inputhist";
+
 	ui->init();
 	view->init();
+	histmod->init();
+
 	initstyle();
 	loadtheme();
+
 	s.active = 0;
 	s.alert = 0;
 	s.alerttext = "";
@@ -125,7 +171,13 @@ init()
 	s.inputid = -1;
 	s.optionids = array[5] of int;
 	s.buttonids = array[3] of int;
+	s.historyids = array[0] of int;
+	s.inputhistoryopen = 0;
+	s.inputhistorysel = -1;
+	s.inputhistoryitems = array[0] of string;
+
 	resetwindowids();
+
 	s.x = 0;
 	s.y = 0;
 	s.w = 0;
@@ -140,6 +192,9 @@ init()
 	s.anyencoding = 0;
 	s.encoding = "utf-8";
 	s.result = IcViewCommon->SearchNone;
+
+	hist = nil;
+
 	animstage = StageNone;
 	animwait = 0;
 }
@@ -390,6 +445,9 @@ open(u: ref IcUi->Ui, parentid, w, h: int, pattern: string)
 	s.input = pattern;
 	s.inputpos = len s.input;
 	s.focus = IcViewCommon->SearchFocusInput;
+	s.inputhistoryopen = 0;
+	s.inputhistorysel = -1;
+	s.inputhistoryitems = array[0] of string;
 
 	if(s.encoding == "")
 		s.encoding = "utf-8";
@@ -401,6 +459,8 @@ open(u: ref IcUi->Ui, parentid, w, h: int, pattern: string)
 		animstage = StageWindow;
 		animwait = 0;
 	}
+
+	loadhistory();
 
 	resetwindowids();
 	ensureids(u);
@@ -417,6 +477,9 @@ alert(u: ref IcUi->Ui, parentid, w, h: int, text: string)
 	s.alerttext = text;
 	s.result = IcViewCommon->SearchNone;
 	s.focus = IcViewCommon->SearchFocusForward;
+	s.inputhistoryopen = 0;
+	s.inputhistorysel = -1;
+	s.inputhistoryitems = array[0] of string;
 
 	if(animticks() > 0){
 		animstage = StageShadow;
@@ -435,6 +498,10 @@ close(u: ref IcUi->Ui)
 {
 	if(!s.active)
 		return;
+
+	s.inputhistoryopen = 0;
+	s.inputhistorysel = -1;
+	hidehistory(u);
 
 	if(animticks() > 0 && animstage == StageWindow){
 		disposewindow(u);
@@ -537,6 +604,8 @@ dispose(u: ref IcUi->Ui)
 	if(u == nil || u.tree == nil)
 		return;
 
+	removehistory(u);
+
 	if(s.windowid >= 0)
 		view->removetree(u.tree, s.windowid);
 	if(s.shadowid >= 0)
@@ -550,6 +619,8 @@ disposewindow(u: ref IcUi->Ui)
 {
 	if(u == nil || u.tree == nil)
 		return;
+
+	hidehistory(u);
 
 	if(s.windowid >= 0)
 		view->removetree(u.tree, s.windowid);
@@ -647,17 +718,18 @@ checkbox(checked: int, label: string): string
 
 fieldtext(w: int): string
 {
-	v: string;
+	v, trigger: string;
 	textw, start, cursor: int;
 
-	clampinputpos();
+	trigger = "[v]";
+	if(w < len trigger + 2)
+		return fittext(trigger, w);
 
-	if(w < 1)
-		return "";
-
-	textw = w;
+	textw = w - len trigger - 1;
 	if(textw < 1)
 		textw = 1;
+
+	clampinputpos();
 
 	v = s.input;
 	cursor = s.inputpos;
@@ -679,14 +751,14 @@ fieldtext(w: int): string
 	while(len v < textw)
 		v += " ";
 
-	return v;
+	return v + " " + trigger;
 }
 
 fieldcursorpos(w: int): int
 {
 	textw, start, cursor: int;
 
-	textw = w;
+	textw = w - len "[v]" - 1;
 	if(textw < 1)
 		textw = 1;
 
@@ -713,6 +785,150 @@ cursoroverlay(pos: int): string
 	return "cursor=1\n"
 		+ "pos=" + string pos + "\n"
 		+ "base=" + style.cursorcode + "\n";
+}
+
+loadhistory()
+{
+	if(hist == nil)
+		hist = histmod->new(HistorySection, HistoryMaxItems);
+	if(hist == nil)
+		return;
+
+	s.inputhistoryopen = 0;
+	s.inputhistorysel = -1;
+	s.inputhistoryitems = array[0] of string;
+
+	histmod->loadhist(hist);
+	if(hist.items != nil)
+		s.inputhistoryitems = hist.items;
+}
+
+savehistory()
+{
+	v: string;
+
+	if(hist == nil)
+		hist = histmod->new(HistorySection, HistoryMaxItems);
+	if(hist == nil)
+		return;
+
+	v = trim(s.input);
+	if(v == "")
+		return;
+
+	histmod->loadhist(hist);
+	histmod->add(hist, v);
+}
+
+ensurehistoryids(u: ref IcUi->Ui, rows: int)
+{
+	i, n: int;
+	a: array of int;
+
+	if(u == nil || u.tree == nil)
+		return;
+
+	if(rows < 0)
+		rows = 0;
+
+	if(s.historyids != nil && len s.historyids >= rows)
+		return;
+
+	n = 0;
+	if(s.historyids != nil)
+		n = len s.historyids;
+
+	a = array[rows] of int;
+
+	for(i = 0; i < n && i < rows; i++)
+		a[i] = s.historyids[i];
+
+	for(; i < rows; i++)
+		a[i] = view->allocid(u.tree);
+
+	s.historyids = a;
+}
+
+hidehistory(u: ref IcUi->Ui)
+{
+	i: int;
+	n: ref IcView->Node;
+
+	if(u == nil || u.tree == nil || s.historyids == nil)
+		return;
+
+	for(i = 0; i < len s.historyids; i++){
+		n = view->find(u.tree, s.historyids[i]);
+		if(n != nil)
+			view->hide(n);
+	}
+}
+
+removehistory(u: ref IcUi->Ui)
+{
+	i: int;
+
+	if(u == nil || u.tree == nil || s.historyids == nil)
+		return;
+
+	for(i = 0; i < len s.historyids; i++){
+		if(s.historyids[i] >= 0)
+			view->removetree(u.tree, s.historyids[i]);
+	}
+
+	s.historyids = array[0] of int;
+}
+
+drawhistory(u: ref IcUi->Ui)
+{
+	i, rows, x, y, w: int;
+	text: string;
+	id: int;
+	n: ref IcView->Node;
+
+	if(u == nil || u.tree == nil)
+		return;
+
+	if(!s.inputhistoryopen || s.inputhistoryitems == nil || len s.inputhistoryitems == 0){
+		hidehistory(u);
+		return;
+	}
+
+	rows = len s.inputhistoryitems;
+	if(rows > 5)
+		rows = 5;
+
+	ensurehistoryids(u, rows);
+
+	x = s.x + 4;
+	y = s.y + 3;
+	w = s.w - 8;
+	if(w < 10)
+		w = 10;
+
+	for(i = 0; i < rows; i++){
+		id = s.historyids[i];
+		if(i == s.inputhistorysel)
+			text = "> " + s.inputhistoryitems[i];
+		else
+			text = "  " + s.inputhistoryitems[i];
+
+		if(view->find(u.tree, id) == nil)
+			ui->label(u, u.tree.rootid, id, x, y + i, w, text);
+
+		n = view->find(u.tree, id);
+		if(n == nil)
+			continue;
+
+		view->setbounds(n, x, y + i, w, 1);
+		view->settext(n, fittext(text, w));
+		if(i == s.inputhistorysel)
+			view->setcode(n, style.focuscode);
+		else
+			view->setcode(n, style.fieldcode);
+		view->show(n);
+		view->bringtofront(u.tree, id);
+	}
 }
 
 buttontext(kind: int): string
@@ -870,7 +1086,7 @@ drawwindow(u: ref IcUi->Ui, parentid, x, y, w, h: int): int
 	if(n != nil){
 		n.styles = array[0] of string;
 
-		if(s.focus == IcViewCommon->SearchFocusInput){
+		if(s.focus == IcViewCommon->SearchFocusInput && !s.inputhistoryopen){
 			cpos = fieldcursorpos(bodyw);
 			n.styles = array[] of {
 				"",
@@ -918,6 +1134,8 @@ drawwindow(u: ref IcUi->Ui, parentid, x, y, w, h: int): int
 	setlabel(u, s.windowid, s.buttonids[2], bx + 29, 11, 10,
 		buttontext(2),
 		buttoncode(IcViewCommon->SearchFocusCancel));
+
+	drawhistory(u);
 
 	view->bringtofront(u.tree, s.windowid);
 	return 0;
@@ -1069,17 +1287,61 @@ handlekey(u: ref IcUi->Ui, parentid, w, h, k: int): int
 	}
 
 	if(k == EscapeKey){
+		s.inputhistoryopen = 0;
+		s.inputhistorysel = -1;
+		hidehistory(u);
 		s.result = IcViewCommon->SearchCancel;
 		return s.result;
 	}
 
-	if(k == TabKey || k == DownKey){
+	if(s.focus == IcViewCommon->SearchFocusInput){
+		if(k == CtrlDownKey){
+			if(s.inputhistoryitems != nil && len s.inputhistoryitems > 0){
+				s.inputhistoryopen = 1;
+				if(s.inputhistorysel < 0)
+					s.inputhistorysel = 0;
+				draw(u, parentid, w, h);
+			}
+			return IcViewCommon->SearchNone;
+		}
+
+		if(k == DownKey && s.inputhistoryopen){
+			if(s.inputhistoryitems != nil && len s.inputhistoryitems > 0){
+				if(s.inputhistorysel < 0)
+					s.inputhistorysel = 0;
+				else if(s.inputhistorysel + 1 < len s.inputhistoryitems)
+					s.inputhistorysel++;
+				else
+					s.inputhistorysel = 0;
+				draw(u, parentid, w, h);
+			}
+			return IcViewCommon->SearchNone;
+		}
+
+		if(k == UpKey && s.inputhistoryopen){
+			if(s.inputhistoryitems != nil && len s.inputhistoryitems > 0){
+				if(s.inputhistorysel < 0)
+					s.inputhistorysel = len s.inputhistoryitems - 1;
+				else if(s.inputhistorysel > 0)
+					s.inputhistorysel--;
+				else
+					s.inputhistorysel = len s.inputhistoryitems - 1;
+				draw(u, parentid, w, h);
+			}
+			return IcViewCommon->SearchNone;
+		}
+	}
+
+	if(k == TabKey || (k == DownKey && !s.inputhistoryopen)){
+		s.inputhistoryopen = 0;
+		s.inputhistorysel = -1;
+		hidehistory(u);
 		focusnext();
 		draw(u, parentid, w, h);
 		return IcViewCommon->SearchNone;
 	}
 
-	if(k == UpKey){
+	if(k == UpKey && !s.inputhistoryopen){
 		focusprev();
 		draw(u, parentid, w, h);
 		return IcViewCommon->SearchNone;
@@ -1087,6 +1349,9 @@ handlekey(u: ref IcUi->Ui, parentid, w, h, k: int): int
 
 	if(k == LeftKey){
 		if(s.focus == IcViewCommon->SearchFocusInput){
+			s.inputhistoryopen = 0;
+			s.inputhistorysel = -1;
+			hidehistory(u);
 			s.inputpos--;
 			clampinputpos();
 		}else
@@ -1098,6 +1363,9 @@ handlekey(u: ref IcUi->Ui, parentid, w, h, k: int): int
 
 	if(k == RightKey){
 		if(s.focus == IcViewCommon->SearchFocusInput){
+			s.inputhistoryopen = 0;
+			s.inputhistorysel = -1;
+			hidehistory(u);
 			s.inputpos++;
 			clampinputpos();
 		}else
@@ -1108,22 +1376,33 @@ handlekey(u: ref IcUi->Ui, parentid, w, h, k: int): int
 	}
 
 	if(k == BackspaceKey){
-		if(s.focus == IcViewCommon->SearchFocusInput)
+		if(s.focus == IcViewCommon->SearchFocusInput){
+			s.inputhistoryopen = 0;
+			s.inputhistorysel = -1;
+			hidehistory(u);
 			backspacechar();
+		}
 
 		draw(u, parentid, w, h);
 		return IcViewCommon->SearchNone;
 	}
 
 	if(k == DeleteKey){
-		if(s.focus == IcViewCommon->SearchFocusInput)
+		if(s.focus == IcViewCommon->SearchFocusInput){
+			s.inputhistoryopen = 0;
+			s.inputhistorysel = -1;
+			hidehistory(u);
 			deletechar();
+		}
 
 		draw(u, parentid, w, h);
 		return IcViewCommon->SearchNone;
 	}
 
 	if(s.focus == IcViewCommon->SearchFocusInput && printable(k)){
+		s.inputhistoryopen = 0;
+		s.inputhistorysel = -1;
+		hidehistory(u);
 		insertchar(k);
 		draw(u, parentid, w, h);
 		return IcViewCommon->SearchNone;
@@ -1136,11 +1415,13 @@ handlekey(u: ref IcUi->Ui, parentid, w, h, k: int): int
 		}
 
 		if(s.focus == IcViewCommon->SearchFocusForward){
+			savehistory();
 			s.result = IcViewCommon->SearchForward;
 			return s.result;
 		}
 
 		if(s.focus == IcViewCommon->SearchFocusBackwardButton){
+			savehistory();
 			s.result = IcViewCommon->SearchBackward;
 			return s.result;
 		}
@@ -1152,12 +1433,26 @@ handlekey(u: ref IcUi->Ui, parentid, w, h, k: int): int
 	}
 
 	if(k == EnterKey || k == ReturnKey){
+		if(s.focus == IcViewCommon->SearchFocusInput && s.inputhistoryopen){
+			if(s.inputhistoryitems != nil && len s.inputhistoryitems > 0 && s.inputhistorysel >= 0 && s.inputhistorysel < len s.inputhistoryitems){
+				s.input = s.inputhistoryitems[s.inputhistorysel];
+				s.inputpos = len s.input;
+			}
+			s.inputhistoryopen = 0;
+			s.inputhistorysel = -1;
+			hidehistory(u);
+			draw(u, parentid, w, h);
+			return IcViewCommon->SearchNone;
+		}
+
 		if(s.focus == IcViewCommon->SearchFocusInput || s.focus == IcViewCommon->SearchFocusForward){
+			savehistory();
 			s.result = IcViewCommon->SearchForward;
 			return s.result;
 		}
 
 		if(s.focus == IcViewCommon->SearchFocusBackwardButton){
+			savehistory();
 			s.result = IcViewCommon->SearchBackward;
 			return s.result;
 		}
