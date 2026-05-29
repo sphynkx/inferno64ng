@@ -94,6 +94,14 @@ stylecodes: fn(state: ref IcState->AppState): array of string;
 draw: fn(state: ref IcState->AppState): int;
 drawshadow: fn(state: ref IcState->AppState): int;
 drawwindow: fn(state: ref IcState->AppState): int;
+drawframe: fn(state: ref IcState->AppState, id, w, h: int, title: string);
+drawlabel: fn(state: ref IcState->AppState, parentid, id, x, y, w: int, text, code: string);
+fieldbasecode: fn(state: ref IcState->AppState, focused: int): string;
+fieldtextwidth: fn(m: ref IcState->ModalState): int;
+fieldcursorpos: fn(m: ref IcState->ModalState): int;
+cursoroverlay: fn(state: ref IcState->AppState, pos: int): string;
+buttoncode: fn(state: ref IcState->AppState, focused: int): string;
+checkboxcode: fn(state: ref IcState->AppState, focused: int): string;
 focusmin: fn(m: ref IcState->ModalState): int;
 focusmax: fn(m: ref IcState->ModalState): int;
 focusnext: fn(m: ref IcState->ModalState);
@@ -114,6 +122,12 @@ drawinputhistory: fn(state: ref IcState->AppState);
 sethistorylabel: fn(state: ref IcState->AppState, id, x, y, w: int, text, code: string);
 inputmovehistory: fn(m: ref IcState->ModalState, dir: int);
 setresult: fn(m: ref IcState->ModalState, r: int): int;
+topframe: fn(w: int, title: string): string;
+midframe: fn(w: int): string;
+bottomframe: fn(w: int): string;
+fillstr: fn(n: int, ch: string): string;
+spaces: fn(n: int): string;
+fittext: fn(s: string, w: int): string;
 
 init()
 {
@@ -286,6 +300,194 @@ animticks(state: ref IcState->AppState): int
 	return 0;
 }
 
+fillstr(n: int, ch: string): string
+{
+	s: string;
+	i: int;
+
+	s = "";
+	for(i = 0; i < n; i++)
+		s += ch;
+
+	return s;
+}
+
+spaces(n: int): string
+{
+	return fillstr(n, " ");
+}
+
+fittext(s: string, w: int): string
+{
+	if(w <= 0)
+		return "";
+
+	if(len s > w)
+		return s[0:w];
+
+	if(len s < w)
+		return s + spaces(w - len s);
+
+	return s;
+}
+
+topframe(w: int, title: string): string
+{
+	prefix: string;
+	n: int;
+
+	prefix = "┌ " + title + " ";
+	n = w - len prefix - len "┐";
+	if(n < 0)
+		n = 0;
+
+	return fittext(prefix + fillstr(n, "─") + "┐", w);
+}
+
+midframe(w: int): string
+{
+	if(w < 2)
+		return fittext("│", w);
+
+	return "│" + spaces(w - 2) + "│";
+}
+
+bottomframe(w: int): string
+{
+	if(w < 2)
+		return fittext("└", w);
+
+	return "└" + fillstr(w - 2, "─") + "┘";
+}
+
+drawlabel(state: ref IcState->AppState, parentid, id, x, y, w: int, text, code: string)
+{
+	n: ref IcView->Node;
+
+	if(state == nil || state.ui == nil || state.ui.tree == nil || id < 0)
+		return;
+
+	if(view->find(state.ui.tree, id) == nil)
+		ui->label(state.ui, parentid, id, x, y, w, text);
+
+	n = view->find(state.ui.tree, id);
+	if(n == nil)
+		return;
+
+	view->setbounds(n, x, y, w, 1);
+	view->settext(n, fittext(text, w));
+	view->setcode(n, code);
+	view->show(n);
+}
+
+drawframe(state: ref IcState->AppState, id, w, h: int, title: string)
+{
+	row, lid: int;
+
+	if(state == nil || state.ui == nil || state.ui.tree == nil)
+		return;
+
+	lid = view->allocid(state.ui.tree);
+	drawlabel(state, id, lid, 0, 0, w, topframe(w, title), state.theme.modalframecode);
+
+	for(row = 1; row < h - 1; row++){
+		lid = view->allocid(state.ui.tree);
+		drawlabel(state, id, lid, 0, row, w, midframe(w), state.theme.modalframecode);
+	}
+
+	lid = view->allocid(state.ui.tree);
+	drawlabel(state, id, lid, 0, h - 1, w, bottomframe(w), state.theme.modalframecode);
+}
+
+fieldbasecode(state: ref IcState->AppState, focused: int): string
+{
+	if(state == nil || state.theme == nil)
+		return "";
+
+	focused = focused;
+	return state.theme.modalfieldcode;
+}
+
+fieldtextwidth(m: ref IcState->ModalState): int
+{
+	fieldw, textw: int;
+
+	if(m == nil)
+		return 4;
+
+	fieldw = m.w - 6;
+	if(fieldw < 12)
+		fieldw = 12;
+
+	textw = fieldw - len "[v]" - 1;
+	if(textw < 4)
+		textw = 4;
+
+	return textw;
+}
+
+fieldcursorpos(m: ref IcState->ModalState): int
+{
+	textw, start, cursor: int;
+
+	if(m == nil)
+		return 0;
+
+	textw = fieldtextwidth(m);
+
+	clampinputpos(m);
+
+	cursor = m.inputpos;
+	start = 0;
+
+	if(cursor >= textw)
+		start = cursor - textw + 1;
+
+	cursor -= start;
+
+	if(cursor < 0)
+		cursor = 0;
+	if(cursor >= textw)
+		cursor = textw - 1;
+
+	return cursor;
+}
+
+cursoroverlay(state: ref IcState->AppState, pos: int): string
+{
+	base: string;
+
+	base = "";
+	if(state != nil && state.theme != nil)
+		base = state.theme.modalcursorcode;
+
+	return "cursor=1\n"
+		+ "pos=" + string pos + "\n"
+		+ "base=" + base + "\n";
+}
+
+buttoncode(state: ref IcState->AppState, focused: int): string
+{
+	if(state == nil || state.theme == nil)
+		return "";
+
+	if(focused)
+		return state.theme.modalbuttonfocuscode;
+
+	return state.theme.modalbuttoncode;
+}
+
+checkboxcode(state: ref IcState->AppState, focused: int): string
+{
+	if(state == nil || state.theme == nil)
+		return "";
+
+	if(focused)
+		return state.theme.modalfocuscode;
+
+	return state.theme.modaltextcode;
+}
+
 checkboxtext(m: ref IcState->ModalState): string
 {
 	if(m == nil || m.checkbox == "")
@@ -329,13 +531,16 @@ buttonstotalw(m: ref IcState->ModalState): int
 measure(state: ref IcState->AppState)
 {
 	m: ref IcState->ModalState;
-	w, h: int;
+	w, h, fieldw: int;
 
 	m = state.modal;
 
 	w = len m.title + 8;
 	w = maxint(w, len m.message + 6);
-	w = maxint(w, len m.inputlabel + len m.input + 8);
+
+	fieldw = len m.inputlabel + len m.input + len "[v]" + 7;
+	w = maxint(w, fieldw);
+
 	w = maxint(w, len checkboxtext(m) + 6);
 	w = maxint(w, buttonstotalw(m) + 6);
 	w = fitw(state, w);
@@ -405,6 +610,9 @@ drawshadow(state: ref IcState->AppState): int
 drawwindow(state: ref IcState->AppState): int
 {
 	m: ref IcState->ModalState;
+	bodyw, row, inputid, msgid, labelid, checkid, b0id, b1id, b2id: int;
+	bx, y: int;
+	n: ref IcView->Node;
 
 	if(state == nil || state.ui == nil || state.ui.tree == nil || state.modal == nil)
 		return -1;
@@ -420,11 +628,84 @@ drawwindow(state: ref IcState->AppState): int
 	m.shadowid = view->allocid(state.ui.tree);
 	m.canvasid = view->allocid(state.ui.tree);
 
-	if(ui->modal(state.ui, state.modalid, m.shadowid, m.canvasid, m.x, m.y, m.w, m.h,
-		m.title, m.message, m.inputlabel, inputfieldtext(m), m.checkbox,
-		m.checked, m.focus, m.kind,
-		m.button0, m.button1, m.button2, m.buttoncount, 2, 1, stylecodes(state)) < 0)
+	if(ui->node(state.ui, state.modalid, m.shadowid, "shadow", m.x + 2, m.y + 1, m.w, m.h) < 0)
 		return -1;
+
+	if(ui->node(state.ui, state.modalid, m.canvasid, "group", m.x, m.y, m.w, m.h) < 0)
+		return -1;
+
+	drawframe(state, m.canvasid, m.w, m.h, m.title);
+
+	bodyw = m.w - 4;
+	if(bodyw < 1)
+		bodyw = 1;
+
+	row = 2;
+
+	msgid = view->allocid(state.ui.tree);
+	drawlabel(state, m.canvasid, msgid, 2, row, bodyw, m.message, state.theme.modaltextcode);
+	row++;
+
+	if(m.inputlabel != ""){
+		labelid = view->allocid(state.ui.tree);
+		drawlabel(state, m.canvasid, labelid, 2, row, bodyw, m.inputlabel, state.theme.modaltextcode);
+		row++;
+
+		inputid = view->allocid(state.ui.tree);
+		drawlabel(state, m.canvasid, inputid, 2, row, bodyw, inputfieldtext(m),
+			fieldbasecode(state, m.focus == IcModal->FocusInput));
+
+		n = view->find(state.ui.tree, inputid);
+		if(n != nil){
+			n.styles = array[0] of string;
+
+			if(m.focus == IcModal->FocusInput && !m.inputhistoryopen){
+				n.styles = array[] of {
+					"",
+					cursoroverlay(state, fieldcursorpos(m))
+				};
+			}
+		}
+
+		row++;
+	}
+
+	if(m.checkbox != ""){
+		checkid = view->allocid(state.ui.tree);
+		drawlabel(state, m.canvasid, checkid, 2, row, bodyw, checkboxtext(m),
+			checkboxcode(state, m.focus == IcModal->FocusCheckbox));
+		row += 2;
+	}else
+		row++;
+
+	bx = (m.w - buttonstotalw(m)) / 2;
+	if(bx < 2)
+		bx = 2;
+
+	y = m.h - 2;
+
+	if(m.buttoncount > 0){
+		b0id = view->allocid(state.ui.tree);
+		drawlabel(state, m.canvasid, b0id, bx, y, buttonw(m.button0),
+			buttonlabel(m.button0),
+			buttoncode(state, m.focus == IcModal->FocusButton0));
+		bx += buttonw(m.button0) + 2;
+	}
+
+	if(m.buttoncount > 1){
+		b1id = view->allocid(state.ui.tree);
+		drawlabel(state, m.canvasid, b1id, bx, y, buttonw(m.button1),
+			buttonlabel(m.button1),
+			buttoncode(state, m.focus == IcModal->FocusButton1));
+		bx += buttonw(m.button1) + 2;
+	}
+
+	if(m.buttoncount > 2){
+		b2id = view->allocid(state.ui.tree);
+		drawlabel(state, m.canvasid, b2id, bx, y, buttonw(m.button2),
+			buttonlabel(m.button2),
+			buttoncode(state, m.focus == IcModal->FocusButton2));
+	}
 
 	drawinputhistory(state);
 
@@ -454,8 +735,6 @@ draw(state: ref IcState->AppState): int
 
 	state.modal.animating = 0;
 	state.modal.animstage = StageWindow;
-
-	drawshadow(state);
 	return drawwindow(state);
 }
 
@@ -850,20 +1129,13 @@ saveinputhistory(m: ref IcState->ModalState)
 inputfieldtext(m: ref IcState->ModalState): string
 {
 	s, trigger: string;
-	fieldw, textw, start, cursor: int;
+	textw, start, cursor: int;
 
 	if(m == nil)
 		return "";
 
 	trigger = "[v]";
-
-	fieldw = m.w - 6;
-	if(fieldw < 12)
-		fieldw = 12;
-
-	textw = fieldw - len trigger - 1;
-	if(textw < 4)
-		textw = 4;
+	textw = fieldtextwidth(m);
 
 	clampinputpos(m);
 
@@ -883,18 +1155,6 @@ inputfieldtext(m: ref IcState->ModalState): string
 		s = s[start:start + textw];
 	else
 		s = s[start:];
-
-	cursor -= start;
-	if(cursor < 0)
-		cursor = 0;
-	if(cursor > len s)
-		cursor = len s;
-
-	if(m.focus == IcModal->FocusInput && !m.inputhistoryopen){
-		if(cursor >= len s)
-			s += " ";
-		s = s[0:cursor] + " " + s[cursor + 1:];
-	}
 
 	while(len s < textw)
 		s += " ";
@@ -994,7 +1254,7 @@ sethistorylabel(state: ref IcState->AppState, id, x, y, w: int, text, code: stri
 		return;
 
 	view->setbounds(n, x, y, w, 1);
-	view->settext(n, text);
+	view->settext(n, fittext(text, w));
 	view->setcode(n, code);
 	view->show(n);
 }
@@ -1050,10 +1310,6 @@ drawinputhistory(state: ref IcState->AppState)
 	if(ensureinputhistoryids(state, rows) < 0)
 		return;
 
-	#
-	# Coordinates here must be relative to the modal canvas, not to the screen.
-	# The input field is drawn by ui->modal inside the modal window content area.
-	#
 	x = 2;
 	y = 5;
 	w = m.w - 4;
