@@ -139,6 +139,9 @@ IcViewSearchMod: module
 		buttonfocuscode: string;
 		disabledcode: string;
 		shadowcode: string;
+
+		animticks: int;
+
 		frameh: string;
 		framev: string;
 		framenw: string;
@@ -541,6 +544,8 @@ searchstyle(t: ref IcState->ThemeState): IcViewSearchMod->Style
 	s.disabledcode = "";
 	s.shadowcode = "";
 
+	s.animticks = -1;
+
 	s.frameh = "─";
 	s.framev = "│";
 	s.framenw = "┌";
@@ -562,6 +567,8 @@ searchstyle(t: ref IcState->ThemeState): IcViewSearchMod->Style
 	s.buttonfocuscode = t.viewersearchbuttonfocuscode;
 	s.disabledcode = t.viewersearchdisabledcode;
 	s.shadowcode = t.viewersearchshadowcode;
+
+	s.animticks = t.modalanimticks;
 
 	return s;
 }

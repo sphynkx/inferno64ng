@@ -18,6 +18,7 @@ IcViewSearch: module
 		buttonfocuscode: string;
 		disabledcode: string;
 		shadowcode: string;
+		animticks: int;
 		frameh: string;
 		framev: string;
 		framenw: string;
