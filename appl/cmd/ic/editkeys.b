@@ -75,7 +75,32 @@ IcViewSearchMod: module
 {
 	PATH: con "/dis/ic/viewsearch.dis";
 
+	Style: adt
+	{
+		windowcode: string;
+		framecode: string;
+		textcode: string;
+		fieldcode: string;
+		fieldfocuscode: string;
+		focuscode: string;
+		cursorcode: string;
+		buttoncode: string;
+		buttonfocuscode: string;
+		disabledcode: string;
+		shadowcode: string;
+
+		animticks: int;
+
+		frameh: string;
+		framev: string;
+		framenw: string;
+		framene: string;
+		framesw: string;
+		framese: string;
+	};
+
 	init: fn();
+	setstyle: fn(style: Style);
 
 	open: fn(u: ref IcUi->Ui, parentid, w, h: int, pattern: string);
 	alert: fn(u: ref IcUi->Ui, parentid, w, h: int, text: string);
@@ -90,6 +115,46 @@ IcViewSearchMod: module
 
 	options: fn(): IcViewCommon->SearchOptions;
 	pattern: fn(): string;
+};
+
+IcEditSearchMod: module
+{
+	PATH: con "/dis/ic/editsearch.dis";
+
+	Style: adt
+	{
+		windowcode: string;
+		framecode: string;
+		textcode: string;
+		fieldcode: string;
+		fieldfocuscode: string;
+		focuscode: string;
+		cursorcode: string;
+		buttoncode: string;
+		buttonfocuscode: string;
+		disabledcode: string;
+		shadowcode: string;
+		animticks: int;
+	};
+
+	init: fn();
+	setstyle: fn(style: Style);
+
+	open: fn(u: ref IcUi->Ui, parentid, w, h: int, pattern: string);
+	alert: fn(u: ref IcUi->Ui, parentid, w, h: int, text: string);
+	close: fn(u: ref IcUi->Ui);
+
+	active: fn(): int;
+	isalert: fn(): int;
+
+	draw: fn(u: ref IcUi->Ui, parentid, w, h: int): int;
+	handletick: fn(u: ref IcUi->Ui, parentid, w, h: int): int;
+	handlekey: fn(u: ref IcUi->Ui, parentid, w, h, k: int): int;
+
+	options: fn(): IcViewCommon->SearchOptions;
+	pattern: fn(): string;
+
+	debugstate: fn(): string;
 };
 
 IcEditSearchRun: module
@@ -172,6 +237,7 @@ Kctrlf7: con 57511;
 printable: fn(k: int): int;
 activatebutton: fn(e: ref IcState->EditorState, fkey: int);
 modalstart: fn(e: ref IcState->EditorState, mode: int);
+applysearchstyle: fn(state: ref IcState->AppState);
 
 clampcursor: fn(e: ref IcState->EditorState);
 selectionrefresh: fn(e: ref IcState->EditorState);
@@ -276,6 +342,38 @@ modalstart(e: ref IcState->EditorState, mode: int)
 	e.mode = mode;
 	e.modalstage = 0;
 	e.modalwait = 0;
+}
+
+applysearchstyle(state: ref IcState->AppState)
+{
+	sv: IcViewSearchMod->Style;
+	t: ref IcState->ThemeState;
+
+	if(state == nil || state.theme == nil)
+		return;
+
+	t = state.theme;
+
+	sv.windowcode = t.viewersearchwindowcode;
+	sv.framecode = t.viewersearchframecode;
+	sv.textcode = t.viewersearchtextcode;
+	sv.fieldcode = t.viewersearchfieldcode;
+	sv.fieldfocuscode = t.viewersearchfieldfocuscode;
+	sv.focuscode = t.viewersearchfocuscode;
+	sv.cursorcode = t.modalcursorcode;
+	sv.buttoncode = t.viewersearchbuttoncode;
+	sv.buttonfocuscode = t.viewersearchbuttonfocuscode;
+	sv.disabledcode = t.viewersearchdisabledcode;
+	sv.shadowcode = t.viewersearchshadowcode;
+	sv.animticks = t.modalanimticks;
+	sv.frameh = "";
+	sv.framev = "";
+	sv.framenw = "";
+	sv.framene = "";
+	sv.framesw = "";
+	sv.framese = "";
+
+	viewsearch->setstyle(sv);
 }
 
 selectionrefresh(e: ref IcState->EditorState)
@@ -604,13 +702,8 @@ savepersistentselection(e: ref IcState->EditorState): int
 
 flushsearchdraw(state: ref IcState->AppState): int
 {
-	if(state == nil || state.ui == nil)
-		return 0;
-
-	if(!viewsearch->active())
-		return 0;
-
-	return viewsearch->handletick(state.ui, state.toolid, state.width, state.height);
+	state = state;
+	return 0;
 }
 
 closesearch(state: ref IcState->AppState)
@@ -619,7 +712,6 @@ closesearch(state: ref IcState->AppState)
 		return;
 
 	viewsearch->close(state.ui);
-	flushsearchdraw(state);
 }
 
 showsearchalert(state: ref IcState->AppState, text: string)
@@ -628,7 +720,6 @@ showsearchalert(state: ref IcState->AppState, text: string)
 		return;
 
 	viewsearch->alert(state.ui, state.toolid, state.width, state.height, text);
-	flushsearchdraw(state);
 }
 
 runeditsearch(state: ref IcState->AppState, e: ref IcState->EditorState, direction, fromcurrent: int): int
@@ -791,7 +882,6 @@ handleedit(state: ref IcState->AppState, e: ref IcState->EditorState, k, h: int)
 		activatebutton(e, 7);
 		e.mode = IcEditCommon->ModeSearch;
 		viewsearch->open(state.ui, state.toolid, state.width, state.height, editsearchrun->lastpattern());
-		flushsearchdraw(state);
 		return 1;
 
 	Kshiftf7 =>

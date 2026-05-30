@@ -1,6 +1,7 @@
 implement IcEditor;
 
 include "ic/editor.m";
+include "ic/viewcommon.m";
 
 IcursesApp: module
 {
@@ -102,9 +103,45 @@ IcViewSearchMod: module
 {
 	PATH: con "/dis/ic/viewsearch.dis";
 
+	Style: adt
+	{
+		windowcode: string;
+		framecode: string;
+		textcode: string;
+		fieldcode: string;
+		fieldfocuscode: string;
+		focuscode: string;
+		cursorcode: string;
+		buttoncode: string;
+		buttonfocuscode: string;
+		disabledcode: string;
+		shadowcode: string;
+
+		animticks: int;
+
+		frameh: string;
+		framev: string;
+		framenw: string;
+		framene: string;
+		framesw: string;
+		framese: string;
+	};
+
 	init: fn();
+	setstyle: fn(style: Style);
+
+	open: fn(u: ref IcUi->Ui, parentid, w, h: int, pattern: string);
+	alert: fn(u: ref IcUi->Ui, parentid, w, h: int, text: string);
+	close: fn(u: ref IcUi->Ui);
+
 	active: fn(): int;
+	isalert: fn(): int;
+
+	draw: fn(u: ref IcUi->Ui, parentid, w, h: int): int;
 	handletick: fn(u: ref IcUi->Ui, parentid, w, h: int): int;
+	handlekey: fn(u: ref IcUi->Ui, parentid, w, h, k: int): int;
+	options: fn(): IcViewCommon->SearchOptions;
+	pattern: fn(): string;
 };
 
 IcRuntimeTheme: module
@@ -128,6 +165,7 @@ runtheme: IcRuntimeTheme;
 theme: ref IcState->ThemeState;
 
 applytheme: fn(t: ref IcState->ThemeState);
+searchstyle: fn(t: ref IcState->ThemeState): IcViewSearchMod->Style;
 
 init()
 {
@@ -186,6 +224,54 @@ applytheme(t: ref IcState->ThemeState)
 		theme = t;
 
 	drawmod->settheme(theme);
+
+	if(viewsearch != nil)
+		viewsearch->setstyle(searchstyle(theme));
+}
+
+searchstyle(t: ref IcState->ThemeState): IcViewSearchMod->Style
+{
+	s: IcViewSearchMod->Style;
+
+	s.windowcode = "";
+	s.framecode = "";
+	s.textcode = "";
+	s.fieldcode = "";
+	s.fieldfocuscode = "";
+	s.focuscode = "";
+	s.cursorcode = "";
+	s.buttoncode = "";
+	s.buttonfocuscode = "";
+	s.disabledcode = "";
+	s.shadowcode = "";
+
+	s.animticks = -1;
+
+	s.frameh = "─";
+	s.framev = "│";
+	s.framenw = "┌";
+	s.framene = "┐";
+	s.framesw = "└";
+	s.framese = "┘";
+
+	if(t == nil)
+		return s;
+
+	s.windowcode = t.viewersearchwindowcode;
+	s.framecode = t.viewersearchframecode;
+	s.textcode = t.viewersearchtextcode;
+	s.fieldcode = t.viewersearchfieldcode;
+	s.fieldfocuscode = t.viewersearchfieldfocuscode;
+	s.focuscode = t.viewersearchfocuscode;
+	s.cursorcode = t.modalcursorcode;
+	s.buttoncode = t.viewersearchbuttoncode;
+	s.buttonfocuscode = t.viewersearchbuttonfocuscode;
+	s.disabledcode = t.viewersearchdisabledcode;
+	s.shadowcode = t.viewersearchshadowcode;
+
+	s.animticks = t.modalanimticks;
+
+	return s;
 }
 
 runfile(path: string): int
@@ -203,7 +289,7 @@ runfile(path: string): int
 		return -1;
 
 	theme = runtheme->loadtheme();
-	drawmod->settheme(theme);
+	applytheme(theme);
 
 	e = source->newstate(path, common->dirname(path));
 	if(e == nil)
@@ -231,8 +317,10 @@ runfile(path: string): int
 	w = appfw->width(ctx);
 	h = appfw->height(ctx);
 
-	drawmod->settheme(theme);
+	applytheme(theme);
 	drawmod->draw(u, rootid, e, w, h);
+	if(viewsearch->active())
+		viewsearch->draw(u, rootid, w, h);
 	appfw->draw(ctx);
 
 	running = 1;
@@ -247,8 +335,10 @@ runfile(path: string): int
 			if(r == 2)
 				running = 0;
 			else if(r != 0){
-				drawmod->settheme(theme);
+				applytheme(theme);
 				drawmod->draw(u, rootid, e, w, h);
+				if(viewsearch->active())
+					viewsearch->draw(u, rootid, w, h);
 				appfw->draw(ctx);
 			}
 		}
@@ -265,8 +355,10 @@ runfile(path: string): int
 			}
 
 			if(r){
-				drawmod->settheme(theme);
+				applytheme(theme);
 				drawmod->draw(u, rootid, e, w, h);
+				if(viewsearch->active())
+					viewsearch->draw(u, rootid, w, h);
 				appfw->draw(ctx);
 			}
 
@@ -274,8 +366,10 @@ runfile(path: string): int
 			if(resized){
 				w = nw;
 				h = nh;
-				drawmod->settheme(theme);
+				applytheme(theme);
 				drawmod->draw(u, rootid, e, w, h);
+				if(viewsearch->active())
+					viewsearch->draw(u, rootid, w, h);
 				appfw->draw(ctx);
 			}
 		}
@@ -331,6 +425,10 @@ build(state: ref IcState->AppState, parentid, w, h: int): int
 		applytheme(state.theme);
 
 	drawmod->draw(state.ui, parentid, state.editor, w, h);
+
+	if(viewsearch->active())
+		viewsearch->draw(state.ui, parentid, w, h);
+
 	return 0;
 }
 

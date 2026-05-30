@@ -15,6 +15,7 @@ TARG=\
 	editdraw.dis\
 	editkeys.dis\
 	editor.dis\
+	editsearch.dis\
 	editsearchrun.dis\
 	editsource.dis\
 	fsmodel.dis\
@@ -67,6 +68,7 @@ SYSMODULES=\
 	ic/editdraw.m\
 	ic/editkeys.m\
 	ic/editor.m\
+	ic/editsearch.m\
 	ic/editsearchrun.m\
 	ic/editsource.m\
 	ic/fsmodel.m\
