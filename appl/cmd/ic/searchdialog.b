@@ -1123,8 +1123,6 @@ printable(k: int): int
 
 drawshadow(u: ref IcUi->Ui, parentid, x, y, w, h: int): int
 {
-	n: ref IcView->Node;
-
 	if(u == nil || u.tree == nil)
 		return -1;
 
@@ -1135,10 +1133,6 @@ drawshadow(u: ref IcUi->Ui, parentid, x, y, w, h: int): int
 
 	if(ui->node(u, parentid, s.shadowid, "shadow", x + 2, y + 1, w, h) < 0)
 		return -1;
-
-	n = view->find(u.tree, s.shadowid);
-	if(n != nil && style.shadowcode != "")
-		view->setcode(n, style.shadowcode);
 
 	view->bringtofront(u.tree, s.shadowid);
 	return 0;
