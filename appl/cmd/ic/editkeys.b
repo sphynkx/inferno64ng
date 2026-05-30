@@ -71,9 +71,9 @@ IcEditBlock: module
 	loadpersistent: fn(e: ref IcState->EditorState): int;
 };
 
-IcViewSearchMod: module
+IcSearchDialogMod: module
 {
-	PATH: con "/dis/ic/viewsearch.dis";
+	PATH: con "/dis/ic/searchdialog.dis";
 
 	Style: adt
 	{
@@ -100,63 +100,24 @@ IcViewSearchMod: module
 	};
 
 	init: fn();
+	resetstyle: fn();
 	setstyle: fn(style: Style);
-
-	open: fn(u: ref IcUi->Ui, parentid, w, h: int, pattern: string);
-	alert: fn(u: ref IcUi->Ui, parentid, w, h: int, text: string);
-	close: fn(u: ref IcUi->Ui);
-
-	active: fn(): int;
-	isalert: fn(): int;
-
-	draw: fn(u: ref IcUi->Ui, parentid, w, h: int): int;
-	handletick: fn(u: ref IcUi->Ui, parentid, w, h: int): int;
-	handlekey: fn(u: ref IcUi->Ui, parentid, w, h, k: int): int;
-
-	options: fn(): IcViewCommon->SearchOptions;
-	pattern: fn(): string;
-};
-
-IcEditSearchMod: module
-{
-	PATH: con "/dis/ic/editsearch.dis";
-
-	Style: adt
-	{
-		windowcode: string;
-		framecode: string;
-		textcode: string;
-		fieldcode: string;
-		fieldfocuscode: string;
-		focuscode: string;
-		cursorcode: string;
-		buttoncode: string;
-		buttonfocuscode: string;
-		disabledcode: string;
-		shadowcode: string;
-		animticks: int;
-	};
-
-	init: fn();
-	setstyle: fn(style: Style);
-
-	open: fn(u: ref IcUi->Ui, parentid, w, h: int, pattern: string);
-	alert: fn(u: ref IcUi->Ui, parentid, w, h: int, text: string);
-	close: fn(u: ref IcUi->Ui);
-
-	active: fn(): int;
-	isalert: fn(): int;
-
-	draw: fn(u: ref IcUi->Ui, parentid, w, h: int): int;
-	handletick: fn(u: ref IcUi->Ui, parentid, w, h: int): int;
-	handlekey: fn(u: ref IcUi->Ui, parentid, w, h, k: int): int;
-
-	options: fn(): IcViewCommon->SearchOptions;
-	pattern: fn(): string;
-
 	debugstate: fn(): string;
-};
 
+	open: fn(u: ref IcUi->Ui, parentid, w, h: int, pattern: string);
+	alert: fn(u: ref IcUi->Ui, parentid, w, h: int, text: string);
+	close: fn(u: ref IcUi->Ui);
+
+	active: fn(): int;
+	isalert: fn(): int;
+
+	draw: fn(u: ref IcUi->Ui, parentid, w, h: int): int;
+	handletick: fn(u: ref IcUi->Ui, parentid, w, h: int): int;
+	handlekey: fn(u: ref IcUi->Ui, parentid, w, h, k: int): int;
+
+	options: fn(): IcViewCommon->SearchOptions;
+	pattern: fn(): string;
+};
 IcEditSearchRun: module
 {
 	PATH: con "/dis/ic/editsearchrun.dis";
@@ -190,7 +151,7 @@ sys: Sys;
 common: IcEditCommon;
 source: IcEditSource;
 editblock: IcEditBlock;
-viewsearch: IcViewSearchMod;
+searchdialog: IcSearchDialogMod;
 editsearchrun: IcEditSearchRun;
 viewer: IcViewerMod;
 
@@ -237,7 +198,6 @@ Kctrlf7: con 57511;
 printable: fn(k: int): int;
 activatebutton: fn(e: ref IcState->EditorState, fkey: int);
 modalstart: fn(e: ref IcState->EditorState, mode: int);
-applysearchstyle: fn(state: ref IcState->AppState);
 
 clampcursor: fn(e: ref IcState->EditorState);
 selectionrefresh: fn(e: ref IcState->EditorState);
@@ -296,9 +256,9 @@ init()
 	if(editblock == nil)
 		raise "fail:load ic/editblock";
 
-	viewsearch = load IcViewSearchMod IcViewSearchMod->PATH;
-	if(viewsearch == nil)
-		raise "fail:load ic/viewsearch";
+	searchdialog = load IcSearchDialogMod IcSearchDialogMod->PATH;
+	if(searchdialog == nil)
+		raise "fail:load ic/searchdialog";
 
 	editsearchrun = load IcEditSearchRun IcEditSearchRun->PATH;
 	if(editsearchrun == nil)
@@ -311,7 +271,7 @@ init()
 	common->init();
 	source->init();
 	editblock->init();
-	viewsearch->init();
+	searchdialog->init();
 	editsearchrun->init();
 	viewer->init();
 }
@@ -344,37 +304,6 @@ modalstart(e: ref IcState->EditorState, mode: int)
 	e.modalwait = 0;
 }
 
-applysearchstyle(state: ref IcState->AppState)
-{
-	sv: IcViewSearchMod->Style;
-	t: ref IcState->ThemeState;
-
-	if(state == nil || state.theme == nil)
-		return;
-
-	t = state.theme;
-
-	sv.windowcode = t.viewersearchwindowcode;
-	sv.framecode = t.viewersearchframecode;
-	sv.textcode = t.viewersearchtextcode;
-	sv.fieldcode = t.viewersearchfieldcode;
-	sv.fieldfocuscode = t.viewersearchfieldfocuscode;
-	sv.focuscode = t.viewersearchfocuscode;
-	sv.cursorcode = t.modalcursorcode;
-	sv.buttoncode = t.viewersearchbuttoncode;
-	sv.buttonfocuscode = t.viewersearchbuttonfocuscode;
-	sv.disabledcode = t.viewersearchdisabledcode;
-	sv.shadowcode = t.viewersearchshadowcode;
-	sv.animticks = t.modalanimticks;
-	sv.frameh = "";
-	sv.framev = "";
-	sv.framenw = "";
-	sv.framene = "";
-	sv.framesw = "";
-	sv.framese = "";
-
-	viewsearch->setstyle(sv);
-}
 
 selectionrefresh(e: ref IcState->EditorState)
 {
@@ -711,7 +640,7 @@ closesearch(state: ref IcState->AppState)
 	if(state == nil || state.ui == nil)
 		return;
 
-	viewsearch->close(state.ui);
+	searchdialog->close(state.ui);
 }
 
 showsearchalert(state: ref IcState->AppState, text: string)
@@ -719,7 +648,7 @@ showsearchalert(state: ref IcState->AppState, text: string)
 	if(state == nil || state.ui == nil)
 		return;
 
-	viewsearch->alert(state.ui, state.toolid, state.width, state.height, text);
+	searchdialog->alert(state.ui, state.toolid, state.width, state.height, text);
 }
 
 runeditsearch(state: ref IcState->AppState, e: ref IcState->EditorState, direction, fromcurrent: int): int
@@ -730,7 +659,7 @@ runeditsearch(state: ref IcState->AppState, e: ref IcState->EditorState, directi
 	if(state == nil || e == nil)
 		return 0;
 
-	opts = viewsearch->options();
+	opts = searchdialog->options();
 
 	r = editsearchrun->run(e, opts, direction, fromcurrent);
 
@@ -754,7 +683,7 @@ handlesearchdialog(state: ref IcState->AppState, e: ref IcState->EditorState, k:
 	if(state == nil || state.ui == nil || e == nil)
 		return 0;
 
-	r = viewsearch->handlekey(state.ui, state.toolid, state.width, state.height, k);
+	r = searchdialog->handlekey(state.ui, state.toolid, state.width, state.height, k);
 
 	if(r == IcViewCommon->SearchNone)
 		return 1;
@@ -881,7 +810,8 @@ handleedit(state: ref IcState->AppState, e: ref IcState->EditorState, k, h: int)
 
 		activatebutton(e, 7);
 		e.mode = IcEditCommon->ModeSearch;
-		viewsearch->open(state.ui, state.toolid, state.width, state.height, editsearchrun->lastpattern());
+		searchdialog->open(state.ui, state.toolid, state.width, state.height, editsearchrun->lastpattern());
+		e.message = searchdialog->debugstate();
 		return 1;
 
 	Kshiftf7 =>
@@ -1044,7 +974,7 @@ handlekey(state: ref IcState->AppState, e: ref IcState->EditorState, k, h: int):
 	if(e == nil || !e.active)
 		return 0;
 
-	if(e.mode == IcEditCommon->ModeSearch || viewsearch->active())
+	if(e.mode == IcEditCommon->ModeSearch || searchdialog->active())
 		return handlesearchdialog(state, e, k);
 
 	if(e.mode == IcEditCommon->ModeConfirmQuit)

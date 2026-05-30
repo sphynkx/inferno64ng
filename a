@@ -1,0 +1,4 @@
+#!/dis/sh
+rm -f ansitest.dis
+limbo ansitest.b
+ansitest

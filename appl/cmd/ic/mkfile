@@ -33,6 +33,7 @@ TARG=\
 	scr_flashlighter.dis\
 	scr_matrix.dis\
 	search.dis\
+	searchdialog.dis\
 	screen.dis\
 	screensaver.dis\
 	sssetup.dis\
@@ -83,6 +84,7 @@ SYSMODULES=\
 	ic/screen.m\
 	ic/screensaver.m\
 	ic/search.m\
+	ic/searchdialog.m\
 	ic/sssetup.m\
 	ic/state.m\
 	ic/theme.m\
