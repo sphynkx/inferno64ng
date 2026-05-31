@@ -294,17 +294,25 @@ IcRuntimeTheme: module
 	loadtheme: fn(): ref IcState->ThemeState;
 };
 
-IcUserStateMod: module
+IcConfigDataMod: module
 {
-	PATH: con "/dis/ic/userstate.dis";
+	PATH: con "/dis/ic/config.dis";
 
 	init: fn();
+	loadstate: fn(): ref IcState->ConfigState;
+	settheme: fn(c: ref IcState->ConfigState, name: string): int;
 
-	loadstate: fn(state: ref IcState->AppState): int;
-	restore: fn(state: ref IcState->AppState): int;
-	save: fn(state: ref IcState->AppState): int;
-	savewrap: fn(state: ref IcState->AppState): int;
-	wrapvalue: fn(): int;
+	hasuserdir: fn(c: ref IcState->ConfigState): int;
+	userpath: fn(c: ref IcState->ConfigState, name: string): string;
+	ensureuserpath: fn(c: ref IcState->ConfigState, name: string): string;
+
+	get: fn(c: ref IcState->ConfigState, section, key, def: string): string;
+	getint: fn(c: ref IcState->ConfigState, section, key: string, def: int): int;
+	getbool: fn(c: ref IcState->ConfigState, section, key: string, def: int): int;
+
+	set: fn(c: ref IcState->ConfigState, section, key, value: string): int;
+	setint: fn(c: ref IcState->ConfigState, section, key: string, value: int): int;
+	setbool: fn(c: ref IcState->ConfigState, section, key: string, value: int): int;
 };
 
 sys: Sys;
@@ -321,9 +329,10 @@ viewbuttons: IcViewButtonsMod;
 viewstatus: IcViewStatusMod;
 viewsearchrun: IcViewSearchRunMod;
 runtheme: IcRuntimeTheme;
-userstate: IcUserStateMod;
+cfgdata: IcConfigDataMod;
 
 source: ref IcViewCommon->ViewerSource;
+standalonecfg: ref IcState->ConfigState;
 
 theme: ref IcState->ThemeState;
 viewerbodyrows: int;
@@ -334,6 +343,7 @@ DefaultErrorCode: con "1;38;2;255;120;120;48;2;20;45;90";
 
 InitialPrefetchScreens: con 6;
 ScrollPrefetchScreens: con 8;
+StateWrapKey: con "wrap";
 
 Kesc: con 27;
 Kq: con int 'q';
@@ -380,6 +390,9 @@ bodycode: fn(): string;
 errorcode: fn(): string;
 gotostyle: fn(t: ref IcState->ThemeState): IcViewGotoMod->Style;
 applytheme: fn(t: ref IcState->ThemeState);
+
+loadwrapsetting: fn(state: ref IcState->AppState): int;
+savewrapsetting: fn(state: ref IcState->AppState, enabled: int);
 
 clampview: fn(v: ref IcState->ViewerState, h: int);
 ensureids: fn(u: ref IcUi->Ui, v: ref IcState->ViewerState);
@@ -459,9 +472,9 @@ init()
 	if(runtheme == nil)
 		raise "fail:load ic/runtheme";
 
-	userstate = load IcUserStateMod IcUserStateMod->PATH;
-	if(userstate == nil)
-		raise "fail:load ic/userstate";
+	cfgdata = load IcConfigDataMod IcConfigDataMod->PATH;
+	if(cfgdata == nil)
+		raise "fail:load ic/config";
 
 	appfw->init("icview");
 	ui->init();
@@ -476,9 +489,10 @@ init()
 	viewstatus->init();
 	viewsearchrun->init();
 	runtheme->init();
-	userstate->init();
+	cfgdata->init();
 
 	source = nil;
+	standalonecfg = nil;
 	theme = runtheme->loadtheme();
 	applytheme(theme);
 
@@ -563,6 +577,36 @@ applytheme(t: ref IcState->ThemeState)
 		gotomod->setstyle(gotostyle(theme));
 }
 
+loadwrapsetting(state: ref IcState->AppState): int
+{
+	if(state != nil && state.cfg != nil)
+		return cfgdata->getbool(state.cfg, "", StateWrapKey, 1);
+
+	if(standalonecfg == nil)
+		standalonecfg = cfgdata->loadstate();
+
+	if(standalonecfg == nil)
+		return 1;
+
+	return cfgdata->getbool(standalonecfg, "", StateWrapKey, 1);
+}
+
+savewrapsetting(state: ref IcState->AppState, enabled: int)
+{
+	if(state != nil && state.cfg != nil){
+		cfgdata->setbool(state.cfg, "", StateWrapKey, enabled);
+		return;
+	}
+
+	if(standalonecfg == nil)
+		standalonecfg = cfgdata->loadstate();
+
+	if(standalonecfg == nil)
+		return;
+
+	cfgdata->setbool(standalonecfg, "", StateWrapKey, enabled);
+}
+
 newstate(): ref IcState->ViewerState
 {
 	v: ref IcState->ViewerState;
@@ -580,10 +624,7 @@ newstate(): ref IcState->ViewerState
 	v.bodyids = array[0] of int;
 	v.lastw = 0;
 	v.encoding = codepagemod->defaultname();
-	if(userstate != nil)
-		v.wrap = userstate->wrapvalue();
-	else
-		v.wrap = 1;
+	v.wrap = loadwrapsetting(nil);
 
 	return v;
 }
@@ -944,16 +985,11 @@ start(state: ref IcState->AppState, path: string, mode: int): int
 	if(state.theme != nil)
 		applytheme(state.theme);
 
-	if(userstate != nil)
-		userstate->loadstate(state);
-
 	closefile(source);
 	source = newsource(path);
 
 	if(state.viewer == nil)
 		state.viewer = newstate();
-	else if(userstate != nil)
-		state.viewer.wrap = userstate->wrapvalue();
 
 	state.viewer.active = 1;
 	state.viewer.mode = mode;
@@ -962,6 +998,7 @@ start(state: ref IcState->AppState, path: string, mode: int): int
 	state.viewer.wrapped = array[0] of string;
 	state.viewer.topline = 0;
 	state.viewer.lastw = 0;
+	state.viewer.wrap = loadwrapsetting(state);
 	if(state.viewer.encoding == "")
 		state.viewer.encoding = codepagemod->defaultname();
 
@@ -1308,8 +1345,7 @@ handlekey(state: ref IcState->AppState, k: int): int
 		v.topline = 0;
 		v.lastw = 0;
 		viewbuttons->setwrap(v.wrap);
-		if(userstate != nil)
-			userstate->savewrap(state);
+		savewrapsetting(state, v.wrap);
 		build(state, state.toolid, state.width, state.height);
 		return 1;
 
@@ -1451,6 +1487,8 @@ runfilemode(path: string, mode: int): int
 	closefile(source);
 	source = newsource(path);
 
+	standalonecfg = cfgdata->loadstate();
+
 	theme = runtheme->loadtheme();
 	applytheme(theme);
 
@@ -1461,7 +1499,7 @@ runfilemode(path: string, mode: int): int
 	v.wrapped = array[0] of string;
 	v.topline = 0;
 	v.lastw = 0;
-	v.wrap = 1;
+	v.wrap = loadwrapsetting(nil);
 
 	viewbuttons->setwrap(v.wrap);
 	viewsearchrun->reset();
@@ -1498,6 +1536,7 @@ runfilemode(path: string, mode: int): int
 	st.height = appfw->height(ctx);
 	st.viewer = v;
 	st.theme = theme;
+	st.cfg = standalonecfg;
 
 	v.active = 1;
 
