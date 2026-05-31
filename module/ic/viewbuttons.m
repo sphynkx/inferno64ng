@@ -6,6 +6,7 @@ IcViewButtons: module
 
 	init: fn();
 	settheme: fn(theme: ref IcState->ThemeState);
+	setwrap: fn(enabled: int);
 
 	draw: fn(u: ref IcUi->Ui, parentid, bottomid, w, h: int);
 	activate: fn(fkey: int);

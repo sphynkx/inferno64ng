@@ -237,6 +237,7 @@ IcState: module
 		lastw: int;
 
 		encoding: string;
+		wrap: int;
 	};
 
 	EditorOp: adt

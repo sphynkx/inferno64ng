@@ -246,6 +246,7 @@ IcViewButtonsMod: module
 
 	init: fn();
 	settheme: fn(theme: ref IcState->ThemeState);
+	setwrap: fn(enabled: int);
 
 	draw: fn(u: ref IcUi->Ui, parentid, bottomid, w, h: int);
 	activate: fn(fkey: int);
@@ -320,6 +321,9 @@ DefaultErrorCode: con "1;38;2;255;120;120;48;2;20;45;90";
 InitialPrefetchScreens: con 6;
 ScrollPrefetchScreens: con 8;
 
+StateCfgPath: con "/usr/inferno/ic/state.cfg";
+StateWrapKey: con "wrap";
+
 Kesc: con 27;
 Kq: con int 'q';
 Kn: con int 'n';
@@ -365,6 +369,14 @@ bodycode: fn(): string;
 errorcode: fn(): string;
 gotostyle: fn(t: ref IcState->ThemeState): IcViewGotoMod->Style;
 applytheme: fn(t: ref IcState->ThemeState);
+
+trim: fn(s: string): string;
+splitkeyvalue: fn(line: string): (string, string, int);
+tolower: fn(s: string): string;
+readfile: fn(path: string): string;
+writefile: fn(path, text: string): int;
+loadwrapsetting: fn(): int;
+savewrapsetting: fn(enabled: int);
 
 clampview: fn(v: ref IcState->ViewerState, h: int);
 ensureids: fn(u: ref IcUi->Ui, v: ref IcState->ViewerState);
@@ -463,6 +475,7 @@ init()
 	applytheme(theme);
 
 	viewerbodyrows = 1;
+	viewbuttons->setwrap(loadwrapsetting());
 }
 
 topcode(): string
@@ -543,6 +556,180 @@ applytheme(t: ref IcState->ThemeState)
 		gotomod->setstyle(gotostyle(theme));
 }
 
+trim(s: string): string
+{
+	a, b: int;
+
+	a = 0;
+	b = len s;
+
+	while(a < b && (s[a] == ' ' || s[a] == '\t' || s[a] == '\n' || s[a] == '\r'))
+		a++;
+
+	while(b > a && (s[b - 1] == ' ' || s[b - 1] == '\t' || s[b - 1] == '\n' || s[b - 1] == '\r'))
+		b--;
+
+	if(a >= b)
+		return "";
+
+	return s[a:b];
+}
+
+splitkeyvalue(line: string): (string, string, int)
+{
+	i: int;
+
+	for(i = 0; i < len line; i++){
+		if(line[i] == '=')
+			return (trim(line[0:i]), trim(line[i + 1:]), 1);
+	}
+
+	return ("", "", 0);
+}
+
+tolower(s: string): string
+{
+	out: string;
+	i, c: int;
+
+	out = "";
+	for(i = 0; i < len s; i++){
+		c = s[i];
+		if(c >= 'A' && c <= 'Z')
+			c = c - 'A' + 'a';
+		out += string c;
+	}
+
+	return out;
+}
+
+readfile(path: string): string
+{
+	fd: ref Sys->FD;
+	buf: array of byte;
+	n: int;
+	text: string;
+
+	fd = sys->open(path, Sys->OREAD);
+	if(fd == nil)
+		return "";
+
+	buf = array[4096] of byte;
+	text = "";
+
+	for(;;){
+		n = sys->read(fd, buf, len buf);
+		if(n <= 0)
+			break;
+
+		text += string buf[0:n];
+	}
+
+	fd = nil;
+	return text;
+}
+
+writefile(path, text: string): int
+{
+	fd: ref Sys->FD;
+	buf: array of byte;
+	i, n: int;
+
+	fd = sys->create(path, Sys->OWRITE, 8r666);
+	if(fd == nil)
+		return 0;
+
+	buf = array[len text] of byte;
+	for(i = 0; i < len text; i++)
+		buf[i] = byte text[i];
+
+	n = sys->write(fd, buf, len buf);
+	fd = nil;
+
+	return n == len buf;
+}
+
+loadwrapsetting(): int
+{
+	text, line, key, value: string;
+	i, start, ok: int;
+
+	text = readfile(StateCfgPath);
+	if(text == "")
+		return 1;
+
+	start = 0;
+	for(i = 0; i <= len text; i++){
+		if(i < len text && text[i] != '\n')
+			continue;
+
+		line = trim(text[start:i]);
+		start = i + 1;
+
+		if(line == "" || line[0] == '#')
+			continue;
+
+		(key, value, ok) = splitkeyvalue(line);
+		if(!ok)
+			continue;
+
+		key = tolower(key);
+		value = tolower(value);
+
+		if(key != StateWrapKey)
+			continue;
+
+		if(value == "false" || value == "0" || value == "no" || value == "off")
+			return 0;
+
+		return 1;
+	}
+
+	return 1;
+}
+
+savewrapsetting(enabled: int)
+{
+	text, out, line, key, value: string;
+	i, start, ok, found: int;
+
+	text = readfile(StateCfgPath);
+	out = "";
+	found = 0;
+
+	start = 0;
+	for(i = 0; i <= len text; i++){
+		if(i < len text && text[i] != '\n')
+			continue;
+
+		line = text[start:i];
+		start = i + 1;
+
+		(key, value, ok) = splitkeyvalue(trim(line));
+		value = value;
+
+		if(ok && tolower(key) == StateWrapKey){
+			found = 1;
+			if(enabled)
+				out += StateWrapKey + "=true\n";
+			else
+				out += StateWrapKey + "=false\n";
+		}else
+			out += line + "\n";
+	}
+
+	if(!found){
+		if(len out > 0 && out[len out - 1] != '\n')
+			out += "\n";
+
+		if(enabled)
+			out += StateWrapKey + "=true\n";
+		else
+			out += StateWrapKey + "=false\n";
+	}
+
+	writefile(StateCfgPath, out);
+}
 
 newstate(): ref IcState->ViewerState
 {
@@ -561,6 +748,7 @@ newstate(): ref IcState->ViewerState
 	v.bodyids = array[0] of int;
 	v.lastw = 0;
 	v.encoding = codepagemod->defaultname();
+	v.wrap = loadwrapsetting();
 
 	return v;
 }
@@ -746,7 +934,12 @@ clampview(v: ref IcState->ViewerState, h: int)
 		prefetch(v, rows);
 
 		if(source.eof){
-			max = srcmod->linecount(source) - 1;
+			if(v.wrap){
+				rewrap(v, v.lastw);
+				max = len v.wrapped - rows;
+			}else
+				max = srcmod->linecount(source) - 1;
+
 			if(max < 0)
 				max = 0;
 			if(v.topline > max)
@@ -756,7 +949,11 @@ clampview(v: ref IcState->ViewerState, h: int)
 				v.topline = 0;
 		}
 
-		v.nlines = srcmod->linecount(source);
+		if(v.wrap){
+			rewrap(v, v.lastw);
+			v.nlines = len v.wrapped;
+		}else
+			v.nlines = srcmod->linecount(source);
 	}else{
 		max = v.nlines - 1;
 		if(max < 0)
@@ -843,6 +1040,7 @@ drawviewer(u: ref IcUi->Ui, parentid: int, v: ref IcState->ViewerState, w, h: in
 {
 	rows, id: int;
 	code, content: string;
+	display: array of string;
 
 	if(u == nil || v == nil)
 		return;
@@ -856,7 +1054,16 @@ drawviewer(u: ref IcUi->Ui, parentid: int, v: ref IcState->ViewerState, w, h: in
 	clampview(v, h);
 	refreshwindow(v, rows);
 
-	v.wrapped = v.lines;
+	if(v.wrap){
+		rewrap(v, w);
+		display = v.wrapped;
+		v.nlines = len display;
+	}else{
+		display = v.lines;
+		if(source != nil)
+			v.nlines = srcmod->linecount(source);
+	}
+
 	v.lastw = w;
 
 	ui->setstatusrows(u, -1, -1);
@@ -871,11 +1078,12 @@ drawviewer(u: ref IcUi->Ui, parentid: int, v: ref IcState->ViewerState, w, h: in
 
 	id = bodyid(v);
 	if(id >= 0){
-		content = srcmod->visiblecontent(v.lines, 0, rows);
+		content = srcmod->visiblecontent(display, v.topline, rows);
 		setbody(u, parentid, id, 0, 1, w, rows, v, content, code);
 	}
 
 	viewbuttons->settheme(theme);
+	viewbuttons->setwrap(v.wrap);
 	viewbuttons->draw(u, parentid, v.bottomid, w, h);
 
 	if(gotomod != nil && gotomod->active())
@@ -914,9 +1122,11 @@ start(state: ref IcState->AppState, path: string, mode: int): int
 	state.viewer.wrapped = array[0] of string;
 	state.viewer.topline = 0;
 	state.viewer.lastw = 0;
+	state.viewer.wrap = loadwrapsetting();
 	if(state.viewer.encoding == "")
 		state.viewer.encoding = codepagemod->defaultname();
 
+	viewbuttons->setwrap(state.viewer.wrap);
 	viewsearchrun->reset();
 
 	if(source != nil)
@@ -1055,7 +1265,12 @@ applygoto(v: ref IcState->ViewerState): int
 	}
 
 	if(source.eof){
-		maxline = srcmod->linecount(source) - viewerbodyrows;
+		if(v.wrap){
+			rewrap(v, v.lastw);
+			maxline = len v.wrapped - viewerbodyrows;
+		}else
+			maxline = srcmod->linecount(source) - viewerbodyrows;
+
 		if(maxline < 0)
 			maxline = 0;
 		if(v.topline > maxline)
@@ -1248,6 +1463,16 @@ handlekey(state: ref IcState->AppState, k: int): int
 	Kq or Kesc =>
 		return closeviewer(state, 10);
 
+	Kf2 =>
+		viewbuttons->activate(2);
+		v.wrap = !v.wrap;
+		v.topline = 0;
+		v.lastw = 0;
+		viewbuttons->setwrap(v.wrap);
+		savewrapsetting(v.wrap);
+		build(state, state.toolid, state.width, state.height);
+		return 1;
+
 	Kf3 =>
 		return closeviewer(state, 3);
 
@@ -1287,7 +1512,7 @@ handlekey(state: ref IcState->AppState, k: int): int
 	Kf10 =>
 		return closeviewer(state, 10);
 
-	Kf1 or Kf2 or Kf4 or Kf6 or Kf9 =>
+	Kf1 or Kf4 or Kf6 or Kf9 =>
 		r = 0;
 
 	Kup =>
@@ -1310,7 +1535,10 @@ handlekey(state: ref IcState->AppState, k: int): int
 		v.topline = 0;
 
 	Kend =>
-		if(source != nil){
+		if(v.wrap){
+			rewrap(v, state.width);
+			v.topline = len v.wrapped - rows;
+		}else if(source != nil){
 			srcmod->ensureeof(source);
 			v.nlines = srcmod->linecount(source);
 			v.topline = v.nlines - rows;
@@ -1394,6 +1622,7 @@ runfilemode(path: string, mode: int): int
 	v.topline = 0;
 	v.lastw = 0;
 
+	viewbuttons->setwrap(v.wrap);
 	viewsearchrun->reset();
 
 	if(source != nil)

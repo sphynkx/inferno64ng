@@ -48,6 +48,7 @@ theme: ref IcState->ThemeState;
 buttons: array of ViewerButton;
 activefkey: int;
 activewait: int;
+wrapenabled: int;
 
 ButtonCount: con 10;
 ButtonGap: con 1;
@@ -92,12 +93,26 @@ init()
 	buttons = array[0] of ViewerButton;
 	activefkey = 0;
 	activewait = 0;
+	wrapenabled = 1;
 }
 
 settheme(t: ref IcState->ThemeState)
 {
 	if(t != nil)
 		theme = t;
+}
+
+setwrap(enabled: int)
+{
+	wrapenabled = enabled;
+
+	if(buttons == nil || len buttons < 2)
+		return;
+
+	if(wrapenabled)
+		buttons[1].text = "Unwrap";
+	else
+		buttons[1].text = "Wrap";
 }
 
 bottomcode(): string
@@ -147,7 +162,11 @@ ensurebuttons(u: ref IcUi->Ui)
 		0 =>
 			b.text = "Help";
 		1 =>
-			b.text = "Wrap";
+			if(wrapenabled)
+				b.text = "Unwrap";
+			else
+				b.text = "Wrap";
+			b.enabled = 1;
 		2 =>
 			b.text = "Quit";
 			b.enabled = 1;
