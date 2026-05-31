@@ -46,7 +46,6 @@ TARG=\
 	viewcodepage.dis\
 	viewer.dis\
 	viewgoto.dis\
-	viewsearch.dis\
 	viewsearchrun.dis\
 	viewsource.dis\
 	viewstats.dis\
@@ -97,7 +96,6 @@ SYSMODULES=\
 	ic/viewcommon.m\
 	ic/viewer.m\
 	ic/viewgoto.m\
-	ic/viewsearch.m\
 	ic/viewsearchrun.m\
 	ic/viewsource.m\
 	ic/viewstats.m\
