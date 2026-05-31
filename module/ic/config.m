@@ -15,4 +15,8 @@ IcConfigData: module
 	get: fn(c: ref IcState->ConfigState, section, key, def: string): string;
 	getint: fn(c: ref IcState->ConfigState, section, key: string, def: int): int;
 	getbool: fn(c: ref IcState->ConfigState, section, key: string, def: int): int;
+
+	set: fn(c: ref IcState->ConfigState, section, key, value: string): int;
+	setint: fn(c: ref IcState->ConfigState, section, key: string, value: int): int;
+	setbool: fn(c: ref IcState->ConfigState, section, key: string, value: int): int;
 };

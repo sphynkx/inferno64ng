@@ -54,6 +54,7 @@ savedtheme: string;
 savedscreensaver: string;
 savedscreensaverenabled: int;
 savedscreensaveridle: int;
+savedwrap: int;
 
 statepath: fn(create: int): string;
 readfile: fn(path: string): string;
@@ -61,6 +62,8 @@ writefile: fn(path, text: string): int;
 
 cleanline: fn(s: string): string;
 splitkv: fn(s: string): (string, string, int);
+setkv: fn(text, key, value: string): string;
+getkv: fn(text, key: string): string;
 applykv: fn(state: ref IcState->AppState, key, value: string);
 
 currentitem: fn(p: ref IcState->PanelState): string;
@@ -70,8 +73,10 @@ themevalue: fn(state: ref IcState->AppState): string;
 screensavervalue: fn(state: ref IcState->AppState): string;
 screensaverenabledvalue: fn(state: ref IcState->AppState): string;
 screensaveridlevalue: fn(state: ref IcState->AppState): string;
+savedwrapvalue: fn(state: ref IcState->AppState): string;
 readthemefromstate: fn(): string;
 validdir: fn(path: string): int;
+savewraponly: fn(state: ref IcState->AppState): int;
 
 init()
 {
@@ -101,6 +106,7 @@ init()
 	savedscreensaver = "";
 	savedscreensaverenabled = 1;
 	savedscreensaveridle = 30;
+	savedwrap = 1;
 }
 
 statepath(create: int): string
@@ -215,6 +221,62 @@ splitkv(s: string): (string, string, int)
 	return ("", "", 0);
 }
 
+getkv(text, key: string): string
+{
+	line, k, v: string;
+	i, start, ok: int;
+
+	start = 0;
+	for(i = 0; i <= len text; i++){
+		if(i < len text && text[i] != '\n')
+			continue;
+
+		line = text[start:i];
+		start = i + 1;
+
+		(k, v, ok) = splitkv(line);
+		if(ok && k == key)
+			return v;
+	}
+
+	return "";
+}
+
+setkv(text, key, value: string): string
+{
+	out, line, k, v: string;
+	i, start, ok, found: int;
+
+	out = "";
+	found = 0;
+
+	start = 0;
+	for(i = 0; i <= len text; i++){
+		if(i < len text && text[i] != '\n')
+			continue;
+
+		line = text[start:i];
+		start = i + 1;
+
+		if(i == len text && line == "")
+			continue;
+
+		(k, v, ok) = splitkv(line);
+		v = v;
+
+		if(ok && k == key){
+			out += key + "=" + value + "\n";
+			found = 1;
+		}else
+			out += line + "\n";
+	}
+
+	if(!found)
+		out += key + "=" + value + "\n";
+
+	return out;
+}
+
 applykv(state: ref IcState->AppState, key, value: string)
 {
 	if(state == nil)
@@ -253,6 +315,18 @@ applykv(state: ref IcState->AppState, key, value: string)
 
 		if(state.cfg != nil)
 			state.cfg.screensaveridleticks = savedscreensaveridle;
+
+		return;
+	}
+
+	if(key == "wrap"){
+		if(value == "0")
+			savedwrap = 0;
+		else
+			savedwrap = 1;
+
+		if(state.viewer != nil)
+			state.viewer.wrap = savedwrap;
 
 		return;
 	}
@@ -313,6 +387,10 @@ loadstate(state: ref IcState->AppState): int
 		savedscreensaveridle = screensaver->idlelimit(state.cfg);
 	}
 
+	savedwrap = 1;
+	if(state.viewer != nil)
+		state.viewer.wrap = 1;
+
 	if(!userdir->enabled())
 		return 0;
 
@@ -336,6 +414,20 @@ loadstate(state: ref IcState->AppState): int
 		if(ok)
 			applykv(state, key, value);
 	}
+
+	return 0;
+}
+
+restore(state: ref IcState->AppState): int
+{
+	if(state == nil)
+		return -1;
+
+	if(savedleftitem != "")
+		selectitem(state, state.left, savedleftitem);
+
+	if(savedrightitem != "")
+		selectitem(state, state.right, savedrightitem);
 
 	return 0;
 }
@@ -365,20 +457,6 @@ selectitem(state: ref IcState->AppState, p: ref IcState->PanelState, name: strin
 			return 1;
 		}
 	}
-
-	return 0;
-}
-
-restore(state: ref IcState->AppState): int
-{
-	if(state == nil)
-		return -1;
-
-	if(savedleftitem != "")
-		selectitem(state, state.left, savedleftitem);
-
-	if(savedrightitem != "")
-		selectitem(state, state.right, savedrightitem);
 
 	return 0;
 }
@@ -482,12 +560,29 @@ screensaveridlevalue(state: ref IcState->AppState): string
 	return string savedscreensaveridle;
 }
 
-save(state: ref IcState->AppState): int
+savedwrapvalue(state: ref IcState->AppState): string
 {
-	path, text, leftitem, rightitem: string;
+	if(state != nil && state.viewer != nil){
+		if(state.viewer.wrap)
+			return "1";
+		return "0";
+	}
+
+	if(savedwrap)
+		return "1";
+
+	return "0";
+}
+
+savewraponly(state: ref IcState->AppState): int
+{
+	path, text: string;
 
 	if(state == nil)
 		return -1;
+
+	if(state.viewer != nil)
+		savedwrap = state.viewer.wrap;
 
 	if(!userdir->enabled())
 		return 0;
@@ -496,24 +591,59 @@ save(state: ref IcState->AppState): int
 	if(path == "")
 		return 0;
 
+	text = readfile(path);
+	text = setkv(text, "wrap", savedwrapvalue(state));
+
+	return writefile(path, text);
+}
+
+savewrap(state: ref IcState->AppState): int
+{
+	return savewraponly(state);
+}
+
+wrapvalue(): int
+{
+	return savedwrap;
+}
+
+save(state: ref IcState->AppState): int
+{
+	path, text, leftitem, rightitem: string;
+
+	if(state == nil)
+		return -1;
+
+	if(state.viewer != nil)
+		savedwrap = state.viewer.wrap;
+
+	if(!userdir->enabled())
+		return 0;
+
+	path = statepath(1);
+	if(path == "")
+		return 0;
+
+	text = readfile(path);
+
+	text = setkv(text, "theme", themevalue(state));
+	text = setkv(text, "screensaver.name", screensavervalue(state));
+	text = setkv(text, "screensaver.enabled", screensaverenabledvalue(state));
+	text = setkv(text, "screensaver.idle_ticks", screensaveridlevalue(state));
+	text = setkv(text, "wrap", savedwrapvalue(state));
+	text = setkv(text, "activepanel", panelactivevalue(state));
+
 	leftitem = currentitem(state.left);
 	rightitem = currentitem(state.right);
 
-	text = "";
-	text += "theme=" + themevalue(state) + "\n";
-	text += "screensaver.name=" + screensavervalue(state) + "\n";
-	text += "screensaver.enabled=" + screensaverenabledvalue(state) + "\n";
-	text += "screensaver.idle_ticks=" + screensaveridlevalue(state) + "\n";
-	text += "activepanel=" + panelactivevalue(state) + "\n";
-
 	if(state.left != nil){
-		text += "left.path=" + state.left.path + "\n";
-		text += "left.item=" + leftitem + "\n";
+		text = setkv(text, "left.path", state.left.path);
+		text = setkv(text, "left.item", leftitem);
 	}
 
 	if(state.right != nil){
-		text += "right.path=" + state.right.path + "\n";
-		text += "right.item=" + rightitem + "\n";
+		text = setkv(text, "right.path", state.right.path);
+		text = setkv(text, "right.item", rightitem);
 	}
 
 	return writefile(path, text);

@@ -15,6 +15,11 @@ IcConfigMod: module
 	get: fn(c: ref IcConfig->Config, section, key: string): string;
 	getint: fn(c: ref IcConfig->Config, section, key: string, def: int): int;
 	getbool: fn(c: ref IcConfig->Config, section, key: string, def: int): int;
+
+	set: fn(c: ref IcConfig->Config, file, section, key, value: string): int;
+	setint: fn(c: ref IcConfig->Config, file, section, key: string, value: int): int;
+	setbool: fn(c: ref IcConfig->Config, file, section, key: string, value: int): int;
+	flush: fn(c: ref IcConfig->Config, path: string): int;
 };
 
 IcUserDir: module
@@ -355,6 +360,7 @@ rebuildcfg(c: ref IcState->ConfigState): int
 	c.keysfile = DefaultKeysFile;
 	c.layoutfile = DefaultLayoutFile;
 	c.menusfile = DefaultMenusFile;
+	c.statefile = "";
 
 	c.userthemefile = "";
 	c.userkeysfile = "";
@@ -362,6 +368,7 @@ rebuildcfg(c: ref IcState->ConfigState): int
 	c.usermenusfile = "";
 
 	if(c.userenabled){
+		c.statefile = userdir->path(StateFileName);
 		c.userthemefile = userthemepath(c.theme);
 		c.userkeysfile = userdir->path(KeysFileName);
 		c.userlayoutfile = userdir->path(LayoutFileName);
@@ -381,6 +388,7 @@ rebuildcfg(c: ref IcState->ConfigState): int
 	cfgmod->overlay(c.cfg, c.menusfile, IcConfigMod->OriginDefault);
 
 	if(c.userenabled){
+		cfgmod->overlay(c.cfg, c.statefile, IcConfigMod->OriginUser);
 		cfgmod->overlay(c.cfg, c.userkeysfile, IcConfigMod->OriginUser);
 		cfgmod->overlay(c.cfg, c.userlayoutfile, IcConfigMod->OriginUser);
 		cfgmod->overlay(c.cfg, c.usermenusfile, IcConfigMod->OriginUser);
@@ -486,4 +494,58 @@ getbool(c: ref IcState->ConfigState, section, key: string, def: int): int
 		return def;
 
 	return cfgmod->getbool(c.cfg, section, key, def);
+}
+
+set(c: ref IcState->ConfigState, section, key, value: string): int
+{
+	if(c == nil || c.cfg == nil || key == "")
+		return -1;
+
+	if(!c.userenabled)
+		return -1;
+
+	c.statefile = userdir->ensurepath(StateFileName);
+	if(c.statefile == "")
+		return -1;
+
+	if(cfgmod->set(c.cfg, c.statefile, section, key, value) < 0)
+		return -1;
+
+	return cfgmod->flush(c.cfg, c.statefile);
+}
+
+setint(c: ref IcState->ConfigState, section, key: string, value: int): int
+{
+	if(c == nil || c.cfg == nil || key == "")
+		return -1;
+
+	if(!c.userenabled)
+		return -1;
+
+	c.statefile = userdir->ensurepath(StateFileName);
+	if(c.statefile == "")
+		return -1;
+
+	if(cfgmod->setint(c.cfg, c.statefile, section, key, value) < 0)
+		return -1;
+
+	return cfgmod->flush(c.cfg, c.statefile);
+}
+
+setbool(c: ref IcState->ConfigState, section, key: string, value: int): int
+{
+	if(c == nil || c.cfg == nil || key == "")
+		return -1;
+
+	if(!c.userenabled)
+		return -1;
+
+	c.statefile = userdir->ensurepath(StateFileName);
+	if(c.statefile == "")
+		return -1;
+
+	if(cfgmod->setbool(c.cfg, c.statefile, section, key, value) < 0)
+		return -1;
+
+	return cfgmod->flush(c.cfg, c.statefile);
 }

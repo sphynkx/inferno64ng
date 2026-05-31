@@ -294,6 +294,19 @@ IcRuntimeTheme: module
 	loadtheme: fn(): ref IcState->ThemeState;
 };
 
+IcUserStateMod: module
+{
+	PATH: con "/dis/ic/userstate.dis";
+
+	init: fn();
+
+	loadstate: fn(state: ref IcState->AppState): int;
+	restore: fn(state: ref IcState->AppState): int;
+	save: fn(state: ref IcState->AppState): int;
+	savewrap: fn(state: ref IcState->AppState): int;
+	wrapvalue: fn(): int;
+};
+
 sys: Sys;
 appfw: IcursesApp;
 ui: IcUiMod;
@@ -308,6 +321,7 @@ viewbuttons: IcViewButtonsMod;
 viewstatus: IcViewStatusMod;
 viewsearchrun: IcViewSearchRunMod;
 runtheme: IcRuntimeTheme;
+userstate: IcUserStateMod;
 
 source: ref IcViewCommon->ViewerSource;
 
@@ -320,9 +334,6 @@ DefaultErrorCode: con "1;38;2;255;120;120;48;2;20;45;90";
 
 InitialPrefetchScreens: con 6;
 ScrollPrefetchScreens: con 8;
-
-StateCfgPath: con "/usr/inferno/ic/state.cfg";
-StateWrapKey: con "wrap";
 
 Kesc: con 27;
 Kq: con int 'q';
@@ -369,14 +380,6 @@ bodycode: fn(): string;
 errorcode: fn(): string;
 gotostyle: fn(t: ref IcState->ThemeState): IcViewGotoMod->Style;
 applytheme: fn(t: ref IcState->ThemeState);
-
-trim: fn(s: string): string;
-splitkeyvalue: fn(line: string): (string, string, int);
-tolower: fn(s: string): string;
-readfile: fn(path: string): string;
-writefile: fn(path, text: string): int;
-loadwrapsetting: fn(): int;
-savewrapsetting: fn(enabled: int);
 
 clampview: fn(v: ref IcState->ViewerState, h: int);
 ensureids: fn(u: ref IcUi->Ui, v: ref IcState->ViewerState);
@@ -456,6 +459,10 @@ init()
 	if(runtheme == nil)
 		raise "fail:load ic/runtheme";
 
+	userstate = load IcUserStateMod IcUserStateMod->PATH;
+	if(userstate == nil)
+		raise "fail:load ic/userstate";
+
 	appfw->init("icview");
 	ui->init();
 	view->init();
@@ -469,13 +476,13 @@ init()
 	viewstatus->init();
 	viewsearchrun->init();
 	runtheme->init();
+	userstate->init();
 
 	source = nil;
 	theme = runtheme->loadtheme();
 	applytheme(theme);
 
 	viewerbodyrows = 1;
-	viewbuttons->setwrap(loadwrapsetting());
 }
 
 topcode(): string
@@ -556,181 +563,6 @@ applytheme(t: ref IcState->ThemeState)
 		gotomod->setstyle(gotostyle(theme));
 }
 
-trim(s: string): string
-{
-	a, b: int;
-
-	a = 0;
-	b = len s;
-
-	while(a < b && (s[a] == ' ' || s[a] == '\t' || s[a] == '\n' || s[a] == '\r'))
-		a++;
-
-	while(b > a && (s[b - 1] == ' ' || s[b - 1] == '\t' || s[b - 1] == '\n' || s[b - 1] == '\r'))
-		b--;
-
-	if(a >= b)
-		return "";
-
-	return s[a:b];
-}
-
-splitkeyvalue(line: string): (string, string, int)
-{
-	i: int;
-
-	for(i = 0; i < len line; i++){
-		if(line[i] == '=')
-			return (trim(line[0:i]), trim(line[i + 1:]), 1);
-	}
-
-	return ("", "", 0);
-}
-
-tolower(s: string): string
-{
-	out: string;
-	i, c: int;
-
-	out = "";
-	for(i = 0; i < len s; i++){
-		c = s[i];
-		if(c >= 'A' && c <= 'Z')
-			c = c - 'A' + 'a';
-		out += string c;
-	}
-
-	return out;
-}
-
-readfile(path: string): string
-{
-	fd: ref Sys->FD;
-	buf: array of byte;
-	n: int;
-	text: string;
-
-	fd = sys->open(path, Sys->OREAD);
-	if(fd == nil)
-		return "";
-
-	buf = array[4096] of byte;
-	text = "";
-
-	for(;;){
-		n = sys->read(fd, buf, len buf);
-		if(n <= 0)
-			break;
-
-		text += string buf[0:n];
-	}
-
-	fd = nil;
-	return text;
-}
-
-writefile(path, text: string): int
-{
-	fd: ref Sys->FD;
-	buf: array of byte;
-	i, n: int;
-
-	fd = sys->create(path, Sys->OWRITE, 8r666);
-	if(fd == nil)
-		return 0;
-
-	buf = array[len text] of byte;
-	for(i = 0; i < len text; i++)
-		buf[i] = byte text[i];
-
-	n = sys->write(fd, buf, len buf);
-	fd = nil;
-
-	return n == len buf;
-}
-
-loadwrapsetting(): int
-{
-	text, line, key, value: string;
-	i, start, ok: int;
-
-	text = readfile(StateCfgPath);
-	if(text == "")
-		return 1;
-
-	start = 0;
-	for(i = 0; i <= len text; i++){
-		if(i < len text && text[i] != '\n')
-			continue;
-
-		line = trim(text[start:i]);
-		start = i + 1;
-
-		if(line == "" || line[0] == '#')
-			continue;
-
-		(key, value, ok) = splitkeyvalue(line);
-		if(!ok)
-			continue;
-
-		key = tolower(key);
-		value = tolower(value);
-
-		if(key != StateWrapKey)
-			continue;
-
-		if(value == "false" || value == "0" || value == "no" || value == "off")
-			return 0;
-
-		return 1;
-	}
-
-	return 1;
-}
-
-savewrapsetting(enabled: int)
-{
-	text, out, line, key, value: string;
-	i, start, ok, found: int;
-
-	text = readfile(StateCfgPath);
-	out = "";
-	found = 0;
-
-	start = 0;
-	for(i = 0; i <= len text; i++){
-		if(i < len text && text[i] != '\n')
-			continue;
-
-		line = text[start:i];
-		start = i + 1;
-
-		(key, value, ok) = splitkeyvalue(trim(line));
-		value = value;
-
-		if(ok && tolower(key) == StateWrapKey){
-			found = 1;
-			if(enabled)
-				out += StateWrapKey + "=true\n";
-			else
-				out += StateWrapKey + "=false\n";
-		}else
-			out += line + "\n";
-	}
-
-	if(!found){
-		if(len out > 0 && out[len out - 1] != '\n')
-			out += "\n";
-
-		if(enabled)
-			out += StateWrapKey + "=true\n";
-		else
-			out += StateWrapKey + "=false\n";
-	}
-
-	writefile(StateCfgPath, out);
-}
-
 newstate(): ref IcState->ViewerState
 {
 	v: ref IcState->ViewerState;
@@ -748,7 +580,10 @@ newstate(): ref IcState->ViewerState
 	v.bodyids = array[0] of int;
 	v.lastw = 0;
 	v.encoding = codepagemod->defaultname();
-	v.wrap = loadwrapsetting();
+	if(userstate != nil)
+		v.wrap = userstate->wrapvalue();
+	else
+		v.wrap = 1;
 
 	return v;
 }
@@ -1109,11 +944,16 @@ start(state: ref IcState->AppState, path: string, mode: int): int
 	if(state.theme != nil)
 		applytheme(state.theme);
 
+	if(userstate != nil)
+		userstate->loadstate(state);
+
 	closefile(source);
 	source = newsource(path);
 
 	if(state.viewer == nil)
 		state.viewer = newstate();
+	else if(userstate != nil)
+		state.viewer.wrap = userstate->wrapvalue();
 
 	state.viewer.active = 1;
 	state.viewer.mode = mode;
@@ -1122,7 +962,6 @@ start(state: ref IcState->AppState, path: string, mode: int): int
 	state.viewer.wrapped = array[0] of string;
 	state.viewer.topline = 0;
 	state.viewer.lastw = 0;
-	state.viewer.wrap = loadwrapsetting();
 	if(state.viewer.encoding == "")
 		state.viewer.encoding = codepagemod->defaultname();
 
@@ -1469,7 +1308,8 @@ handlekey(state: ref IcState->AppState, k: int): int
 		v.topline = 0;
 		v.lastw = 0;
 		viewbuttons->setwrap(v.wrap);
-		savewrapsetting(v.wrap);
+		if(userstate != nil)
+			userstate->savewrap(state);
 		build(state, state.toolid, state.width, state.height);
 		return 1;
 
@@ -1621,6 +1461,7 @@ runfilemode(path: string, mode: int): int
 	v.wrapped = array[0] of string;
 	v.topline = 0;
 	v.lastw = 0;
+	v.wrap = 1;
 
 	viewbuttons->setwrap(v.wrap);
 	viewsearchrun->reset();

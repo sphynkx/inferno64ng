@@ -23,6 +23,7 @@ IcState: module
 		keysfile: string;
 		layoutfile: string;
 		menusfile: string;
+		statefile: string;
 
 		userthemefile: string;
 		userkeysfile: string;

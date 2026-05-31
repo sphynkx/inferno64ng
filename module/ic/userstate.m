@@ -9,4 +9,6 @@ IcUserState: module
 	loadstate: fn(state: ref IcState->AppState): int;
 	restore: fn(state: ref IcState->AppState): int;
 	save: fn(state: ref IcState->AppState): int;
+	savewrap: fn(state: ref IcState->AppState): int;
+	wrapvalue: fn(): int;
 };
