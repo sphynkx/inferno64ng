@@ -9,8 +9,8 @@ panel_title_code=1;38;2;168;28;78;48;2;255;214;228
 panel_marked_code=1;38;2;255;255;255;48;2;186;52;104
 panel_marked_focus_code=1;38;2;255;255;255;48;2;140;18;62
 
-menu_window_code=1;38;2;168;28;78;48;2;255;214;228
-menu_focus_code=1;38;2;255;255;255;48;2;168;28;78
+menu_window_code=1;38;2;255;255;255;48;2;210;100;150
+menu_focus_code=1;38;2;255;255;255;48;2;140;18;62
 
 dialog_anim_ticks=3
 dialog_window_code=38;2;70;20;50;48;2;245;210;225
