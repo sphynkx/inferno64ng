@@ -16,6 +16,7 @@ IcCommands: module
 	CmdView: con 9;
 	CmdEdit: con 10;
 	CmdEditNew: con 11;
+	CmdRunLimbo: con 12;
 
 	init: fn();
 	exec: fn(state: ref IcState->AppState, cmd: int): int;

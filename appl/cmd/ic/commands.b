@@ -53,6 +53,15 @@ IcEditCmd: module
 	startnew: fn(state: ref IcState->AppState): int;
 };
 
+IcRunCmd: module
+{
+	PATH: con "/dis/ic/runcmd.dis";
+
+	init: fn();
+	runtemplate: fn(state: ref IcState->AppState, template: string): int;
+	buildcommand: fn(state: ref IcState->AppState, template: string): string;
+};
+
 IcScreenMod: module
 {
 	PATH: con "/dis/ic/screen.dis";
@@ -67,6 +76,7 @@ mkdircmd: IcMkdirCmd;
 deletecmd: IcDeleteCmd;
 viewcmd: IcViewCmd;
 editcmd: IcEditCmd;
+runcmd: IcRunCmd;
 screen: IcScreenMod;
 
 init()
@@ -95,6 +105,10 @@ init()
 	if(editcmd == nil)
 		raise "fail:load ic/editcmd";
 
+	runcmd = load IcRunCmd IcRunCmd->PATH;
+	if(runcmd == nil)
+		raise "fail:load ic/runcmd";
+
 	screen = load IcScreenMod IcScreenMod->PATH;
 	if(screen == nil)
 		raise "fail:load ic/screen";
@@ -105,6 +119,7 @@ init()
 	deletecmd->init();
 	viewcmd->init();
 	editcmd->init();
+	runcmd->init();
 	screen->init();
 }
 
@@ -170,6 +185,14 @@ exec(state: ref IcState->AppState, cmd: int): int
 
 	IcCommands->CmdEditNew =>
 		rc = editcmd->startnew(state);
+		if(rc < 0)
+			return rc;
+		return screen->rebuild(state);
+
+	IcCommands->CmdRunLimbo =>
+## Pass full pathnames - {files}; pass relpathnames (from curr. panel) - {names}
+##		rc = runcmd->runtemplate(state, "limbo {files}");
+		rc = runcmd->runtemplate(state, "limbo {names}");
 		if(rc < 0)
 			return rc;
 		return screen->rebuild(state);

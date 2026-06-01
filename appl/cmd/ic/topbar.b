@@ -27,6 +27,7 @@ IcCommands: module
 	CmdView: con 9;
 	CmdEdit: con 10;
 	CmdEditNew: con 11;
+	CmdRunLimbo: con 12;
 };
 
 IcViewMod: module
@@ -672,7 +673,7 @@ popupitems(menuindex: int): array of IcMenuMod->Item
 		a[1] = icmenu->newitem("Move", "", IcView->NoId, string IcCommands->CmdMove);
 		a[2] = icmenu->newitem("Make directory", "", IcView->NoId, string IcCommands->CmdMkdir);
 		a[3] = icmenu->newitem("Delete", "", IcView->NoId, string IcCommands->CmdDelete);
-		a[4] = icmenu->newitem("New file", "", IcView->NoId, string IcCommands->CmdEditNew);
+		a[4] = icmenu->newitem("Build with Limbo", "", IcView->NoId, string IcCommands->CmdRunLimbo);
 		return a;
 
 	MenuRight =>
@@ -968,7 +969,14 @@ handlekey(state: ref IcState->AppState, bar: ref IcState->TopBarState, k: int): 
 
 		if(r == IcMenuMod->PopupAccept){
 			it = icmenu->selectedpopupitem(popup);
-			closepopup(state);
+
+			if(isthemesitem(it)){
+				openthemepopup(state);
+				return IcTopBar->CmdHandled;
+			}
+
+			closeallpopups(state);
+			bar.active = 0;
 			return commandforitem(it);
 		}
 

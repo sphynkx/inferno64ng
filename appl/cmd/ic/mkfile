@@ -28,6 +28,7 @@ TARG=\
 	mkdircmd.dis\
 	modal.dis\
 	panelinfo.dis\
+	runcmd.dis\
 	runtheme.dis\
 	scr_clock.dis\
 	scr_flashlighter.dis\
@@ -78,6 +79,7 @@ SYSMODULES=\
 	ic/modal.m\
 	ic/mkdircmd.m\
 	ic/panelinfo.m\
+	ic/runcmd.m\
 	ic/runtheme.m\
 	ic/scr.m\
 	ic/screen.m\
