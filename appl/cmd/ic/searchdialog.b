@@ -63,16 +63,6 @@ StageClosingShadow: con 3;
 animstage: int;
 animwait: int;
 
-ThemeSection: con "theme";
-ThemeConfigFileName: con "state.cfg";
-DefaultThemeName: con "default";
-ThemeExt: con ".theme";
-ThemeKey: con "theme";
-LibThemeDir: con "/lib/ic";
-UserBaseDir: con "/usr";
-UserConfigDir: con "ic";
-DefaultUserName: con "inferno";
-
 HistorySection: con "search_dialog";
 HistoryMaxItems: con 32;
 
@@ -92,18 +82,6 @@ CtrlDownKey: con 57811;
 initstyle: fn();
 setstylevalue: fn(cur, next: string): string;
 animticks: fn(): int;
-loadtheme: fn();
-loadthemefile: fn(path: string);
-loadthemeconfig: fn(path: string): string;
-applythemevalue: fn(section, key, value: string);
-readfile: fn(path: string): string;
-username: fn(): string;
-trim: fn(v: string): string;
-parseconfig: fn(text: string);
-parseconfigline: fn(section, line: string): string;
-parseconfigtheme: fn(text: string): string;
-parseconfigthemeline: fn(line: string): string;
-splitkeyvalue: fn(line: string): (string, string, int);
 
 ensureids: fn(u: ref IcUi->Ui);
 resetwindowids: fn();
@@ -113,6 +91,7 @@ disposewindow: fn(u: ref IcUi->Ui);
 fillstr: fn(n: int, ch: string): string;
 spaces: fn(n: int): string;
 fittext: fn(v: string, w: int): string;
+trim: fn(v: string): string;
 topframe: fn(w: int, title: string): string;
 bottomframe: fn(w: int): string;
 midframe: fn(w: int): string;
@@ -287,243 +266,6 @@ animticks(): int
 	return style.animticks;
 }
 
-loadtheme()
-{
-	user, themename: string;
-
-	user = username();
-	themename = DefaultThemeName;
-
-	themename = loadthemeconfig(UserBaseDir + "/" + user + "/" + UserConfigDir + "/" + ThemeConfigFileName);
-	if(themename == "")
-		themename = DefaultThemeName;
-
-	loadthemefile(LibThemeDir + "/" + DefaultThemeName + ThemeExt);
-	if(themename != DefaultThemeName)
-		loadthemefile(LibThemeDir + "/" + themename + ThemeExt);
-
-	loadthemefile(UserBaseDir + "/" + user + "/" + UserConfigDir + "/" + themename + ThemeExt);
-}
-
-loadthemeconfig(path: string): string
-{
-	text, name: string;
-
-	text = readfile(path);
-	if(text == "")
-		return "";
-
-	name = parseconfigtheme(text);
-	return trim(name);
-}
-
-loadthemefile(path: string)
-{
-	text: string;
-
-	text = readfile(path);
-	if(text == "")
-		return;
-
-	parseconfig(text);
-}
-
-readfile(path: string): string
-{
-	fd: ref Sys->FD;
-	buf: array of byte;
-	n: int;
-	text: string;
-
-	fd = sys->open(path, Sys->OREAD);
-	if(fd == nil)
-		return "";
-
-	buf = array[4096] of byte;
-	text = "";
-
-	for(;;){
-		n = sys->read(fd, buf, len buf);
-		if(n <= 0)
-			break;
-
-		text += string buf[0:n];
-	}
-
-	fd = nil;
-	return text;
-}
-
-username(): string
-{
-	v: string;
-
-	v = trim(readfile("/env/user"));
-	if(v == "")
-		return DefaultUserName;
-
-	return v;
-}
-
-trim(v: string): string
-{
-	a, b: int;
-
-	a = 0;
-	b = len v;
-
-	while(a < b && (v[a] == ' ' || v[a] == '\t' || v[a] == '\n' || v[a] == '\r'))
-		a++;
-
-	while(b > a && (v[b - 1] == ' ' || v[b - 1] == '\t' || v[b - 1] == '\n' || v[b - 1] == '\r'))
-		b--;
-
-	if(a >= b)
-		return "";
-
-	return v[a:b];
-}
-
-parseconfig(text: string)
-{
-	i, start: int;
-	line, section: string;
-
-	section = "";
-	start = 0;
-
-	for(i = 0; i <= len text; i++){
-		if(i < len text && text[i] != '\n')
-			continue;
-
-		line = text[start:i];
-		section = parseconfigline(section, line);
-		start = i + 1;
-	}
-}
-
-parseconfigline(section, line: string): string
-{
-	key, value: string;
-	ok: int;
-
-	line = trim(line);
-	if(line == "")
-		return section;
-
-	if(line[0] == '#')
-		return section;
-
-	if(line[0] == '[' && len line > 2 && line[len line - 1] == ']')
-		return trim(line[1:len line - 1]);
-
-	(key, value, ok) = splitkeyvalue(line);
-	if(ok)
-		applythemevalue(section, key, value);
-
-	return section;
-}
-
-parseconfigtheme(text: string): string
-{
-	i, start: int;
-	line, value: string;
-
-	start = 0;
-	value = "";
-
-	for(i = 0; i <= len text; i++){
-		if(i < len text && text[i] != '\n')
-			continue;
-
-		line = trim(text[start:i]);
-		if(line != "" && line[0] != '#'){
-			value = parseconfigthemeline(line);
-			if(value != "")
-				return value;
-		}
-
-		start = i + 1;
-	}
-
-	return "";
-}
-
-parseconfigthemeline(line: string): string
-{
-	key, value: string;
-	ok: int;
-
-	if(line == "")
-		return "";
-
-	if(line[0] == '[')
-		return "";
-
-	(key, value, ok) = splitkeyvalue(line);
-	if(!ok)
-		return "";
-
-	if(key == ThemeKey)
-		return trim(value);
-
-	return "";
-}
-
-splitkeyvalue(line: string): (string, string, int)
-{
-	i: int;
-
-	for(i = 0; i < len line; i++){
-		if(line[i] == '=')
-			return (trim(line[0:i]), trim(line[i + 1:]), 1);
-	}
-
-	return ("", "", 0);
-}
-
-applythemevalue(section, key, value: string)
-{
-	if(section != ThemeSection)
-		return;
-
-	if(key == "searchdialog_window_code")
-		style.windowcode = value;
-	else if(key == "searchdialog_frame_code")
-		style.framecode = value;
-	else if(key == "searchdialog_text_code")
-		style.textcode = value;
-	else if(key == "searchdialog_field_code")
-		style.fieldcode = value;
-	else if(key == "searchdialog_field_focus_code")
-		style.fieldfocuscode = value;
-	else if(key == "searchdialog_focus_code")
-		style.focuscode = value;
-	else if(key == "searchdialog_cursor_code")
-		style.cursorcode = value;
-	else if(key == "searchdialog_button_code")
-		style.buttoncode = value;
-	else if(key == "searchdialog_button_focus_code")
-		style.buttonfocuscode = value;
-	else if(key == "searchdialog_disabled_code")
-		style.disabledcode = value;
-	else if(key == "searchdialog_shadow_code")
-		style.shadowcode = value;
-	else if(key == "searchdialog_anim_ticks")
-		style.animticks = int value;
-	else if(key == "searchdialog_frame_h")
-		style.frameh = value;
-	else if(key == "searchdialog_frame_v")
-		style.framev = value;
-	else if(key == "searchdialog_frame_nw")
-		style.framenw = value;
-	else if(key == "searchdialog_frame_ne")
-		style.framene = value;
-	else if(key == "searchdialog_frame_sw")
-		style.framesw = value;
-	else if(key == "searchdialog_frame_se")
-		style.framese = value;
-}
 
 open(u: ref IcUi->Ui, parentid, w, h: int, pattern: string)
 {
@@ -743,6 +485,25 @@ fittext(v: string, w: int): string
 		return v + spaces(w - len v);
 
 	return v;
+}
+
+trim(v: string): string
+{
+	a, b: int;
+
+	a = 0;
+	b = len v;
+
+	while(a < b && (v[a] == ' ' || v[a] == '\t' || v[a] == '\n' || v[a] == '\r'))
+		a++;
+
+	while(b > a && (v[b - 1] == ' ' || v[b - 1] == '\t' || v[b - 1] == '\n' || v[b - 1] == '\r'))
+		b--;
+
+	if(a >= b)
+		return "";
+
+	return v[a:b];
 }
 
 topframe(w: int, title: string): string

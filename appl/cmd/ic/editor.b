@@ -96,6 +96,7 @@ IcEditKeys: module
 	PATH: con "/dis/ic/editkeys.dis";
 
 	init: fn();
+	settheme: fn(theme: ref IcState->ThemeState);
 	handlekey: fn(state: ref IcState->AppState, e: ref IcState->EditorState, k, h: int): int;
 };
 
@@ -228,6 +229,9 @@ applytheme(t: ref IcState->ThemeState)
 
 	if(searchdialog != nil)
 		searchdialog->setstyle(searchstyle(theme));
+
+	if(keys != nil)
+		keys->settheme(theme);
 }
 
 searchstyle(t: ref IcState->ThemeState): IcSearchDialogMod->Style
