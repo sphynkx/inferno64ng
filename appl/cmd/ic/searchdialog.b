@@ -338,12 +338,131 @@ close(u: ref IcUi->Ui)
 	s.inputhistorysel = -1;
 	hidehistory(u);
 
+	if(animticks() > 0 && animstage == StageWindow){
+		disposewindow(u);
+		animstage = StageClosingShadow;
+		animwait = 0;
+		return;
+	}
+
 	dispose(u);
 	s.active = 0;
 	s.result = IcViewCommon->SearchNone;
 	animstage = StageNone;
 	animwait = 0;
 	resetwindowids();
+}
+
+drawshadow(u: ref IcUi->Ui, parentid, x, y, w, h: int): int
+{
+	n: ref IcView->Node;
+
+	if(u == nil || u.tree == nil)
+		return -1;
+
+	if(s.shadowid >= 0)
+		view->removetree(u.tree, s.shadowid);
+
+	s.shadowid = view->allocid(u.tree);
+
+	if(ui->node(u, parentid, s.shadowid, "shadow", x + 2, y + 1, w, h) < 0)
+		return -1;
+
+	n = view->find(u.tree, s.shadowid);
+	if(n != nil && style.shadowcode != "")
+		view->setcode(n, style.shadowcode);
+
+	view->bringtofront(u.tree, s.shadowid);
+	return 0;
+}
+
+draw(u: ref IcUi->Ui, parentid, w, h: int): int
+{
+	x, y, dw, dh: int;
+
+	if(u == nil || u.tree == nil || !s.active)
+		return 0;
+
+	if(s.alert)
+		dh = 7;
+	else
+		dh = 14;
+
+	dw = 58;
+	if(dw > w - 4)
+		dw = w - 4;
+	if(dw < 34)
+		dw = 34;
+
+	if(dh > h - 2)
+		dh = h - 2;
+	if(dh < 5)
+		dh = 5;
+
+	x = (w - dw) / 2;
+	y = (h - dh) / 2;
+
+	if(x < 0)
+		x = 0;
+	if(y < 0)
+		y = 0;
+
+	s.x = x;
+	s.y = y;
+	s.w = dw;
+	s.h = dh;
+
+	if(animstage == StageShadow || animstage == StageClosingShadow){
+		drawshadow(u, parentid, x, y, dw, dh);
+		return 1;
+	}
+
+	if(animstage != StageWindow)
+		animstage = StageWindow;
+
+	if(s.alert)
+		return drawalert(u, parentid, x, y, dw, dh);
+
+	return drawwindow(u, parentid, x, y, dw, dh);
+}
+
+handletick(u: ref IcUi->Ui, parentid, w, h: int): int
+{
+	delay: int;
+
+	if(!s.active)
+		return 0;
+
+	delay = animticks();
+	if(delay <= 0)
+		return 0;
+
+	if(animstage == StageShadow){
+		animwait++;
+		if(animwait < delay)
+			return 0;
+
+		animwait = 0;
+		animstage = StageWindow;
+		draw(u, parentid, w, h);
+		return 1;
+	}
+
+	if(animstage == StageClosingShadow){
+		animwait++;
+		if(animwait < delay)
+			return 0;
+
+		dispose(u);
+		s.active = 0;
+		s.result = IcViewCommon->SearchNone;
+		animstage = StageNone;
+		animwait = 0;
+		resetwindowids();
+		return 1;
+	}
+
+	return 0;
 }
 
 active(): int
@@ -885,23 +1004,6 @@ printable(k: int): int
 	return 1;
 }
 
-drawshadow(u: ref IcUi->Ui, parentid, x, y, w, h: int): int
-{
-	if(u == nil || u.tree == nil)
-		return -1;
-
-	if(s.shadowid >= 0)
-		view->removetree(u.tree, s.shadowid);
-
-	s.shadowid = view->allocid(u.tree);
-
-	if(ui->node(u, parentid, s.shadowid, "shadow", x + 2, y + 1, w, h) < 0)
-		return -1;
-
-	view->bringtofront(u.tree, s.shadowid);
-	return 0;
-}
-
 drawwindow(u: ref IcUi->Ui, parentid, x, y, w, h: int): int
 {
 	bodyw, bx, row, bgid, cpos: int;
@@ -1028,64 +1130,6 @@ drawalert(u: ref IcUi->Ui, parentid, x, y, w, h: int): int
 	return 0;
 }
 
-draw(u: ref IcUi->Ui, parentid, w, h: int): int
-{
-	iw, wh, x, y: int;
-
-	if(u == nil || u.tree == nil || !s.active)
-		return -1;
-
-	if(s.alert){
-		iw = 44;
-		wh = 7;
-	}else{
-		iw = 60;
-		wh = 14;
-	}
-
-	if(iw > w - 4)
-		iw = w - 4;
-	if(iw < 38)
-		iw = 38;
-
-	if(wh > h - 2)
-		wh = h - 2;
-	if(wh < 7)
-		wh = 7;
-
-	x = (w - iw) / 2;
-	y = (h - wh) / 2;
-	if(x < 0)
-		x = 0;
-	if(y < 0)
-		y = 0;
-
-	s.x = x;
-	s.y = y;
-	s.w = iw;
-	s.h = wh;
-
-	if(s.windowid >= 0)
-		view->removetree(u.tree, s.windowid);
-	resetwindowids();
-
-	drawshadow(u, parentid, x, y, iw, wh);
-
-	if(s.alert)
-		return drawalert(u, parentid, x, y, iw, wh);
-
-	return drawwindow(u, parentid, x, y, iw, wh);
-}
-
-handletick(u: ref IcUi->Ui, parentid, w, h: int): int
-{
-	u = u;
-	parentid = parentid;
-	w = w;
-	h = h;
-
-	return 0;
-}
 
 focusnext()
 {

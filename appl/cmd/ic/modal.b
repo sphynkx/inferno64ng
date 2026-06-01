@@ -409,7 +409,9 @@ fieldbasecode(state: ref IcState->AppState, focused: int): string
 	if(state == nil || state.theme == nil)
 		return "";
 
-	focused = focused;
+	if(focused && state.theme.dialogfieldfocuscode != "")
+		return state.theme.dialogfieldfocuscode;
+
 	return state.theme.dialogfieldcode;
 }
 
