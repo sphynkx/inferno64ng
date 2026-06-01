@@ -209,29 +209,29 @@ init()
 
 basecode(state: ref IcState->AppState): string
 {
-	if(state != nil && state.theme != nil && state.theme.modaltextcode != "")
-		return state.theme.modaltextcode;
+	if(state != nil && state.theme != nil && state.theme.dialogtextcode != "")
+		return state.theme.dialogtextcode;
 	return DefaultBaseCode;
 }
 
 framecode(state: ref IcState->AppState): string
 {
-	if(state != nil && state.theme != nil && state.theme.modalframecode != "")
-		return state.theme.modalframecode;
+	if(state != nil && state.theme != nil && state.theme.dialogframecode != "")
+		return state.theme.dialogframecode;
 	return DefaultFrameCode;
 }
 
 focuscode(state: ref IcState->AppState): string
 {
-	if(state != nil && state.theme != nil && state.theme.modalfocuscode != "")
-		return state.theme.modalfocuscode;
+	if(state != nil && state.theme != nil && state.theme.dialogfocuscode != "")
+		return state.theme.dialogfocuscode;
 	return DefaultFocusCode;
 }
 
 fieldcode(state: ref IcState->AppState): string
 {
-	if(state != nil && state.theme != nil && state.theme.modalfieldcode != "")
-		return state.theme.modalfieldcode;
+	if(state != nil && state.theme != nil && state.theme.dialogfieldcode != "")
+		return state.theme.dialogfieldcode;
 	return DefaultFieldCode;
 }
 
@@ -242,18 +242,19 @@ cursorcode(state: ref IcState->AppState): string
 
 buttoncode(state: ref IcState->AppState): string
 {
-	if(state != nil && state.theme != nil && state.theme.modalbuttoncode != "")
-		return state.theme.modalbuttoncode;
+	if(state != nil && state.theme != nil && state.theme.dialogbuttoncode != "")
+		return state.theme.dialogbuttoncode;
 	return DefaultButtonCode;
 }
 
 animticks(state: ref IcState->AppState): int
 {
-	if(state != nil && state.theme != nil && state.theme.modalanimticks >= 0)
-		return state.theme.modalanimticks;
+	if(state != nil && state.theme != nil && state.theme.dialoganimticks >= 0)
+		return state.theme.dialoganimticks;
 
 	return 0;
 }
+
 
 spaces(n: int): string
 {

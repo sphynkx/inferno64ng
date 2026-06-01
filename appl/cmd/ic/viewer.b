@@ -550,18 +550,25 @@ gotostyle(t: ref IcState->ThemeState): IcViewGotoMod->Style
 	if(t == nil)
 		return s;
 
-	s.windowcode = t.viewergotowindowcode;
-	s.framecode = t.viewergotoframecode;
-	s.textcode = t.viewergototextcode;
-	s.fieldcode = t.viewergotofieldcode;
-	s.fieldfocuscode = t.viewergotofieldfocuscode;
-	s.focuscode = t.viewergotofocuscode;
-	s.cursorcode = t.viewergotocursorcode;
-	s.buttoncode = t.viewergotobuttoncode;
-	s.buttonfocuscode = t.viewergotobuttonfocuscode;
-	s.shadowcode = t.viewergotoshadowcode;
+	s.windowcode = t.dialogwindowcode;
+	s.framecode = t.dialogframecode;
+	s.textcode = t.dialogtextcode;
+	s.fieldcode = t.dialogfieldcode;
+	s.fieldfocuscode = t.dialogfieldfocuscode;
+	s.focuscode = t.dialogfocuscode;
+	s.cursorcode = t.dialogcursorcode;
+	s.buttoncode = t.dialogbuttoncode;
+	s.buttonfocuscode = t.dialogbuttonfocuscode;
+	s.shadowcode = t.dialogshadowcode;
 
-	s.animticks = t.modalanimticks;
+	s.animticks = t.dialoganimticks;
+
+	s.frameh = t.dialogframeh;
+	s.framev = t.dialogframev;
+	s.framenw = t.dialogframenw;
+	s.framene = t.dialogframene;
+	s.framesw = t.dialogframesw;
+	s.framese = t.dialogframese;
 
 	return s;
 }

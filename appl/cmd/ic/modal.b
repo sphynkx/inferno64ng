@@ -294,8 +294,8 @@ fitw(state: ref IcState->AppState, w: int): int
 
 animticks(state: ref IcState->AppState): int
 {
-	if(state != nil && state.theme != nil && state.theme.modalanimticks >= 0)
-		return state.theme.modalanimticks;
+	if(state != nil && state.theme != nil && state.theme.dialoganimticks >= 0)
+		return state.theme.dialoganimticks;
 
 	return 0;
 }
@@ -383,20 +383,25 @@ drawlabel(state: ref IcState->AppState, parentid, id, x, y, w: int, text, code: 
 drawframe(state: ref IcState->AppState, id, w, h: int, title: string)
 {
 	row, lid: int;
+	code: string;
 
 	if(state == nil || state.ui == nil || state.ui.tree == nil)
 		return;
 
+	code = "";
+	if(state.theme != nil)
+		code = state.theme.dialogframecode;
+
 	lid = view->allocid(state.ui.tree);
-	drawlabel(state, id, lid, 0, 0, w, topframe(w, title), state.theme.modalframecode);
+	drawlabel(state, id, lid, 0, 0, w, topframe(w, title), code);
 
 	for(row = 1; row < h - 1; row++){
 		lid = view->allocid(state.ui.tree);
-		drawlabel(state, id, lid, 0, row, w, midframe(w), state.theme.modalframecode);
+		drawlabel(state, id, lid, 0, row, w, midframe(w), code);
 	}
 
 	lid = view->allocid(state.ui.tree);
-	drawlabel(state, id, lid, 0, h - 1, w, bottomframe(w), state.theme.modalframecode);
+	drawlabel(state, id, lid, 0, h - 1, w, bottomframe(w), code);
 }
 
 fieldbasecode(state: ref IcState->AppState, focused: int): string
@@ -405,7 +410,7 @@ fieldbasecode(state: ref IcState->AppState, focused: int): string
 		return "";
 
 	focused = focused;
-	return state.theme.modalfieldcode;
+	return state.theme.dialogfieldcode;
 }
 
 fieldtextwidth(m: ref IcState->ModalState): int
@@ -459,7 +464,7 @@ cursoroverlay(state: ref IcState->AppState, pos: int): string
 
 	base = "";
 	if(state != nil && state.theme != nil)
-		base = state.theme.modalcursorcode;
+		base = state.theme.dialogcursorcode;
 
 	return "cursor=1\n"
 		+ "pos=" + string pos + "\n"
@@ -472,9 +477,9 @@ buttoncode(state: ref IcState->AppState, focused: int): string
 		return "";
 
 	if(focused)
-		return state.theme.modalbuttonfocuscode;
+		return state.theme.dialogbuttonfocuscode;
 
-	return state.theme.modalbuttoncode;
+	return state.theme.dialogbuttoncode;
 }
 
 checkboxcode(state: ref IcState->AppState, focused: int): string
@@ -483,9 +488,9 @@ checkboxcode(state: ref IcState->AppState, focused: int): string
 		return "";
 
 	if(focused)
-		return state.theme.modalfocuscode;
+		return state.theme.dialogfocuscode;
 
-	return state.theme.modaltextcode;
+	return state.theme.dialogtextcode;
 }
 
 checkboxtext(m: ref IcState->ModalState): string
@@ -571,16 +576,15 @@ stylecodes(state: ref IcState->AppState): array of string
 	if(state == nil || state.theme == nil)
 		return a;
 
-	a[0] = state.theme.modalcopycode;
-	a[1] = state.theme.modaloverwritecode;
-	a[2] = state.theme.modalframecode;
-	a[3] = state.theme.modaltextcode;
-	a[4] = state.theme.modalfieldcode;
-	a[5] = state.theme.modalfocuscode;
-	a[6] = state.theme.modalbuttoncode;
-	a[7] = state.theme.modalbuttonfocuscode;
-
-	a[8] = "";
+	a[0] = state.theme.dialogtextcode;
+	a[1] = state.theme.dialogfocuscode;
+	a[2] = state.theme.dialogframecode;
+	a[3] = state.theme.dialogtextcode;
+	a[4] = state.theme.dialogfieldcode;
+	a[5] = state.theme.dialogfocuscode;
+	a[6] = state.theme.dialogbuttoncode;
+	a[7] = state.theme.dialogbuttonfocuscode;
+	a[8] = state.theme.dialogshadowcode;
 
 	return a;
 }
@@ -643,12 +647,14 @@ drawwindow(state: ref IcState->AppState): int
 	row = 2;
 
 	msgid = view->allocid(state.ui.tree);
-	drawlabel(state, m.canvasid, msgid, 2, row, bodyw, m.message, state.theme.modaltextcode);
+	##drawlabel(state, m.canvasid, msgid, 2, row, bodyw, m.message, state.theme.modaltextcode);
+	drawlabel(state, m.canvasid, msgid, 2, row, bodyw, m.message, state.theme.dialogtextcode);
 	row++;
 
 	if(m.inputlabel != ""){
 		labelid = view->allocid(state.ui.tree);
-		drawlabel(state, m.canvasid, labelid, 2, row, bodyw, m.inputlabel, state.theme.modaltextcode);
+		##drawlabel(state, m.canvasid, labelid, 2, row, bodyw, m.inputlabel, state.theme.modaltextcode);
+		drawlabel(state, m.canvasid, labelid, 2, row, bodyw, m.inputlabel, state.theme.dialogtextcode);
 		row++;
 
 		inputid = view->allocid(state.ui.tree);
@@ -1243,11 +1249,8 @@ sethistorylabel(state: ref IcState->AppState, id, x, y, w: int, text, code: stri
 	if(state == nil || state.ui == nil || state.ui.tree == nil || state.modal == nil)
 		return;
 
-	if(state.modal.canvasid < 0 || id < 0)
-		return;
-
 	if(view->find(state.ui.tree, id) == nil)
-		ui->label(state.ui, state.modal.canvasid, id, x, y, w, text);
+		ui->label(state.ui, state.modalid, id, x, y, w, text);
 
 	n = view->find(state.ui.tree, id);
 	if(n == nil)
@@ -1280,10 +1283,10 @@ hideinputhistory(state: ref IcState->AppState)
 drawinputhistory(state: ref IcState->AppState)
 {
 	m: ref IcState->ModalState;
-	i, rows, w, x, y: int;
-	text, code, focuscode: string;
+	i, rows, x, y, w: int;
+	text, code: string;
 
-	if(state == nil || state.modal == nil)
+	if(state == nil || state.ui == nil || state.ui.tree == nil || state.modal == nil)
 		return;
 
 	m = state.modal;
@@ -1293,36 +1296,18 @@ drawinputhistory(state: ref IcState->AppState)
 		return;
 	}
 
-	if(m.canvasid < 0){
-		hideinputhistory(state);
-		return;
-	}
-
 	rows = len m.inputhistoryitems;
 	if(rows > 5)
 		rows = 5;
 
-	if(rows <= 0){
-		hideinputhistory(state);
-		return;
-	}
-
 	if(ensureinputhistoryids(state, rows) < 0)
 		return;
 
-	x = 2;
-	y = 5;
+	x = m.x + 2;
+	y = m.y + 4;
 	w = m.w - 4;
-
-	if(w < 12)
-		w = 12;
-
-	code = "";
-	focuscode = "";
-	if(state.theme != nil){
-		code = state.theme.modalfieldcode;
-		focuscode = state.theme.modalfocuscode;
-	}
+	if(w < 8)
+		w = 8;
 
 	for(i = 0; i < rows; i++){
 		if(i == m.inputhistorysel)
@@ -1331,9 +1316,11 @@ drawinputhistory(state: ref IcState->AppState)
 			text = "  " + m.inputhistoryitems[i];
 
 		if(i == m.inputhistorysel)
-			sethistorylabel(state, m.inputhistoryids[i], x, y + i, w, text, focuscode);
+			code = state.theme.dialogfocuscode;
 		else
-			sethistorylabel(state, m.inputhistoryids[i], x, y + i, w, text, code);
+			code = state.theme.dialogfieldcode;
+
+		sethistorylabel(state, m.inputhistoryids[i], x, y + i, w, text, code);
 	}
 }
 

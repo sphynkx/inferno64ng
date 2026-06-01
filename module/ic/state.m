@@ -50,46 +50,31 @@ IcState: module
 		menuwindowcode: string;
 		menufocuscode: string;
 
-		modalanimticks: int;
+		dialoganimticks: int;
 
-		modalcopycode: string;
-		modaloverwritecode: string;
-		modalframecode: string;
-		modaltextcode: string;
-		modalshadowcode: string;
+		dialogwindowcode: string;
+		dialogframecode: string;
+		dialogtextcode: string;
+		dialogfieldcode: string;
+		dialogfieldfocuscode: string;
+		dialogfocuscode: string;
+		dialogcursorcode: string;
+		dialogbuttoncode: string;
+		dialogbuttonfocuscode: string;
+		dialogdisabledcode: string;
+		dialogshadowcode: string;
 
-		modalfieldcode: string;
-		modalfocuscode: string;
-		modalbuttoncode: string;
-		modalcursorcode: string;
-		modalbuttonfocuscode: string;
+		dialogframeh: string;
+		dialogframev: string;
+		dialogframenw: string;
+		dialogframene: string;
+		dialogframesw: string;
+		dialogframese: string;
 
 		commandbarcode: string;
 		commandbaractivecode: string;
 		commandbardisabledcode: string;
 		commandlinecode: string;
-
-		viewergotowindowcode: string;
-		viewergotoframecode: string;
-		viewergototextcode: string;
-		viewergotofieldcode: string;
-		viewergotofieldfocuscode: string;
-		viewergotocursorcode: string;
-		viewergotofocuscode: string;
-		viewergotobuttoncode: string;
-		viewergotobuttonfocuscode: string;
-		viewergotoshadowcode: string;
-
-		viewersearchwindowcode: string;
-		viewersearchframecode: string;
-		viewersearchtextcode: string;
-		viewersearchfieldcode: string;
-		viewersearchfieldfocuscode: string;
-		viewersearchfocuscode: string;
-		viewersearchbuttoncode: string;
-		viewersearchbuttonfocuscode: string;
-		viewersearchdisabledcode: string;
-		viewersearchshadowcode: string;
 	};
 
 	FsEntry: adt
@@ -396,8 +381,10 @@ IcState: module
 		y: int;
 		dx: int;
 		dy: int;
+
 		rx: int;
 		ry: int;
+
 		life: int;
 
 		pathkind: int;

@@ -233,16 +233,16 @@ disabledcode(state: ref IcState->AppState): string
 
 shadowcode(state: ref IcState->AppState): string
 {
-	if(state != nil && state.theme != nil && state.theme.modalshadowcode != "")
-		return state.theme.modalshadowcode;
+	if(state != nil && state.theme != nil && state.theme.dialogshadowcode != "")
+		return state.theme.dialogshadowcode;
 
 	return "";
 }
 
 animticks(state: ref IcState->AppState): int
 {
-	if(state != nil && state.theme != nil && state.theme.modalanimticks > 0)
-		return state.theme.modalanimticks;
+	if(state != nil && state.theme != nil && state.theme.dialoganimticks > 0)
+		return state.theme.dialoganimticks;
 
 	return 0;
 }

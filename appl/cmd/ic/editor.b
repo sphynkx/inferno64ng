@@ -255,19 +255,26 @@ searchstyle(t: ref IcState->ThemeState): IcSearchDialogMod->Style
 	if(t == nil)
 		return s;
 
-	s.windowcode = t.viewersearchwindowcode;
-	s.framecode = t.viewersearchframecode;
-	s.textcode = t.viewersearchtextcode;
-	s.fieldcode = t.viewersearchfieldcode;
-	s.fieldfocuscode = t.viewersearchfieldfocuscode;
-	s.focuscode = t.viewersearchfocuscode;
-	s.cursorcode = t.modalcursorcode;
-	s.buttoncode = t.viewersearchbuttoncode;
-	s.buttonfocuscode = t.viewersearchbuttonfocuscode;
-	s.disabledcode = t.viewersearchdisabledcode;
-	s.shadowcode = t.viewersearchshadowcode;
+	s.windowcode = t.dialogwindowcode;
+	s.framecode = t.dialogframecode;
+	s.textcode = t.dialogtextcode;
+	s.fieldcode = t.dialogfieldcode;
+	s.fieldfocuscode = t.dialogfieldfocuscode;
+	s.focuscode = t.dialogfocuscode;
+	s.cursorcode = t.dialogcursorcode;
+	s.buttoncode = t.dialogbuttoncode;
+	s.buttonfocuscode = t.dialogbuttonfocuscode;
+	s.disabledcode = t.dialogdisabledcode;
+	s.shadowcode = t.dialogshadowcode;
 
-	s.animticks = t.modalanimticks;
+	s.animticks = t.dialoganimticks;
+
+	s.frameh = t.dialogframeh;
+	s.framev = t.dialogframev;
+	s.framenw = t.dialogframenw;
+	s.framene = t.dialogframene;
+	s.framesw = t.dialogframesw;
+	s.framese = t.dialogframese;
 
 	return s;
 }

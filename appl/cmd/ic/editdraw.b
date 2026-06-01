@@ -242,10 +242,11 @@ bottomdisabledcode(): string
 	return DefaultBottomDisabledCode;
 }
 
+
 cursorcode(): string
 {
-	if(theme != nil && theme.modalfocuscode != "")
-		return theme.modalfocuscode;
+	if(theme != nil && theme.dialogfocuscode != "")
+		return theme.dialogfocuscode;
 
 	return DefaultCursorCode;
 }
@@ -260,40 +261,40 @@ selectioncode(): string
 
 modalcode(): string
 {
-	if(theme != nil && theme.modaltextcode != "")
-		return theme.modaltextcode;
+	if(theme != nil && theme.dialogtextcode != "")
+		return theme.dialogtextcode;
 
 	return DefaultModalCode;
 }
 
 modaltitlecode(): string
 {
-	if(theme != nil && theme.modalframecode != "")
-		return theme.modalframecode;
+	if(theme != nil && theme.dialogframecode != "")
+		return theme.dialogframecode;
 
 	return DefaultModalTitleCode;
 }
 
 modalinputcode(): string
 {
-	if(theme != nil && theme.modalfieldcode != "")
-		return theme.modalfieldcode;
+	if(theme != nil && theme.dialogfieldcode != "")
+		return theme.dialogfieldcode;
 
 	return DefaultModalInputCode;
 }
 
 modalbuttoncode(): string
 {
-	if(theme != nil && theme.modalbuttonfocuscode != "")
-		return theme.modalbuttonfocuscode;
+	if(theme != nil && theme.dialogbuttonfocuscode != "")
+		return theme.dialogbuttonfocuscode;
 
 	return DefaultModalButtonCode;
 }
 
 modalshadowcode(): string
 {
-	if(theme != nil && theme.modalshadowcode != "")
-		return theme.modalshadowcode;
+	if(theme != nil && theme.dialogshadowcode != "")
+		return theme.dialogshadowcode;
 
 	return DefaultModalShadowCode;
 }
