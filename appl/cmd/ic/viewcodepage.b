@@ -34,8 +34,9 @@ codepage: IcCodepage;
 
 style: Style;
 
-selectedidx: int;
 activeflag: int;
+selectedidx: int;
+
 shadowid: int;
 windowid: int;
 itemids: array of int;
@@ -52,12 +53,6 @@ StageClosingShadow: con 3;
 
 animstage: int;
 animwait: int;
-
-ResultNone: con 0;
-ResultOk: con 1;
-ResultCancel: con 2;
-
-result: int;
 
 UpKey: con 57362;
 DownKey: con 57363;
@@ -79,7 +74,7 @@ midframe: fn(w: int): string;
 setlabel: fn(u: ref IcUi->Ui, parentid, id, x, y, w: int, text, code: string);
 
 ensureids: fn(u: ref IcUi->Ui);
-resetids: fn();
+resetwindowids: fn();
 dispose: fn(u: ref IcUi->Ui);
 disposewindow: fn(u: ref IcUi->Ui);
 
@@ -107,11 +102,11 @@ init()
 	initstyle();
 
 	activeflag = 0;
+	selectedidx = 0;
+
 	shadowid = -1;
 	windowid = -1;
 	itemids = array[0] of int;
-	selectedidx = 0;
-	result = ResultNone;
 
 	x = 0;
 	y = 0;
@@ -181,13 +176,16 @@ active(): int
 
 selected(): string
 {
-	if(codepage->count() <= 0)
+	n: int;
+
+	n = codepage->count();
+	if(n <= 0)
 		return "";
 
 	if(selectedidx < 0)
 		selectedidx = 0;
-	if(selectedidx >= codepage->count())
-		selectedidx = codepage->count() - 1;
+	if(selectedidx >= n)
+		selectedidx = n - 1;
 
 	return codepage->name(selectedidx);
 }
@@ -200,7 +198,6 @@ open(u: ref IcUi->Ui, parentid, w, h: int, current: string)
 		return;
 
 	activeflag = 1;
-	result = ResultNone;
 
 	idx = codepage->find(current);
 	if(idx < 0)
@@ -236,10 +233,9 @@ close(u: ref IcUi->Ui)
 
 	dispose(u);
 	activeflag = 0;
-	result = ResultNone;
 	animstage = StageNone;
 	animwait = 0;
-	resetids();
+	resetwindowids();
 }
 
 fillstr(n: int, ch: string): string
@@ -344,14 +340,10 @@ ensureids(u: ref IcUi->Ui)
 		itemids[i] = view->allocid(u.tree);
 }
 
-resetids()
+resetwindowids()
 {
 	windowid = -1;
-
-	if(itemids == nil || len itemids != codepage->count())
-		itemids = array[codepage->count()] of int;
-
-	itemids = array[len itemids] of int;
+	itemids = array[0] of int;
 }
 
 dispose(u: ref IcUi->Ui)
@@ -365,7 +357,7 @@ dispose(u: ref IcUi->Ui)
 		view->removetree(u.tree, shadowid);
 
 	shadowid = -1;
-	resetids();
+	resetwindowids();
 }
 
 disposewindow(u: ref IcUi->Ui)
@@ -376,7 +368,7 @@ disposewindow(u: ref IcUi->Ui)
 	if(windowid >= 0)
 		view->removetree(u.tree, windowid);
 
-	resetids();
+	resetwindowids();
 }
 
 drawshadow(u: ref IcUi->Ui, parentid, x, y, w, h: int): int
@@ -530,7 +522,6 @@ handletick(u: ref IcUi->Ui, parentid, w, h: int): int
 
 		dispose(u);
 		activeflag = 0;
-		result = ResultNone;
 		animstage = StageNone;
 		animwait = 0;
 		return 1;
@@ -544,24 +535,22 @@ handlekey(u: ref IcUi->Ui, parentid, w, h, k: int): int
 	n: int;
 
 	if(!activeflag)
-		return ResultNone;
+		return 0;
 
 	if(animstage != StageWindow)
-		return ResultNone;
+		return 0;
 
 	n = codepage->count();
 
-	if(k == EscapeKey){
-		result = ResultCancel;
-		return result;
-	}
+	if(k == EscapeKey)
+		return 2;
 
 	if(k == UpKey){
 		selectedidx--;
 		if(selectedidx < 0)
 			selectedidx = 0;
 		draw(u, parentid, w, h);
-		return ResultNone;
+		return 0;
 	}
 
 	if(k == DownKey){
@@ -569,13 +558,11 @@ handlekey(u: ref IcUi->Ui, parentid, w, h, k: int): int
 		if(selectedidx >= n)
 			selectedidx = n - 1;
 		draw(u, parentid, w, h);
-		return ResultNone;
+		return 0;
 	}
 
-	if(k == EnterKey || k == ReturnKey){
-		result = ResultOk;
-		return result;
-	}
+	if(k == EnterKey || k == ReturnKey)
+		return 1;
 
-	return ResultNone;
+	return 0;
 }
