@@ -11,6 +11,24 @@ IcUiMod: module
 	label: fn(u: ref IcUi->Ui, parentid, id: int, x, y, w: int, text: string): int;
 };
 
+IcCommands: module
+{
+	PATH: con "/dis/ic/commands.dis";
+
+	CmdNone: con 0;
+	CmdExit: con 1;
+	CmdSwitchPanel: con 2;
+	CmdTogglePanels: con 3;
+	CmdToggleSelection: con 4;
+	CmdCopy: con 5;
+	CmdMove: con 6;
+	CmdMkdir: con 7;
+	CmdDelete: con 8;
+	CmdView: con 9;
+	CmdEdit: con 10;
+	CmdEditNew: con 11;
+};
+
 IcViewMod: module
 {
 	PATH: con "/dis/lib/icurses/view.dis";
@@ -179,6 +197,7 @@ closethemepopup: fn(state: ref IcState->AppState);
 closeallpopups: fn(state: ref IcState->AppState);
 movefocus: fn(state: ref IcState->AppState, bar: ref IcState->TopBarState, delta: int);
 commandforitem: fn(it: IcMenuMod->Item): int;
+parsecommand: fn(s: string): int;
 selectedmainitem: fn(): IcMenuMod->Item;
 isthemesitem: fn(it: IcMenuMod->Item): int;
 
@@ -642,15 +661,18 @@ popupitems(menuindex: int): array of IcMenuMod->Item
 		return a;
 
 	MenuFile =>
-		a = array[1] of IcMenuMod->Item;
-		it = icmenu->newitem("No file commands yet", "", IcView->NoId, "");
-		a[0] = icmenu->setdisabled(it, 1);
+		a = array[2] of IcMenuMod->Item;
+		a[0] = icmenu->newitem("View file", "", IcView->NoId, string IcCommands->CmdView);
+		a[1] = icmenu->newitem("Edit file", "", IcView->NoId, string IcCommands->CmdEdit);
 		return a;
 
 	MenuCommand =>
-		a = array[1] of IcMenuMod->Item;
-		it = icmenu->newitem("No command items yet", "", IcView->NoId, "");
-		a[0] = icmenu->setdisabled(it, 1);
+		a = array[5] of IcMenuMod->Item;
+		a[0] = icmenu->newitem("Copy", "", IcView->NoId, string IcCommands->CmdCopy);
+		a[1] = icmenu->newitem("Move", "", IcView->NoId, string IcCommands->CmdMove);
+		a[2] = icmenu->newitem("Make directory", "", IcView->NoId, string IcCommands->CmdMkdir);
+		a[3] = icmenu->newitem("Delete", "", IcView->NoId, string IcCommands->CmdDelete);
+		a[4] = icmenu->newitem("New file", "", IcView->NoId, string IcCommands->CmdEditNew);
 		return a;
 
 	MenuRight =>
@@ -818,12 +840,23 @@ movefocus(state: ref IcState->AppState, bar: ref IcState->TopBarState, delta: in
 		openpopupfor(state, bar);
 }
 
+parsecommand(s: string): int
+{
+	if(s == nil || s == "")
+		return IcTopBar->CmdHandled;
+
+	return int s;
+}
+
 commandforitem(it: IcMenuMod->Item): int
 {
 	if(it.command == CommandOptionsScreensavers)
 		return IcTopBar->CmdOptionsScreensavers;
 
-	return IcTopBar->CmdHandled;
+	if(it.command == CommandOptionsThemes)
+		return IcTopBar->CmdHandled;
+
+	return parsecommand(it.command);
 }
 
 selectedmainitem(): IcMenuMod->Item

@@ -351,6 +351,9 @@ handletopbarcmd(state: ref IcState->AppState, cmd: int): int
 	if(state == nil)
 		return 0;
 
+	if(cmd == IcTopBar->CmdNone || cmd == IcTopBar->CmdHandled)
+		return 0;
+
 	if(cmd == IcTopBar->CmdOptionsScreensavers){
 		topbar->close(state.topbar);
 		sssetup->open(state);
@@ -365,7 +368,11 @@ handletopbarcmd(state: ref IcState->AppState, cmd: int): int
 		return 1;
 	}
 
-	return 0;
+	topbar->close(state.topbar);
+	commands->exec(state, cmd);
+	screen->rebuild(state);
+
+	return 1;
 }
 
 handlekey(state: ref IcState->AppState, k: int): int
