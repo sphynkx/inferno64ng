@@ -23,57 +23,41 @@ IcViewMod: module
 	settext: fn(v: ref IcView->Node, text: string);
 	setcode: fn(v: ref IcView->Node, code: string);
 	show: fn(v: ref IcView->Node);
+	hide: fn(v: ref IcView->Node);
 	removetree: fn(t: ref IcView->Tree, id: int): int;
 	bringtofront: fn(t: ref IcView->Tree, id: int): int;
-};
-
-CodepageStyle: adt
-{
-	windowcode: string;
-	framecode: string;
-	textcode: string;
-	focuscode: string;
-	shadowcode: string;
-
-	frameh: string;
-	framev: string;
-	framenw: string;
-	framene: string;
-	framesw: string;
-	framese: string;
-};
-
-State: adt
-{
-	active: int;
-	shadowid: int;
-	windowid: int;
-	itemids: array of int;
-	x: int;
-	y: int;
-	w: int;
-	h: int;
-	selected: int;
-	result: int;
 };
 
 ui: IcUiMod;
 view: IcViewMod;
 codepage: IcCodepage;
 
-style: CodepageStyle;
-s: State;
+style: Style;
+
+selectedidx: int;
+activeflag: int;
+shadowid: int;
+windowid: int;
+itemids: array of int;
+
+x: int;
+y: int;
+ww: int;
+wh: int;
 
 StageNone: con 0;
 StageShadow: con 1;
 StageWindow: con 2;
 StageClosingShadow: con 3;
 
+animstage: int;
+animwait: int;
+
 ResultNone: con 0;
 ResultOk: con 1;
 ResultCancel: con 2;
 
-animstage: int;
+result: int;
 
 UpKey: con 57362;
 DownKey: con 57363;
@@ -81,16 +65,26 @@ EnterKey: con 10;
 ReturnKey: con 13;
 EscapeKey: con 27;
 
+initstyle: fn();
+setstylevalue: fn(cur, next: string): string;
+animticks: fn(): int;
+
 fillstr: fn(n: int, ch: string): string;
 spaces: fn(n: int): string;
 fittext: fn(v: string, w: int): string;
 topframe: fn(w: int): string;
 bottomframe: fn(w: int): string;
 midframe: fn(w: int): string;
+
 setlabel: fn(u: ref IcUi->Ui, parentid, id, x, y, w: int, text, code: string);
+
 ensureids: fn(u: ref IcUi->Ui);
+resetids: fn();
 dispose: fn(u: ref IcUi->Ui);
 disposewindow: fn(u: ref IcUi->Ui);
+
+drawshadow: fn(u: ref IcUi->Ui, parentid, x, y, w, h: int): int;
+drawwindow: fn(u: ref IcUi->Ui, parentid, x, y, w, h: int): int;
 
 init()
 {
@@ -110,11 +104,33 @@ init()
 	view->init();
 	codepage->init();
 
+	initstyle();
+
+	activeflag = 0;
+	shadowid = -1;
+	windowid = -1;
+	itemids = array[0] of int;
+	selectedidx = 0;
+	result = ResultNone;
+
+	x = 0;
+	y = 0;
+	ww = 0;
+	wh = 0;
+
+	animstage = StageNone;
+	animwait = 0;
+}
+
+initstyle()
+{
 	style.windowcode = "38;2;20;20;20;48;2;210;210;210";
 	style.framecode = "1;38;2;35;35;35;48;2;210;210;210";
 	style.textcode = "38;2;20;20;20;48;2;210;210;210";
 	style.focuscode = "1;38;2;0;0;0;48;2;170;225;255";
-	style.shadowcode = "38;2;120;120;120;48;2;0;0;0";
+	style.shadowcode = "";
+
+	style.animticks = 0;
 
 	style.frameh = "─";
 	style.framev = "│";
@@ -122,28 +138,58 @@ init()
 	style.framene = "┐";
 	style.framesw = "└";
 	style.framese = "┘";
+}
 
-	s.active = 0;
-	s.shadowid = -1;
-	s.windowid = -1;
-	s.itemids = array[0] of int;
-	s.selected = 0;
-	s.result = ResultNone;
+setstylevalue(cur, next: string): string
+{
+	if(next != "")
+		return next;
+	return cur;
+}
 
-	animstage = StageNone;
+setstyle(arg: Style)
+{
+	style.windowcode = setstylevalue(style.windowcode, arg.windowcode);
+	style.framecode = setstylevalue(style.framecode, arg.framecode);
+	style.textcode = setstylevalue(style.textcode, arg.textcode);
+	style.focuscode = setstylevalue(style.focuscode, arg.focuscode);
+	style.shadowcode = setstylevalue(style.shadowcode, arg.shadowcode);
+
+	if(arg.animticks >= 0)
+		style.animticks = arg.animticks;
+
+	style.frameh = setstylevalue(style.frameh, arg.frameh);
+	style.framev = setstylevalue(style.framev, arg.framev);
+	style.framenw = setstylevalue(style.framenw, arg.framenw);
+	style.framene = setstylevalue(style.framene, arg.framene);
+	style.framesw = setstylevalue(style.framesw, arg.framesw);
+	style.framese = setstylevalue(style.framese, arg.framese);
+}
+
+animticks(): int
+{
+	if(style.animticks < 0)
+		return 0;
+
+	return style.animticks;
 }
 
 active(): int
 {
-	return s.active;
+	return activeflag;
 }
 
 selected(): string
 {
-	if(!s.active)
+	if(codepage->count() <= 0)
 		return "";
 
-	return codepage->name(s.selected);
+	if(selectedidx < 0)
+		selectedidx = 0;
+	if(selectedidx >= codepage->count())
+		selectedidx = codepage->count() - 1;
+
+	return codepage->name(selectedidx);
 }
 
 open(u: ref IcUi->Ui, parentid, w, h: int, current: string)
@@ -153,8 +199,8 @@ open(u: ref IcUi->Ui, parentid, w, h: int, current: string)
 	if(u == nil || u.tree == nil)
 		return;
 
-	s.active = 1;
-	s.result = ResultNone;
+	activeflag = 1;
+	result = ResultNone;
 
 	idx = codepage->find(current);
 	if(idx < 0)
@@ -162,8 +208,15 @@ open(u: ref IcUi->Ui, parentid, w, h: int, current: string)
 	if(idx < 0)
 		idx = 0;
 
-	s.selected = idx;
-	animstage = StageShadow;
+	selectedidx = idx;
+
+	if(animticks() > 0){
+		animstage = StageShadow;
+		animwait = 0;
+	}else{
+		animstage = StageWindow;
+		animwait = 0;
+	}
 
 	ensureids(u);
 	draw(u, parentid, w, h);
@@ -171,19 +224,22 @@ open(u: ref IcUi->Ui, parentid, w, h: int, current: string)
 
 close(u: ref IcUi->Ui)
 {
-	if(!s.active)
+	if(!activeflag)
 		return;
 
-	if(animstage == StageWindow){
+	if(animticks() > 0 && animstage == StageWindow){
 		disposewindow(u);
 		animstage = StageClosingShadow;
+		animwait = 0;
 		return;
 	}
 
 	dispose(u);
-	s.active = 0;
-	s.result = ResultNone;
+	activeflag = 0;
+	result = ResultNone;
 	animstage = StageNone;
+	animwait = 0;
+	resetids();
 }
 
 fillstr(n: int, ch: string): string
@@ -269,26 +325,33 @@ setlabel(u: ref IcUi->Ui, parentid, id, x, y, w: int, text, code: string)
 ensureids(u: ref IcUi->Ui)
 {
 	i, n: int;
-	a: array of int;
 
 	if(u == nil || u.tree == nil)
 		return;
 
-	if(s.shadowid < 0)
-		s.shadowid = view->allocid(u.tree);
-	if(s.windowid < 0)
-		s.windowid = view->allocid(u.tree);
+	if(shadowid < 0)
+		shadowid = view->allocid(u.tree);
+	if(windowid < 0)
+		windowid = view->allocid(u.tree);
 
 	n = codepage->count();
 
-	if(s.itemids != nil && len s.itemids == n)
+	if(itemids != nil && len itemids == n)
 		return;
 
-	a = array[n] of int;
+	itemids = array[n] of int;
 	for(i = 0; i < n; i++)
-		a[i] = view->allocid(u.tree);
+		itemids[i] = view->allocid(u.tree);
+}
 
-	s.itemids = a;
+resetids()
+{
+	windowid = -1;
+
+	if(itemids == nil || len itemids != codepage->count())
+		itemids = array[codepage->count()] of int;
+
+	itemids = array[len itemids] of int;
 }
 
 dispose(u: ref IcUi->Ui)
@@ -296,10 +359,13 @@ dispose(u: ref IcUi->Ui)
 	if(u == nil || u.tree == nil)
 		return;
 
-	if(s.windowid >= 0)
-		view->removetree(u.tree, s.windowid);
-	if(s.shadowid >= 0)
-		view->removetree(u.tree, s.shadowid);
+	if(windowid >= 0)
+		view->removetree(u.tree, windowid);
+	if(shadowid >= 0)
+		view->removetree(u.tree, shadowid);
+
+	shadowid = -1;
+	resetids();
 }
 
 disposewindow(u: ref IcUi->Ui)
@@ -307,102 +373,166 @@ disposewindow(u: ref IcUi->Ui)
 	if(u == nil || u.tree == nil)
 		return;
 
-	if(s.windowid >= 0)
-		view->removetree(u.tree, s.windowid);
+	if(windowid >= 0)
+		view->removetree(u.tree, windowid);
+
+	resetids();
+}
+
+drawshadow(u: ref IcUi->Ui, parentid, x, y, w, h: int): int
+{
+	if(u == nil || u.tree == nil)
+		return -1;
+
+	if(shadowid >= 0)
+		view->removetree(u.tree, shadowid);
+
+	shadowid = view->allocid(u.tree);
+
+	if(ui->node(u, parentid, shadowid, "shadow", x + 1, y + 1, w, h) < 0)
+		return -1;
+
+	view->bringtofront(u.tree, shadowid);
+	return 0;
+}
+
+drawwindow(u: ref IcUi->Ui, parentid, x, y, w, h: int): int
+{
+	i, n, bodyw, row, bgid: int;
+	name, code: string;
+	nn: ref IcView->Node;
+
+	if(u == nil || u.tree == nil)
+		return -1;
+
+	if(windowid >= 0)
+		view->removetree(u.tree, windowid);
+
+	if(shadowid >= 0)
+		view->removetree(u.tree, shadowid);
+
+	shadowid = view->allocid(u.tree);
+	windowid = view->allocid(u.tree);
+
+	n = codepage->count();
+	itemids = array[n] of int;
+	for(i = 0; i < n; i++)
+		itemids[i] = view->allocid(u.tree);
+
+	if(ui->node(u, parentid, shadowid, "shadow", x + 1, y + 1, w, h) < 0)
+		return -1;
+
+	if(ui->node(u, parentid, windowid, "group", x, y, w, h) < 0)
+		return -1;
+
+	nn = view->find(u.tree, windowid);
+	if(nn != nil && style.windowcode != "")
+		view->setcode(nn, style.windowcode);
+
+	setlabel(u, windowid, view->allocid(u.tree), 0, 0, w, topframe(w), style.framecode);
+
+	for(row = 1; row < h - 1; row++){
+		bgid = view->allocid(u.tree);
+		setlabel(u, windowid, bgid, 0, row, w, midframe(w), style.framecode);
+	}
+
+	setlabel(u, windowid, view->allocid(u.tree), 0, h - 1, w, bottomframe(w), style.framecode);
+
+	bodyw = w - 4;
+	if(bodyw < 1)
+		bodyw = 1;
+
+	for(i = 0; i < n && i < h - 2; i++){
+		name = codepage->name(i);
+		if(i == selectedidx)
+			code = style.focuscode;
+		else
+			code = style.textcode;
+
+		setlabel(u, windowid, itemids[i], 2, 1 + i, bodyw, name, code);
+	}
+
+	view->bringtofront(u.tree, shadowid);
+	view->bringtofront(u.tree, windowid);
+
+	return 0;
 }
 
 draw(u: ref IcUi->Ui, parentid, w, h: int): int
 {
-	iw, wh, x, y: int;
-	i, n, bodyw, row, bgid: int;
-	name, code: string;
-	shadow: ref IcView->Node;
+	iw, ih, n: int;
 
-	if(u == nil || u.tree == nil || !s.active)
+	if(u == nil || u.tree == nil || !activeflag)
 		return -1;
 
-	ensureids(u);
-	dispose(u);
-
 	n = codepage->count();
+
 	iw = 34;
-	wh = n + 4;
+	ih = n + 4;
 
 	if(iw > w - 4)
 		iw = w - 4;
 	if(iw < 20)
 		iw = 20;
 
-	if(wh > h - 2)
-		wh = h - 2;
-	if(wh < 6)
-		wh = 6;
+	if(ih > h - 2)
+		ih = h - 2;
+	if(ih < 6)
+		ih = 6;
 
 	x = (w - iw) / 2;
-	y = (h - wh) / 2;
+	y = (h - ih) / 2;
 	if(x < 0)
 		x = 0;
 	if(y < 0)
 		y = 0;
 
-	s.x = x;
-	s.y = y;
-	s.w = iw;
-	s.h = wh;
-
-	ui->node(u, parentid, s.shadowid, "shadow", x + 1, y + 1, iw, wh);
-	shadow = view->find(u.tree, s.shadowid);
-	if(shadow != nil)
-		view->setcode(shadow, style.shadowcode);
+	ww = iw;
+	wh = ih;
 
 	if(animstage == StageShadow || animstage == StageClosingShadow){
-		view->bringtofront(u.tree, s.shadowid);
+		drawshadow(u, parentid, x, y, iw, ih);
 		return 0;
 	}
 
-	ui->node(u, parentid, s.windowid, "group", x, y, iw, wh);
+	if(animstage != StageWindow)
+		animstage = StageWindow;
 
-	setlabel(u, s.windowid, view->allocid(u.tree), 0, 0, iw, topframe(iw), style.framecode);
-	for(row = 1; row < wh - 1; row++){
-		bgid = view->allocid(u.tree);
-		setlabel(u, s.windowid, bgid, 0, row, iw, midframe(iw), style.framecode);
-	}
-	setlabel(u, s.windowid, view->allocid(u.tree), 0, wh - 1, iw, bottomframe(iw), style.framecode);
-
-	bodyw = iw - 4;
-	if(bodyw < 1)
-		bodyw = 1;
-
-	for(i = 0; i < n && i < wh - 2; i++){
-		name = codepage->name(i);
-		if(i == s.selected)
-			code = style.focuscode;
-		else
-			code = style.textcode;
-
-		setlabel(u, s.windowid, s.itemids[i], 2, 1 + i, bodyw, name, code);
-	}
-
-	view->bringtofront(u.tree, s.windowid);
-	return 0;
+	return drawwindow(u, parentid, x, y, iw, ih);
 }
 
 handletick(u: ref IcUi->Ui, parentid, w, h: int): int
 {
-	if(!s.active)
+	delay: int;
+
+	if(!activeflag)
+		return 0;
+
+	delay = animticks();
+	if(delay <= 0)
 		return 0;
 
 	if(animstage == StageShadow){
+		animwait++;
+		if(animwait < delay)
+			return 0;
+
+		animwait = 0;
 		animstage = StageWindow;
 		draw(u, parentid, w, h);
 		return 1;
 	}
 
 	if(animstage == StageClosingShadow){
+		animwait++;
+		if(animwait < delay)
+			return 0;
+
 		dispose(u);
-		s.active = 0;
-		s.result = ResultNone;
+		activeflag = 0;
+		result = ResultNone;
 		animstage = StageNone;
+		animwait = 0;
 		return 1;
 	}
 
@@ -413,7 +543,7 @@ handlekey(u: ref IcUi->Ui, parentid, w, h, k: int): int
 {
 	n: int;
 
-	if(!s.active)
+	if(!activeflag)
 		return ResultNone;
 
 	if(animstage != StageWindow)
@@ -422,29 +552,29 @@ handlekey(u: ref IcUi->Ui, parentid, w, h, k: int): int
 	n = codepage->count();
 
 	if(k == EscapeKey){
-		s.result = ResultCancel;
-		return s.result;
+		result = ResultCancel;
+		return result;
 	}
 
 	if(k == UpKey){
-		s.selected--;
-		if(s.selected < 0)
-			s.selected = 0;
+		selectedidx--;
+		if(selectedidx < 0)
+			selectedidx = 0;
 		draw(u, parentid, w, h);
 		return ResultNone;
 	}
 
 	if(k == DownKey){
-		s.selected++;
-		if(s.selected >= n)
-			s.selected = n - 1;
+		selectedidx++;
+		if(selectedidx >= n)
+			selectedidx = n - 1;
 		draw(u, parentid, w, h);
 		return ResultNone;
 	}
 
 	if(k == EnterKey || k == ReturnKey){
-		s.result = ResultOk;
-		return s.result;
+		result = ResultOk;
+		return result;
 	}
 
 	return ResultNone;

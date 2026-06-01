@@ -173,7 +173,26 @@ IcViewCodepageMod: module
 {
 	PATH: con "/dis/ic/viewcodepage.dis";
 
+	Style: adt
+	{
+		windowcode: string;
+		framecode: string;
+		textcode: string;
+		focuscode: string;
+		shadowcode: string;
+
+		animticks: int;
+
+		frameh: string;
+		framev: string;
+		framenw: string;
+		framene: string;
+		framesw: string;
+		framese: string;
+	};
+
 	init: fn();
+	setstyle: fn(style: Style);
 
 	open: fn(u: ref IcUi->Ui, parentid, w, h: int, current: string);
 	close: fn(u: ref IcUi->Ui);
@@ -390,6 +409,7 @@ bodycode: fn(): string;
 errorcode: fn(): string;
 gotostyle: fn(t: ref IcState->ThemeState): IcViewGotoMod->Style;
 searchstyle: fn(t: ref IcState->ThemeState): IcSearchDialogMod->Style;
+codepagestyle: fn(t: ref IcState->ThemeState): IcViewCodepageMod->Style;
 applytheme: fn(t: ref IcState->ThemeState);
 
 loadwrapsetting: fn(state: ref IcState->AppState): int;
@@ -574,6 +594,47 @@ gotostyle(t: ref IcState->ThemeState): IcViewGotoMod->Style
 	return s;
 }
 
+
+codepagestyle(t: ref IcState->ThemeState): IcViewCodepageMod->Style
+{
+	s: IcViewCodepageMod->Style;
+
+	s.windowcode = "";
+	s.framecode = "";
+	s.textcode = "";
+	s.focuscode = "";
+	s.shadowcode = "";
+
+	s.animticks = -1;
+
+	s.frameh = "─";
+	s.framev = "│";
+	s.framenw = "┌";
+	s.framene = "┐";
+	s.framesw = "└";
+	s.framese = "┘";
+
+	if(t == nil)
+		return s;
+
+	s.windowcode = t.dialogwindowcode;
+	s.framecode = t.dialogframecode;
+	s.textcode = t.dialogtextcode;
+	s.focuscode = t.dialogfocuscode;
+	s.shadowcode = t.dialogshadowcode;
+
+	s.animticks = t.dialoganimticks;
+
+	s.frameh = t.dialogframeh;
+	s.framev = t.dialogframev;
+	s.framenw = t.dialogframenw;
+	s.framene = t.dialogframene;
+	s.framesw = t.dialogframesw;
+	s.framese = t.dialogframese;
+
+	return s;
+}
+
 searchstyle(t: ref IcState->ThemeState): IcSearchDialogMod->Style
 {
 	s: IcSearchDialogMod->Style;
@@ -638,6 +699,9 @@ applytheme(t: ref IcState->ThemeState)
 
 	if(searchdialog != nil)
 		searchdialog->setstyle(searchstyle(theme));
+
+	if(viewcodepage != nil)
+		viewcodepage->setstyle(codepagestyle(theme));
 }
 
 loadwrapsetting(state: ref IcState->AppState): int
