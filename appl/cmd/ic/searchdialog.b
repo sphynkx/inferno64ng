@@ -170,7 +170,6 @@ init()
 	histmod->init();
 
 	resetstyle();
-	loadtheme();
 
 	s.active = 0;
 	s.alert = 0;
@@ -531,9 +530,6 @@ open(u: ref IcUi->Ui, parentid, w, h: int, pattern: string)
 	if(u == nil || u.tree == nil)
 		return;
 
-	resetstyle();
-	loadtheme();
-
 	s.active = 1;
 	s.alert = 0;
 	s.alerttext = "";
@@ -549,8 +545,13 @@ open(u: ref IcUi->Ui, parentid, w, h: int, pattern: string)
 	if(s.encoding == "")
 		s.encoding = "utf-8";
 
-	animstage = StageWindow;
-	animwait = 0;
+	if(animticks() > 0){
+		animstage = StageShadow;
+		animwait = 0;
+	}else{
+		animstage = StageWindow;
+		animwait = 0;
+	}
 
 	loadhistory();
 
@@ -564,9 +565,6 @@ alert(u: ref IcUi->Ui, parentid, w, h: int, text: string)
 	if(u == nil || u.tree == nil)
 		return;
 
-	resetstyle();
-	loadtheme();
-
 	s.active = 1;
 	s.alert = 1;
 	s.alerttext = text;
@@ -576,8 +574,13 @@ alert(u: ref IcUi->Ui, parentid, w, h: int, text: string)
 	s.inputhistorysel = -1;
 	s.inputhistoryitems = array[0] of string;
 
-	animstage = StageWindow;
-	animwait = 0;
+	if(animticks() > 0){
+		animstage = StageShadow;
+		animwait = 0;
+	}else{
+		animstage = StageWindow;
+		animwait = 0;
+	}
 
 	resetwindowids();
 	ensureids(u);

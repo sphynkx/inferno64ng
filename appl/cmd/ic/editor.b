@@ -225,6 +225,9 @@ applytheme(t: ref IcState->ThemeState)
 		theme = t;
 
 	drawmod->settheme(theme);
+
+	if(searchdialog != nil)
+		searchdialog->setstyle(searchstyle(theme));
 }
 
 searchstyle(t: ref IcState->ThemeState): IcSearchDialogMod->Style

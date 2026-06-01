@@ -389,6 +389,7 @@ topcode: fn(): string;
 bodycode: fn(): string;
 errorcode: fn(): string;
 gotostyle: fn(t: ref IcState->ThemeState): IcViewGotoMod->Style;
+searchstyle: fn(t: ref IcState->ThemeState): IcSearchDialogMod->Style;
 applytheme: fn(t: ref IcState->ThemeState);
 
 loadwrapsetting: fn(state: ref IcState->AppState): int;
@@ -573,6 +574,58 @@ gotostyle(t: ref IcState->ThemeState): IcViewGotoMod->Style
 	return s;
 }
 
+searchstyle(t: ref IcState->ThemeState): IcSearchDialogMod->Style
+{
+	s: IcSearchDialogMod->Style;
+
+	s.windowcode = "";
+	s.framecode = "";
+	s.textcode = "";
+	s.fieldcode = "";
+	s.fieldfocuscode = "";
+	s.focuscode = "";
+	s.cursorcode = "";
+	s.buttoncode = "";
+	s.buttonfocuscode = "";
+	s.disabledcode = "";
+	s.shadowcode = "";
+
+	s.animticks = -1;
+
+	s.frameh = "─";
+	s.framev = "│";
+	s.framenw = "┌";
+	s.framene = "┐";
+	s.framesw = "└";
+	s.framese = "┘";
+
+	if(t == nil)
+		return s;
+
+	s.windowcode = t.dialogwindowcode;
+	s.framecode = t.dialogframecode;
+	s.textcode = t.dialogtextcode;
+	s.fieldcode = t.dialogfieldcode;
+	s.fieldfocuscode = t.dialogfieldfocuscode;
+	s.focuscode = t.dialogfocuscode;
+	s.cursorcode = t.dialogcursorcode;
+	s.buttoncode = t.dialogbuttoncode;
+	s.buttonfocuscode = t.dialogbuttonfocuscode;
+	s.disabledcode = t.dialogdisabledcode;
+	s.shadowcode = t.dialogshadowcode;
+
+	s.animticks = t.dialoganimticks;
+
+	s.frameh = t.dialogframeh;
+	s.framev = t.dialogframev;
+	s.framenw = t.dialogframenw;
+	s.framene = t.dialogframene;
+	s.framesw = t.dialogframesw;
+	s.framese = t.dialogframese;
+
+	return s;
+}
+
 applytheme(t: ref IcState->ThemeState)
 {
 	if(t != nil)
@@ -582,6 +635,9 @@ applytheme(t: ref IcState->ThemeState)
 
 	if(gotomod != nil)
 		gotomod->setstyle(gotostyle(theme));
+
+	if(searchdialog != nil)
+		searchdialog->setstyle(searchstyle(theme));
 }
 
 loadwrapsetting(state: ref IcState->AppState): int
