@@ -45,7 +45,7 @@ menu_focus_code=1;38;2;255;255;255;48;2;168;28;78
 # searchdialog_frame_sw=└
 # searchdialog_frame_se=┘
 
-dialog_anim_ticks=0
+dialog_anim_ticks=5
 dialog_window_code=38;2;70;20;50;48;2;245;210;225
 dialog_frame_code=1;38;2;120;35;85;48;2;245;210;225
 dialog_text_code=38;2;75;20;55;48;2;245;210;225
