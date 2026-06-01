@@ -989,6 +989,26 @@ handlemenu(e: ref IcState->EditorState, k: int): int
 	return 1;
 }
 
+handletick(state: ref IcState->AppState, e: ref IcState->EditorState): int
+{
+	r: int;
+
+	if(state == nil || state.ui == nil)
+		return 0;
+
+	if(!searchdialog->active())
+		return 0;
+
+	r = searchdialog->handletick(state.ui, state.toolid, state.width, state.height);
+	if(!r)
+		return 0;
+
+	if(!searchdialog->active() && e != nil && e.mode == IcEditCommon->ModeSearch)
+		e.mode = IcEditCommon->ModeEdit;
+
+	return 1;
+}
+
 handlekey(state: ref IcState->AppState, e: ref IcState->EditorState, k, h: int): int
 {
 	if(e == nil || !e.active)

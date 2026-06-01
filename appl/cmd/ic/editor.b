@@ -98,6 +98,7 @@ IcEditKeys: module
 	init: fn();
 	settheme: fn(theme: ref IcState->ThemeState);
 	handlekey: fn(state: ref IcState->AppState, e: ref IcState->EditorState, k, h: int): int;
+	handletick: fn(state: ref IcState->AppState, e: ref IcState->EditorState): int;
 };
 
 IcSearchDialogMod: module
@@ -475,6 +476,9 @@ handletick(state: ref IcState->AppState): int
 	r = 0;
 
 	if(drawmod->handletick(state.editor))
+		r = 1;
+
+	if(keys != nil && keys->handletick(state, state.editor))
 		r = 1;
 
 	if(searchdialog->active()){
