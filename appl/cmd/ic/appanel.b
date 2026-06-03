@@ -52,6 +52,14 @@ IcPanelInfo: module
 	current: fn(p: ref IcState->PanelState, width: int): string;
 };
 
+IcZipMount: module
+{
+	PATH: con "/dis/ic/zipmount.dis";
+
+	init: fn();
+	mount: fn(zipfile, mountpoint: string): int;
+};
+
 TarFsMod: module
 {
 	PATH: con "/dis/tarfs.dis";
@@ -67,6 +75,7 @@ view: IcViewMod;
 cfgdata: IcConfigData;
 panelinfo: IcPanelInfo;
 tarfs: TarFsMod;
+zipmount: IcZipMount;
 
 DefaultPath: con ".";
 DefaultCommandBarText: con "";
@@ -119,6 +128,8 @@ pathrelative: fn(root, path: string): string;
 removemountdir: fn(path: string): int;
 cleanupmount: fn(p: ref IcState->PanelState): int;
 displaypath: fn(p: ref IcState->PanelState): string;
+mountzip: fn(fullpath, mountdir: string): int;
+archivekind: fn(path: string): string;
 
 spaces: fn(n: int): string;
 repeat: fn(s: string, n: int): string;
@@ -177,12 +188,17 @@ init()
 	if(tarfs == nil)
 		raise "fail:load tarfs";
 
+	zipmount = load IcZipMount IcZipMount->PATH;
+	if(zipmount == nil)
+		raise "fail:load ic/zipmount";
+
 	ui->init();
 	panelui->init();
 	fsmodel->init();
 	view->init();
 	cfgdata->init();
 	panelinfo->init();
+	zipmount->init();
 }
 
 reloadtheme(): int
@@ -322,16 +338,19 @@ emptyitem(): IcPanel->Item
 
 maketitle(p: ref IcState->PanelState): string
 {
-	rel: string;
+	rel, kind: string;
 
 	if(p == nil)
 		return "[]";
 
 	if(p.mountactive && p.mountroot != ""){
 		rel = pathrelative(p.mountroot, p.path);
+		kind = p.mountkind;
+		if(kind == "")
+			kind = "vfs";
 		if(rel == "" || rel == "/")
-			return "[tar:/]";
-		return "[tar:" + rel + "]";
+			return "[" + kind + ":/]";
+		return "[" + kind + ":" + rel + "]";
 	}
 
 	return "[" + p.path + "]";
@@ -558,6 +577,17 @@ hassuffix(s, suffix: string): int
 	return s[len s - len suffix:] == suffix;
 }
 
+archivekind(path: string): string
+{
+	if(hassuffix(path, ".tar"))
+		return "tar";
+
+	if(hassuffix(path, ".zip"))
+		return "zip";
+
+	return "";
+}
+
 mounttag(path: string): string
 {
 	s: string;
@@ -630,16 +660,19 @@ pathrelative(root, path: string): string
 
 displaypath(p: ref IcState->PanelState): string
 {
-	rel: string;
+	rel, kind: string;
 
 	if(p == nil)
 		return "";
 
 	if(p.mountactive && p.mountroot != ""){
 		rel = pathrelative(p.mountroot, p.path);
+		kind = p.mountkind;
+		if(kind == "")
+			kind = "vfs";
 		if(rel == "" || rel == "/")
-			return "tar:/";
-		return "tar:" + rel;
+			return kind + ":/";
+		return kind + ":" + rel;
 	}
 
 	return p.path;
@@ -691,6 +724,14 @@ mounttar(fullpath, mountdir: string): int
 	tarfs->init(nil, args);
 
 	return 0;
+}
+
+mountzip(fullpath, mountdir: string): int
+{
+	if(zipmount == nil || fullpath == "" || mountdir == "")
+		return -1;
+
+	return zipmount->mount(fullpath, mountdir);
 }
 
 parentpath(path: string): string
@@ -989,7 +1030,7 @@ navigate(state: ref IcState->AppState, p: ref IcState->PanelState): int
 
 enterselected(state: ref IcState->AppState, p: ref IcState->PanelState): int
 {
-	name, kind, fullpath, mountdir: string;
+	name, kind, fullpath, mountdir, akind: string;
 	rc: int;
 
 	if(state == nil || p == nil || p.panel == nil)
@@ -1008,14 +1049,20 @@ enterselected(state: ref IcState->AppState, p: ref IcState->PanelState): int
 		return 0;
 
 	fullpath = joinpath(p.path, name);
-	if(!hassuffix(fullpath, ".tar"))
+	akind = archivekind(fullpath);
+	if(akind == "")
 		return 0;
 
 	mountdir = makemountdir(fullpath);
 	if(mountdir == "")
 		return 0;
 
-	rc = mounttar(fullpath, mountdir);
+	rc = -1;
+	if(akind == "tar")
+		rc = mounttar(fullpath, mountdir);
+	else if(akind == "zip")
+		rc = mountzip(fullpath, mountdir);
+
 	if(rc < 0)
 		return 0;
 
@@ -1023,7 +1070,7 @@ enterselected(state: ref IcState->AppState, p: ref IcState->PanelState): int
 	p.path = mountdir;
 	p.lastchildname = "";
 	p.mountactive = 1;
-	p.mountkind = "tar";
+	p.mountkind = akind;
 	p.mountroot = mountdir;
 	p.mountorigin = normalizepath(parentpath(fullpath));
 	p.mountsource = fullpath;

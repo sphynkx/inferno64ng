@@ -51,6 +51,7 @@ TARG=\
 	viewsource.dis\
 	viewstats.dis\
 	viewstatus.dis\
+	zipmount.dis\
 
 MODULES=\
 
@@ -102,6 +103,7 @@ SYSMODULES=\
 	ic/viewsource.m\
 	ic/viewstats.m\
 	ic/viewstatus.m\
+	ic/zipmount.m\
 
 
 DISBIN=$ROOT/dis/ic
