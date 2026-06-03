@@ -306,6 +306,12 @@ IcState: module
 
 		lastchildname: string;
 
+		mountactive: int;
+		mountkind: string;
+		mountroot: string;
+		mountorigin: string;
+		mountsource: string;
+
 		selected: array of SelectedItem;
 
 		panel: ref IcPanel->Panel;

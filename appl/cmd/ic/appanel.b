@@ -1,5 +1,6 @@
 implement IcAppPanel;
 
+include "draw.m";
 include "ic/appanel.m";
 
 IcUiMod: module
@@ -51,6 +52,13 @@ IcPanelInfo: module
 	current: fn(p: ref IcState->PanelState, width: int): string;
 };
 
+TarFsMod: module
+{
+	PATH: con "/dis/tarfs.dis";
+
+	init: fn(ctxt: ref Draw->Context, args: list of string);
+};
+
 sys: Sys;
 ui: IcUiMod;
 panelui: IcPanel;
@@ -58,6 +66,7 @@ fsmodel: IcFsModelMod;
 view: IcViewMod;
 cfgdata: IcConfigData;
 panelinfo: IcPanelInfo;
+tarfs: TarFsMod;
 
 DefaultPath: con ".";
 DefaultCommandBarText: con "";
@@ -100,6 +109,16 @@ selectremembered: fn(state: ref IcState->AppState, p: ref IcState->PanelState);
 buildmodel: fn(p: ref IcState->PanelState, d: ref IcState->PanelDir): ref IcPanel->Model;
 itempath: fn(p: ref IcState->PanelState): string;
 navigate: fn(state: ref IcState->AppState, p: ref IcState->PanelState): int;
+hassuffix: fn(s, suffix: string): int;
+mounttag: fn(path: string): string;
+makemountdir: fn(path: string): string;
+clearpanelmount: fn(p: ref IcState->PanelState);
+mounttar: fn(fullpath, mountdir: string): int;
+enterselected: fn(state: ref IcState->AppState, p: ref IcState->PanelState): int;
+pathrelative: fn(root, path: string): string;
+removemountdir: fn(path: string): int;
+cleanupmount: fn(p: ref IcState->PanelState): int;
+displaypath: fn(p: ref IcState->PanelState): string;
 
 spaces: fn(n: int): string;
 repeat: fn(s: string, n: int): string;
@@ -153,6 +172,10 @@ init()
 	panelinfo = load IcPanelInfo IcPanelInfo->PATH;
 	if(panelinfo == nil)
 		raise "fail:load ic/panelinfo";
+
+	tarfs = load TarFsMod TarFsMod->PATH;
+	if(tarfs == nil)
+		raise "fail:load tarfs";
 
 	ui->init();
 	panelui->init();
@@ -299,8 +322,17 @@ emptyitem(): IcPanel->Item
 
 maketitle(p: ref IcState->PanelState): string
 {
+	rel: string;
+
 	if(p == nil)
 		return "[]";
+
+	if(p.mountactive && p.mountroot != ""){
+		rel = pathrelative(p.mountroot, p.path);
+		if(rel == "" || rel == "/")
+			return "[tar:/]";
+		return "[tar:" + rel + "]";
+	}
 
 	return "[" + p.path + "]";
 }
@@ -518,6 +550,149 @@ joinpath(base, name: string): string
 	return base + "/" + name;
 }
 
+hassuffix(s, suffix: string): int
+{
+	if(len suffix > len s)
+		return 0;
+
+	return s[len s - len suffix:] == suffix;
+}
+
+mounttag(path: string): string
+{
+	s: string;
+
+	s = basename(path);
+	if(s == "")
+		s = "archive";
+
+	return s;
+}
+
+makemountdir(path: string): string
+{
+	i: int;
+	base, tag, dir, suffix: string;
+	fd: ref Sys->FD;
+	ticks: int;
+
+	base = "/tmp/ic";
+	fd = sys->open(base, Sys->OREAD);
+	if(fd == nil)
+		sys->create(base, Sys->OREAD, Sys->DMDIR | 8r777);
+
+	tag = mounttag(path);
+	ticks = sys->millisec();
+
+	for(i = 0; i < 64; i++){
+		suffix = string ticks + "_" + string i;
+		dir = base + "/" + tag + "_" + suffix;
+		fd = sys->open(dir, Sys->OREAD);
+		if(fd != nil)
+			continue;
+
+		fd = sys->create(dir, Sys->OREAD, Sys->DMDIR | 8r777);
+		if(fd != nil)
+			return dir;
+	}
+
+	return "";
+}
+
+clearpanelmount(p: ref IcState->PanelState)
+{
+	if(p == nil)
+		return;
+
+	p.mountactive = 0;
+	p.mountkind = "";
+	p.mountroot = "";
+	p.mountorigin = "";
+	p.mountsource = "";
+}
+
+pathrelative(root, path: string): string
+{
+	root = normalizepath(root);
+	path = normalizepath(path);
+
+	if(root == "" || path == "")
+		return "";
+
+	if(path == root)
+		return "/";
+
+	if(len path > len root && path[0:len root] == root && path[len root] == '/')
+		return path[len root:];
+
+	return path;
+}
+
+displaypath(p: ref IcState->PanelState): string
+{
+	rel: string;
+
+	if(p == nil)
+		return "";
+
+	if(p.mountactive && p.mountroot != ""){
+		rel = pathrelative(p.mountroot, p.path);
+		if(rel == "" || rel == "/")
+			return "tar:/";
+		return "tar:" + rel;
+	}
+
+	return p.path;
+}
+
+removemountdir(path: string): int
+{
+	fd: ref Sys->FD;
+
+	if(path == "")
+		return -1;
+
+	fd = sys->open(path, Sys->OREAD);
+	if(fd == nil)
+		return 0;
+
+	if(sys->remove(path) < 0)
+		return -1;
+
+	return 0;
+}
+
+cleanupmount(p: ref IcState->PanelState): int
+{
+	root: string;
+
+	if(p == nil || !p.mountactive)
+		return 0;
+
+	root = p.mountroot;
+	if(root == "")
+		return 0;
+
+	sys->unmount(nil, root);
+	removemountdir(root);
+	clearpanelmount(p);
+
+	return 0;
+}
+
+mounttar(fullpath, mountdir: string): int
+{
+	args: list of string;
+
+	if(tarfs == nil || fullpath == "" || mountdir == "")
+		return -1;
+
+	args = "tarfs" :: fullpath :: mountdir :: nil;
+	tarfs->init(nil, args);
+
+	return 0;
+}
+
 parentpath(path: string): string
 {
 	i: int;
@@ -712,6 +887,11 @@ newpanel(side: int): ref IcState->PanelState
 	p.path = cwdpath();
 	p.dir = nil;
 	p.lastchildname = "";
+	p.mountactive = 0;
+	p.mountkind = "";
+	p.mountroot = "";
+	p.mountorigin = "";
+	p.mountsource = "";
 	p.selected = array[0] of IcState->SelectedItem;
 	p.panel = nil;
 	p.model = nil;
@@ -742,6 +922,7 @@ itempath(p: ref IcState->PanelState): string
 navigate(state: ref IcState->AppState, p: ref IcState->PanelState): int
 {
 	next, curpath, curbase, kind, name: string;
+	leavemount: int;
 
 	if(state == nil || p == nil || p.panel == nil)
 		return -1;
@@ -757,8 +938,14 @@ navigate(state: ref IcState->AppState, p: ref IcState->PanelState): int
 
 	curpath = normalizepath(p.path);
 	curbase = basename(curpath);
+	leavemount = 0;
 
-	if(kind == "parent")
+	if(kind == "parent" && p.mountactive && curpath == p.mountroot){
+		next = normalizepath(p.mountorigin);
+		if(next == "")
+			next = parentpath(curpath);
+		leavemount = 1;
+	}else if(kind == "parent")
 		next = parentpath(curpath);
 	else
 		next = joinpath(curpath, name);
@@ -770,13 +957,20 @@ navigate(state: ref IcState->AppState, p: ref IcState->PanelState): int
 	if(next == curpath && kind == "parent")
 		return panelui->render(state.ui, p.panel);
 
-	if(kind == "parent")
-		p.lastchildname = curbase;
-	else
+	if(leavemount){
+		p.path = next;
+		p.selected = array[0] of IcState->SelectedItem;
 		p.lastchildname = "";
+		cleanupmount(p);
+	}else{
+		if(kind == "parent")
+			p.lastchildname = curbase;
+		else
+			p.lastchildname = "";
 
-	p.selected = array[0] of IcState->SelectedItem;
-	p.path = next;
+		p.selected = array[0] of IcState->SelectedItem;
+		p.path = next;
+	}
 
 	if(refresh(state, p) < 0)
 		return -1;
@@ -791,6 +985,58 @@ navigate(state: ref IcState->AppState, p: ref IcState->PanelState): int
 	drawdecorations(state, p);
 
 	return 0;
+}
+
+enterselected(state: ref IcState->AppState, p: ref IcState->PanelState): int
+{
+	name, kind, fullpath, mountdir: string;
+	rc: int;
+
+	if(state == nil || p == nil || p.panel == nil)
+		return -1;
+
+	name = panelui->currentname(p.panel);
+	kind = panelui->currentkind(p.panel);
+
+	if(name == "..")
+		kind = "parent";
+
+	if(kind == "dir" || kind == "parent")
+		return navigate(state, p);
+
+	if(kind != "file")
+		return 0;
+
+	fullpath = joinpath(p.path, name);
+	if(!hassuffix(fullpath, ".tar"))
+		return 0;
+
+	mountdir = makemountdir(fullpath);
+	if(mountdir == "")
+		return 0;
+
+	rc = mounttar(fullpath, mountdir);
+	if(rc < 0)
+		return 0;
+
+	p.selected = array[0] of IcState->SelectedItem;
+	p.path = mountdir;
+	p.lastchildname = "";
+	p.mountactive = 1;
+	p.mountkind = "tar";
+	p.mountroot = mountdir;
+	p.mountorigin = normalizepath(parentpath(fullpath));
+	p.mountsource = fullpath;
+
+	if(refresh(state, p) < 0)
+		return -1;
+
+	selectparent(state, p);
+	panelui->setinfo(p.panel, "");
+	panelui->render(state.ui, p.panel);
+	drawdecorations(state, p);
+
+	return 1;
 }
 
 panelinnerw(p: ref IcState->PanelState): int
@@ -882,7 +1128,7 @@ topframetext(p: ref IcState->PanelState): string
 		return fittext("╔", w);
 
 	innerw = w - 2;
-	path = p.path;
+	path = displaypath(p);
 	if(path == "")
 		path = ".";
 
@@ -1205,7 +1451,7 @@ handlekey(state: ref IcState->AppState, p: ref IcState->PanelState, k: int): int
 	m = panelui->handlekey(state.ui, p.panel, k);
 
 	if(m.cmd == "panel.activate")
-		return navigate(state, p);
+		return enterselected(state, p);
 
 	panelui->setinfo(p.panel, "");
 	panelui->render(state.ui, p.panel);

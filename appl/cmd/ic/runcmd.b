@@ -293,7 +293,10 @@ runtemplate(state: ref IcState->AppState, template: string): int
 	if(cmd == "")
 		return -1;
 
-	fullcmd = "cd " + quoted(dir) + " ; " + cmd;
+	if(cmd == template)
+		fullcmd = cmd;
+	else
+		fullcmd = "cd " + quoted(dir) + " ; " + cmd;
 
 	err = sh->system(nil, "esh -c " + quoted(fullcmd));
 	if(err != nil && err != "")
