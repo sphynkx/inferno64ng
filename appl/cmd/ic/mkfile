@@ -3,6 +3,7 @@
 TARG=\
 	app.dis\
 	appanel.dis\
+	archiveutil.dis\
 	bottombar.dis\
 	codepage.dis\
 	commands.dis\
@@ -58,6 +59,7 @@ MODULES=\
 SYSMODULES=\
 	ic/app.m\
 	ic/appanel.m\
+	ic/archiveutil.m\
 	ic/bottombar.m\
 	ic/codepage.m\
 	ic/commands.m\

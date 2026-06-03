@@ -60,11 +60,28 @@ IcZipMount: module
 	mount: fn(zipfile, mountpoint: string): int;
 };
 
+IcArchiveUtil: module
+{
+	PATH: con "/dis/ic/archiveutil.dis";
+
+	init: fn();
+	istargz: fn(path: string): int;
+	stagedtarpath: fn(path: string): string;
+	preparetarpath: fn(path: string): (string, string);
+};
+
 TarFsMod: module
 {
 	PATH: con "/dis/tarfs.dis";
 
 	init: fn(ctxt: ref Draw->Context, args: list of string);
+};
+
+GunzipMod: module
+{
+	PATH: con "/dis/gunzip.dis";
+
+	init: fn(ctxt: ref Draw->Context, argv: list of string);
 };
 
 sys: Sys;
@@ -76,6 +93,8 @@ cfgdata: IcConfigData;
 panelinfo: IcPanelInfo;
 tarfs: TarFsMod;
 zipmount: IcZipMount;
+archiveutil: IcArchiveUtil;
+gunzip: GunzipMod;
 
 DefaultPath: con ".";
 DefaultCommandBarText: con "";
@@ -130,6 +149,8 @@ cleanupmount: fn(p: ref IcState->PanelState): int;
 displaypath: fn(p: ref IcState->PanelState): string;
 mountzip: fn(fullpath, mountdir: string): int;
 archivekind: fn(path: string): string;
+archivecaption: fn(path: string): string;
+selectbyname: fn(state: ref IcState->AppState, p: ref IcState->PanelState, name: string);
 
 spaces: fn(n: int): string;
 repeat: fn(s: string, n: int): string;
@@ -188,9 +209,17 @@ init()
 	if(tarfs == nil)
 		raise "fail:load tarfs";
 
+	gunzip = load GunzipMod GunzipMod->PATH;
+	if(gunzip == nil)
+		raise "fail:load gunzip";
+
 	zipmount = load IcZipMount IcZipMount->PATH;
 	if(zipmount == nil)
 		raise "fail:load ic/zipmount";
+
+	archiveutil = load IcArchiveUtil IcArchiveUtil->PATH;
+	if(archiveutil == nil)
+		raise "fail:load ic/archiveutil";
 
 	ui->init();
 	panelui->init();
@@ -199,6 +228,7 @@ init()
 	cfgdata->init();
 	panelinfo->init();
 	zipmount->init();
+	archiveutil->init();
 }
 
 reloadtheme(): int
@@ -582,10 +612,36 @@ archivekind(path: string): string
 	if(hassuffix(path, ".tar"))
 		return "tar";
 
+	if(archiveutil != nil && archiveutil->istargz(path))
+		return "tar";
+
 	if(hassuffix(path, ".zip"))
 		return "zip";
 
 	return "";
+}
+
+archivecaption(path: string): string
+{
+	name: string;
+
+	name = basename(path);
+	if(name == "")
+		return "vfs";
+
+	if(hassuffix(name, ".tar.gz"))
+		return "tar.gz";
+
+	if(hassuffix(name, ".tgz"))
+		return "tgz";
+
+	if(hassuffix(name, ".tar"))
+		return "tar";
+
+	if(hassuffix(name, ".zip"))
+		return "zip";
+
+	return name;
 }
 
 mounttag(path: string): string
@@ -639,6 +695,8 @@ clearpanelmount(p: ref IcState->PanelState)
 	p.mountroot = "";
 	p.mountorigin = "";
 	p.mountsource = "";
+	p.mountstaged = "";
+	p.mountreturnname = "";
 }
 
 pathrelative(root, path: string): string
@@ -697,17 +755,23 @@ removemountdir(path: string): int
 
 cleanupmount(p: ref IcState->PanelState): int
 {
-	root: string;
+	root, staged: string;
 
 	if(p == nil || !p.mountactive)
 		return 0;
 
 	root = p.mountroot;
-	if(root == "")
-		return 0;
+	staged = p.mountstaged;
 
-	sys->unmount(nil, root);
-	removemountdir(root);
+	if(root != "")
+		sys->unmount(nil, root);
+
+	if(root != "")
+		removemountdir(root);
+
+	if(staged != "")
+		sys->remove(staged);
+
 	clearpanelmount(p);
 
 	return 0;
@@ -725,6 +789,7 @@ mounttar(fullpath, mountdir: string): int
 
 	return 0;
 }
+
 
 mountzip(fullpath, mountdir: string): int
 {
@@ -917,6 +982,24 @@ selectremembered(state: ref IcState->AppState, p: ref IcState->PanelState)
 	}
 }
 
+selectbyname(state: ref IcState->AppState, p: ref IcState->PanelState, name: string)
+{
+	i: int;
+
+	if(state == nil || state.ui == nil || p == nil || p.panel == nil || p.model == nil)
+		return;
+
+	if(name == "")
+		return;
+
+	for(i = 0; i < len p.model.items; i++){
+		if(trimdirsuffix(p.model.items[i].name) == name){
+			panelui->selectid(state.ui, p.panel, p.model.items[i].id);
+			return;
+		}
+	}
+}
+
 newpanel(side: int): ref IcState->PanelState
 {
 	p: ref IcState->PanelState;
@@ -933,6 +1016,8 @@ newpanel(side: int): ref IcState->PanelState
 	p.mountroot = "";
 	p.mountorigin = "";
 	p.mountsource = "";
+	p.mountstaged = "";
+	p.mountreturnname = "";
 	p.selected = array[0] of IcState->SelectedItem;
 	p.panel = nil;
 	p.model = nil;
@@ -962,7 +1047,7 @@ itempath(p: ref IcState->PanelState): string
 
 navigate(state: ref IcState->AppState, p: ref IcState->PanelState): int
 {
-	next, curpath, curbase, kind, name: string;
+	next, curpath, curbase, kind, name, returnname: string;
 	leavemount: int;
 
 	if(state == nil || p == nil || p.panel == nil)
@@ -980,11 +1065,13 @@ navigate(state: ref IcState->AppState, p: ref IcState->PanelState): int
 	curpath = normalizepath(p.path);
 	curbase = basename(curpath);
 	leavemount = 0;
+	returnname = "";
 
 	if(kind == "parent" && p.mountactive && curpath == p.mountroot){
 		next = normalizepath(p.mountorigin);
 		if(next == "")
 			next = parentpath(curpath);
+		returnname = p.mountreturnname;
 		leavemount = 1;
 	}else if(kind == "parent")
 		next = parentpath(curpath);
@@ -1016,7 +1103,9 @@ navigate(state: ref IcState->AppState, p: ref IcState->PanelState): int
 	if(refresh(state, p) < 0)
 		return -1;
 
-	if(kind == "parent")
+	if(leavemount && returnname != "")
+		selectbyname(state, p, returnname);
+	else if(kind == "parent")
 		selectremembered(state, p);
 	else
 		selectparent(state, p);
@@ -1030,7 +1119,7 @@ navigate(state: ref IcState->AppState, p: ref IcState->PanelState): int
 
 enterselected(state: ref IcState->AppState, p: ref IcState->PanelState): int
 {
-	name, kind, fullpath, mountdir, akind: string;
+	name, kind, fullpath, mountdir, akind, tarpath, staged: string;
 	rc: int;
 
 	if(state == nil || p == nil || p.panel == nil)
@@ -1058,22 +1147,31 @@ enterselected(state: ref IcState->AppState, p: ref IcState->PanelState): int
 		return 0;
 
 	rc = -1;
-	if(akind == "tar")
-		rc = mounttar(fullpath, mountdir);
-	else if(akind == "zip")
+	staged = "";
+	if(akind == "tar"){
+		(tarpath, staged) = archiveutil->preparetarpath(fullpath);
+		if(tarpath == "")
+			return 0;
+		rc = mounttar(tarpath, mountdir);
+	}else if(akind == "zip")
 		rc = mountzip(fullpath, mountdir);
 
-	if(rc < 0)
+	if(rc < 0){
+		if(staged != "")
+			sys->remove(staged);
 		return 0;
+	}
 
 	p.selected = array[0] of IcState->SelectedItem;
 	p.path = mountdir;
 	p.lastchildname = "";
 	p.mountactive = 1;
-	p.mountkind = akind;
+	p.mountkind = archivecaption(fullpath);
 	p.mountroot = mountdir;
 	p.mountorigin = normalizepath(parentpath(fullpath));
 	p.mountsource = fullpath;
+	p.mountstaged = staged;
+	p.mountreturnname = trimdirsuffix(name);
 
 	if(refresh(state, p) < 0)
 		return -1;

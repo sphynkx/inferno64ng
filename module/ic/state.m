@@ -311,6 +311,8 @@ IcState: module
 		mountroot: string;
 		mountorigin: string;
 		mountsource: string;
+		mountstaged: string;
+		mountreturnname: string;
 
 		selected: array of SelectedItem;
 
