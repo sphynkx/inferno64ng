@@ -142,6 +142,9 @@ hassuffix: fn(s, suffix: string): int;
 mounttag: fn(path: string): string;
 makemountdir: fn(path: string): string;
 clearpanelmount: fn(p: ref IcState->PanelState);
+taranalizeperms: fn(tarpath: string): int;
+tarascii: fn(b: array of byte): string;
+taroctal: fn(b: array of byte): big;
 mounttar: fn(fullpath, mountdir: string): int;
 enterselected: fn(state: ref IcState->AppState, p: ref IcState->PanelState): int;
 pathrelative: fn(root, path: string): string;
@@ -790,6 +793,117 @@ cleanupmount(p: ref IcState->PanelState): int
 	return 0;
 }
 
+taranalizeperms(tarpath: string): int
+{
+	fd: ref Sys->FD;
+	hdr: array of byte;
+	off, size: big;
+	mode: int;
+	typeflag: int;
+	name: string;
+
+	if(tarpath == "")
+		return 0;
+
+	fd = sys->open(tarpath, Sys->OREAD);
+	if(fd == nil)
+		return 0;
+
+	hdr = array[512] of byte;
+	off = big 0;
+
+	for(;;){
+		sys->seek(fd, off, 0);
+		if(sys->read(fd, hdr, len hdr) != len hdr)
+			break;
+
+		# End-of-archive: header block begins with NUL.
+		if(hdr[0] == byte 0)
+			break;
+
+		name = tarascii(hdr[0:100]);
+		mode = int taroctal(hdr[100:108]);
+		size = taroctal(hdr[124:136]);
+		typeflag = int hdr[156];
+
+		# Determine directory in the same way tarfs does:
+		# - name ending with '/' is treated as directory
+		# - otherwise typeflag '5' is directory
+		# - regular file is typeflag 0 (NUL) or '0'
+		isdir := 0;
+		if(len name > 0 && name[len name - 1] == '/')
+			isdir = 1;
+		else if(typeflag == '5')
+			isdir = 1;
+
+		isfile := 0;
+		if(!isdir && (typeflag == 0 || typeflag == '0'))
+			isfile = 1;
+
+		if(isdir){
+			# directory: require o+x (0001)
+			if((mode & 8r001) == 0){
+				fd = nil;
+				return 1;
+			}
+		}else if(isfile){
+			# regular file: require o+r (0004)
+			if((mode & 8r004) == 0){
+				fd = nil;
+				return 1;
+			}
+		}
+
+		# Advance to next header: 512(header) + file data padded to 512.
+		off += big 512;
+
+		if(size > big 0){
+			pad := big 512 - (size % big 512);
+			if(pad == big 512)
+				pad = big 0;
+			off += size + pad;
+		}
+	}
+
+	fd = nil;
+	return 0;
+}
+
+tarascii(b: array of byte): string
+{
+	i: int;
+
+	for(i = 0; i < len b; i++){
+		if(b[i] == byte 0)
+			break;
+	}
+
+	return string b[0:i];
+}
+
+taroctal(b: array of byte): big
+{
+	v := big 0;
+	i: int;
+
+	# Skip leading NULs and spaces.
+	for(i = 0; i < len b; i++){
+		if(b[i] != byte 0 && b[i] != byte ' ')
+			break;
+	}
+
+	for(; i < len b; i++){
+		c := int b[i];
+		if(c == 0 || c == ' ')
+			break;
+		if(!(c >= '0' && c <= '7'))
+			break;
+		v = (v << 3) | big (c - '0');
+	}
+
+	return v;
+}
+
 mounttar(fullpath, mountdir: string): int
 {
 	args: list of string;
@@ -797,7 +911,16 @@ mounttar(fullpath, mountdir: string): int
 	if(tarfs == nil || fullpath == "" || mountdir == "")
 		return -1;
 
-	args = "tarfs" :: fullpath :: mountdir :: nil;
+	# Auto by default:
+	# - If the tar contains entries that are not traversable/readable for "others"
+	#   (regular file without o+r, directory without o+x), mount with -p to discard
+	#   permissions so the archive is always browseable/readable in ic VFS.
+	if(taranalizeperms(fullpath)){
+		args = "tarfs" :: "-p" :: fullpath :: mountdir :: nil;
+	}else{
+		args = "tarfs" :: fullpath :: mountdir :: nil;
+	}
+
 	tarfs->init(nil, args);
 
 	return 0;
