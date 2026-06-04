@@ -45,17 +45,21 @@ init(nil: ref Draw->Context, argv: list of string)
 
 	bunz->init();
 
+	tostdout = 0;
+	keep = 0;
+
 	if(argv != nil)
 		argv = tl argv;
 
-	# parse simple options
 	while(argv != nil){
 		a := hd argv;
 		if(len a < 2 || a[0] != '-' || a == "--")
 			break;
 		case a[1] {
-		'c' => tostdout = 1;
-		'k' => keep = 1;
+		'c' =>
+			tostdout = 1;
+		'k' =>
+			keep = 1;
 		* =>
 			fprint(stderr, "usage: %s [-ck] [file ...]\n", argv0);
 			raise "fail:usage";
@@ -64,32 +68,32 @@ init(nil: ref Draw->Context, argv: list of string)
 	}
 
 	ok := 1;
-	if(len argv == 0 || tostdout){
-		bin: ref Iobuf;
+	if(len argv == 0){
+		bin := bufio->fopen(sys->fildes(0), Bufio->OREAD);
 		bout := bufio->fopen(sys->fildes(1), Bufio->OWRITE);
-		if(len argv == 0){
-			bin = bufio->fopen(sys->fildes(0), Bufio->OREAD);
-			ok = bunzip2(bin, bout, "stdin", "stdout");
-			bin.close();
-		} else {
-			for(; argv != nil; argv = tl argv){
-				f := hd argv;
-				bin = bufio->open(f, Bufio->OREAD);
-				if(bin == nil){
-					fprint(stderr, "%s: can't open %s: %r\n", argv0, f);
-					ok = 0;
-					continue;
-				}
-				if(!bunzip2(bin, bout, f, "stdout"))
-					ok = 0;
-				bin.close();
+		ok = bunzip2(bin, bout, "stdin", "stdout");
+		bout.close();
+		bin.close();
+	} else if(tostdout){
+		bout := bufio->fopen(sys->fildes(1), Bufio->OWRITE);
+		for(; argv != nil; argv = tl argv){
+			f := hd argv;
+			bin := bufio->open(f, Bufio->OREAD);
+			if(bin == nil){
+				fprint(stderr, "%s: can't open %s: %r\n", argv0, f);
+				ok = 0;
+				continue;
 			}
+			if(!bunzip2(bin, bout, f, "stdout"))
+				ok = 0;
+			bin.close();
 		}
 		bout.close();
 	} else {
 		for(; argv != nil; argv = tl argv)
 			ok &= bunzip2f(hd argv);
 	}
+
 	if(ok == 0)
 		raise "fail:errors";
 }
@@ -102,8 +106,6 @@ bunzip2f(file: string): int
 		return 0;
 	}
 
-	# Strip the recognised suffix; keep the directory prefix intact so that
-	# `bunzip2 /tmp/foo.bz2` writes to /tmp/foo rather than ./foo.
 	n := len file;
 	ofile: string;
 	if(n >= 4 && file[n-4:] == ".bz2")
@@ -117,6 +119,7 @@ bunzip2f(file: string): int
 		bin.close();
 		return 0;
 	}
+
 	bout := bufio->create(ofile, Bufio->OWRITE, 8r666);
 	if(bout == nil){
 		fprint(stderr, "%s: can't open %s: %r\n", argv0, ofile);
@@ -127,6 +130,7 @@ bunzip2f(file: string): int
 	ok := bunzip2(bin, bout, file, ofile);
 	bin.close();
 	bout.close();
+
 	if(ok && !keep) {
 		if (sys->remove(file) == -1)
 			sys->fprint(stderr, "%s: cannot remove %s: %r\n", argv0, file);
@@ -148,15 +152,15 @@ bunzip2(bin, bout: ref Iobuf, fin, fout: string): int
 				return 0;
 			}
 		Result =>
-			if (len m.buf > 0) {
-				n := bout.write(m.buf, len m.buf);
-				if (n != len m.buf) {
+			n := len m.buf;
+			if (n > 0) {
+				if (bout.write(m.buf, n) != n) {
 					m.reply <-= -1;
 					sys->fprint(stderr, "%s: %s: write error: %r\n", argv0, fout);
 					return 0;
 				}
-				m.reply <-= 0;
 			}
+			m.reply <-= 0;
 		Finished =>
 			if (bout.flush() != 0) {
 				sys->fprint(stderr, "%s: %s: flush error: %r\n", argv0, fout);

@@ -12,9 +12,18 @@ GunzipMod: module
 	init: fn(ctxt: ref Draw->Context, argv: list of string);
 };
 
+Bunzip2Mod: module
+{
+	PATH: con "/dis/bunzip2.dis";
+
+	init: fn(ctxt: ref Draw->Context, argv: list of string);
+};
+
 gunzip: GunzipMod;
+bunzip2: Bunzip2Mod;
 
 dogunzip: fn(src, dst: string): int;
+dobunzip2: fn(src, dst: string): int;
 tmptarpath: fn(path: string): string;
 mounttag: fn(path: string): string;
 
@@ -27,6 +36,10 @@ init()
 	gunzip = load GunzipMod GunzipMod->PATH;
 	if(gunzip == nil)
 		raise "fail:load gunzip";
+
+	bunzip2 = load Bunzip2Mod Bunzip2Mod->PATH;
+	if(bunzip2 == nil)
+		raise "fail:load bunzip2";
 }
 
 istargz(path: string): int
@@ -43,6 +56,23 @@ istargz(path: string): int
 	return 0;
 }
 
+istarbz2(path: string): int
+{
+	if(path == "")
+		return 0;
+
+	if(len path >= len ".tar.bz2" && path[len path - len ".tar.bz2":] == ".tar.bz2")
+		return 1;
+
+	if(len path >= len ".tbz" && path[len path - len ".tbz":] == ".tbz")
+		return 1;
+
+	if(len path >= len ".tbz2" && path[len path - len ".tbz2":] == ".tbz2")
+		return 1;
+
+	return 0;
+}
+
 stagedtarpath(path: string): string
 {
 	if(path == "")
@@ -54,6 +84,15 @@ stagedtarpath(path: string): string
 	if(len path >= len ".tgz" && path[len path - len ".tgz":] == ".tgz")
 		return tmptarpath(path[0:len path - len ".tgz"] + ".tar");
 
+	if(len path >= len ".tar.bz2" && path[len path - len ".tar.bz2":] == ".tar.bz2")
+		return tmptarpath(path[0:len path - len ".bz2"]);
+
+	if(len path >= len ".tbz" && path[len path - len ".tbz":] == ".tbz")
+		return tmptarpath(path[0:len path - len ".tbz"] + ".tar");
+
+	if(len path >= len ".tbz2" && path[len path - len ".tbz2":] == ".tbz2")
+		return tmptarpath(path[0:len path - len ".tbz2"] + ".tar");
+
 	return "";
 }
 
@@ -61,19 +100,30 @@ preparetarpath(path: string): (string, string)
 {
 	staged: string;
 
-	if(!istargz(path))
+	if(!istargz(path) && !istarbz2(path))
 		return (path, "");
 
 	staged = stagedtarpath(path);
 	if(staged == "")
 		return ("", "");
 
-	if(dogunzip(path, staged) < 0){
-		sys->remove(staged);
-		return ("", "");
+	if(istargz(path)){
+		if(dogunzip(path, staged) < 0){
+			sys->remove(staged);
+			return ("", "");
+		}
+		return (staged, staged);
 	}
 
-	return (staged, staged);
+	if(istarbz2(path)){
+		if(dobunzip2(path, staged) < 0){
+			sys->remove(staged);
+			return ("", "");
+		}
+		return (staged, staged);
+	}
+
+	return ("", "");
 }
 
 dogunzip(src, dst: string): int
@@ -100,6 +150,37 @@ dogunzip(src, dst: string): int
 
 	argv = "gunzip" :: nil;
 	gunzip->init(nil, argv);
+
+	infd = nil;
+	outfd = nil;
+
+	return 0;
+}
+
+dobunzip2(src, dst: string): int
+{
+	infd, outfd: ref Sys->FD;
+	argv: list of string;
+
+	if(src == "" || dst == "")
+		return -1;
+
+	infd = sys->open(src, Sys->OREAD);
+	if(infd == nil)
+		return -1;
+
+	outfd = sys->create(dst, Sys->OWRITE, 8r666);
+	if(outfd == nil){
+		infd = nil;
+		return -1;
+	}
+
+	sys->pctl(Sys->FORKFD, nil);
+	sys->dup(infd.fd, 0);
+	sys->dup(outfd.fd, 1);
+
+	argv = "bunzip2" :: nil;
+	bunzip2->init(nil, argv);
 
 	infd = nil;
 	outfd = nil;

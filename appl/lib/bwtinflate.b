@@ -483,44 +483,46 @@ rle2_inverse(syms: array of int, alphaCount: int): array of int
 {
 	out := array[len syms * 4 + 16] of int;
 	op := 0;
-	pendBits := 0;
-	pendVal := 0;
+	runPos := 0;
+	runVal := 0;
+
 	for(i := 0; i < len syms; i++){
 		s := syms[i];
-		if(s == RUNA){
-			pendVal += 1 << pendBits;
-			pendBits++;
-		} else if(s == RUNB){
-			pendVal += 2 << pendBits;
-			pendBits++;
-		} else {
-			# flush zero-run
-			if(pendBits > 0){
-				cnt := pendVal;
-				while(cnt > 0){
-					if(op >= len out) out = growints(out, op + 64);
-					out[op++] = 0;
-					cnt--;
-				}
-				pendBits = 0;
-				pendVal = 0;
-			}
-			# EOB caller handles termination, but be defensive.
-			if(s >= alphaCount + 1){
-				break;
-			}
-			if(op >= len out) out = growints(out, op + 64);
-			out[op++] = s - 1;
+
+		if(s == RUNA || s == RUNB){
+			runVal += (s + 1) << runPos;
+			runPos++;
+			continue;
 		}
+
+		if(runPos > 0){
+			while(runVal > 0){
+				if(op >= len out)
+					out = growints(out, op + 64);
+				out[op++] = 0;
+				runVal--;
+			}
+			runPos = 0;
+			runVal = 0;
+		}
+
+		if(s >= alphaCount + 1)
+			break;
+
+		if(op >= len out)
+			out = growints(out, op + 64);
+		out[op++] = s - 1;
 	}
-	if(pendBits > 0){
-		cnt := pendVal;
-		while(cnt > 0){
-			if(op >= len out) out = growints(out, op + 64);
+
+	if(runPos > 0){
+		while(runVal > 0){
+			if(op >= len out)
+				out = growints(out, op + 64);
 			out[op++] = 0;
-			cnt--;
+			runVal--;
 		}
 	}
+
 	return out[0:op];
 }
 

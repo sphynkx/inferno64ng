@@ -66,6 +66,7 @@ IcArchiveUtil: module
 
 	init: fn();
 	istargz: fn(path: string): int;
+	istarbz2: fn(path: string): int;
 	stagedtarpath: fn(path: string): string;
 	preparetarpath: fn(path: string): (string, string);
 };
@@ -615,6 +616,9 @@ archivekind(path: string): string
 	if(archiveutil != nil && archiveutil->istargz(path))
 		return "tar";
 
+	if(archiveutil != nil && archiveutil->istarbz2(path))
+		return "tar";
+
 	if(hassuffix(path, ".zip"))
 		return "zip";
 
@@ -634,6 +638,15 @@ archivecaption(path: string): string
 
 	if(hassuffix(name, ".tgz"))
 		return "tgz";
+
+	if(hassuffix(name, ".tar.bz2"))
+		return "tar.bz2";
+
+	if(hassuffix(name, ".tbz"))
+		return "tbz";
+
+	if(hassuffix(name, ".tbz2"))
+		return "tbz2";
 
 	if(hassuffix(name, ".tar"))
 		return "tar";

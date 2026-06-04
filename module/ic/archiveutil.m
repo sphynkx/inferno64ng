@@ -4,6 +4,7 @@ IcArchiveUtil: module
 
 	init: fn();
 	istargz: fn(path: string): int;
+	istarbz2: fn(path: string): int;
 	stagedtarpath: fn(path: string): string;
 	preparetarpath: fn(path: string): (string, string);
 };
