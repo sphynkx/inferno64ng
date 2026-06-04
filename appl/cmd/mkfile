@@ -40,6 +40,8 @@ TARG=\
 	bind.dis\
 	bit2gif.dis\
 	bytes.dis\
+#	bzip2.dis\
+	bunzip2.dis\
 	cal.dis\
 	calc.dis\
 	cat.dis\

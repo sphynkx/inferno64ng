@@ -1,0 +1,111 @@
+.TH BZIP2 1
+.SH NAME
+bzip2, bunzip2 \- block-sorting compression and decompression utilities
+.SH SYNOPSIS
+.B bzip2
+[
+.B \-cdkv
+] [
+.BI \- level
+] [
+.IR file ...
+]
+.br
+.B bunzip2
+[
+.B \-ck
+] [
+.IR file ...
+]
+.SH DESCRIPTION
+.B Bzip2
+and
+.B bunzip2
+perform data compression and decompression
+compatible with the Unix
+.I bzip2
+file format,
+which combines a Burrows-Wheeler block-sorting transform
+with a move-to-front coder, two run-length encoding passes,
+and an adaptive Huffman coder.
+If no arguments are given
+.B bzip2
+compresses each
+.I file
+replacing it by a file of the same
+name with the
+.B .bz2
+suffix appended.
+If no files are given, standard input
+and standard output are used.
+.I Level
+is a single decimal digit between 1 and 9;
+it selects a block size of
+.IR level " * 100000"
+bytes.
+Higher numbers normally give better compression at the cost of
+more memory and time.
+The default
+.I level
+is 9.
+The
+.B \-v
+option causes
+.B bzip2
+to report the compression ratio of each file that
+it compresses.
+The
+.B \-c
+option writes the compressed data to standard output and
+leaves the input file unchanged.
+The
+.B \-k
+option keeps (does not delete) the input file.
+The
+.B \-d
+option requests decompression and is equivalent to running
+.BR bunzip2 .
+.PP
+.B Bunzip2
+performs the opposite operation to
+.BR bzip2 ;
+each
+.I file
+(which must have a
+.BR .bz2 ,
+.BR .tbz
+or
+.B .tbz2
+suffix) is uncompressed, and replaced
+by a file of the same name with the
+.B .bz2
+suffix removed (or, for
+.B .tbz
+and
+.BR .tbz2 ,
+replaced with
+.BR .tar ).
+If no files are given,
+standard input and standard output are used.
+The
+.B \-c
+option writes the decompressed data to standard output and
+leaves the input file unchanged.
+The
+.B \-k
+option keeps (does not delete) the input
+.B .bz2
+file.
+.SH SOURCE
+.B /appl/cmd/bzip2.b
+.br
+.B /appl/cmd/bunzip2.b
+.SH SEE ALSO
+.IR gzip (1),
+.IR filter (2),
+.IR filter-deflate (2)
+.SH BUGS
+The current implementation supplies only the decompressor as a
+working tool; a compressor producing
+.B .bz2
+files conforming to the standard format is in preparation.
