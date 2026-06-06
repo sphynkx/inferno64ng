@@ -105,7 +105,14 @@ file.
 .IR filter (2),
 .IR filter-deflate (2)
 .SH BUGS
-The current implementation supplies only the decompressor as a
-working tool; a compressor producing
-.B .bz2
-files conforming to the standard format is in preparation.
+This compressor emits a single Huffman table per block (the spec
+allows 2 to 6), which gives correct, well-formed output but worse
+compression on heterogeneous inputs than GNU
+.IR bzip2 .
+.br
+The BWT sort is a 3-way multikey quicksort with a bucket pre-pass;
+it is correct but slower than libbzip2's own sorter. For very
+large block sizes
+.RB ( "-8" ", " "-9" )
+on highly repetitive input the time grows accordingly; use a
+smaller block size if needed.

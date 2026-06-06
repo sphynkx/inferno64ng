@@ -157,7 +157,7 @@ decompressor(rq: chan of ref Rq)
 		error(rq, "bad block-size digit");
 		return;
 	}
-	# blockSize := (int hdr[3] - int byte '0') * 100000;	# informational only
+	blockSize := (int hdr[3] - int byte '0') * 100000;
 
 	bits := br_new(r);
 	streamCrc := 0;
@@ -179,7 +179,7 @@ decompressor(rq: chan of ref Rq)
 		}
 		if(hi == 16r314159 && lo == 16r265359){
 			# block follows
-			ok := decompress_block(rq, bits);
+			ok := decompress_block(rq, bits, blockSize);
 			if(!ok) return;
 			continue;
 		}
@@ -197,7 +197,7 @@ decompressor(rq: chan of ref Rq)
 
 # ---------------- One block ----------------
 
-decompress_block(rq: chan of ref Rq, bits: ref BitR): int
+decompress_block(rq: chan of ref Rq, bits: ref BitR, blockSize: int): int
 {
 	# Per-block CRC. We do not verify, but consume the bits.
 	br_bits(bits, 32);
@@ -326,12 +326,21 @@ decompress_block(rq: chan of ref Rq, bits: ref BitR): int
 		perms[g] = per;
 	}
 
-	# --- Decode symbols, switching trees every 50 syms ---
-	# Maximum number of symbols in inner stream is roughly block * 2 plus EOB.
-	# We grow as we go.
-	syms := array[1024] of int;
-	for(i = 0; i < 1024; i++) syms[i] = 0;
-	op := 0;
+	# --- Decode Huffman symbols and inverse-RLE-2 in a single pass ---
+	# We never materialise the full Huffman symbol stream in memory; each
+	# symbol is fed straight into the RLE-2 state machine, producing the
+	# MTF index stream directly. The MTF stream cannot exceed `blockSize`
+	# bytes by the bzip2 spec; we pre-size to that ceiling so growth is
+	# rare. Storing the result as bytes (MTF indices fit in 0..alphaCount-1)
+	# rather than ints saves a factor of 8 on 64-bit Inferno, where each
+	# int element of an array consumes 8 bytes.
+	mtfCap := blockSize;
+	if(mtfCap < 16) mtfCap = 16;
+	mtf := array[mtfCap] of byte;
+	mtfOp := 0;
+	runPos := 0;
+	runVal := 0;
+
 	groupIdx := 0;
 	groupLeft := 0;
 	curG := 0;
@@ -347,24 +356,63 @@ decompress_block(rq: chan of ref Rq, bits: ref BitR): int
 		}
 		sym := decode_one(bits, limits[curG], bases[curG], perms[curG]);
 		if(sym < 0){ error(rq, "huff decode failed"); return 0; }
-		if(op >= len syms) syms = growints(syms, op + 256);
-		syms[op++] = sym;
 		groupLeft--;
 		if(sym == EOB) break;
-	}
-	symStream := syms[0:op];
 
-	# --- Inverse RLE-2 (RUNA/RUNB bijective base-2 zero-runs) -> MTF ---
-	mtf := rle2_inverse(symStream, alphaCount);
+		if(sym == RUNA || sym == RUNB){
+			runVal += (sym + 1) << runPos;
+			runPos++;
+			continue;
+		}
+		# Non-RUN symbol: flush pending zero-run first.
+		if(runPos > 0){
+			while(runVal > 0){
+				if(mtfOp >= len mtf)
+					mtf = growbytes(mtf, mtfOp + 64);
+				mtf[mtfOp++] = byte 0;
+				runVal--;
+			}
+			runPos = 0;
+		}
+		if(sym >= alphaCount + 1){
+			# Shouldn't happen on well-formed input.
+			break;
+		}
+		if(mtfOp >= len mtf)
+			mtf = growbytes(mtf, mtfOp + 64);
+		mtf[mtfOp++] = byte (sym - 1);
+	}
+	# Flush trailing zero-run, if any.
+	if(runPos > 0){
+		while(runVal > 0){
+			if(mtfOp >= len mtf)
+				mtf = growbytes(mtf, mtfOp + 64);
+			mtf[mtfOp++] = byte 0;
+			runVal--;
+		}
+	}
+	# Trim the MTF buffer to its actual length so subsequent stages don't
+	# keep the pre-sized backing array alive.
+	mtfStream: array of byte;
+	if(mtfOp == len mtf)
+		mtfStream = mtf;
+	else {
+		mtfStream = array[mtfOp] of byte;
+		mtfStream[0:] = mtf[0:mtfOp];
+	}
+	mtf = nil;
 
 	# --- Inverse MTF -> BWT last-column bytes ---
-	L := mtf_inverse(mtf, alphabet);
+	L := mtf_inverse(mtfStream, alphabet);
+	mtfStream = nil;
 
 	# --- Inverse BWT -> RLE-1 stream ---
 	rle1 := bwt_inverse(L, origPtr);
+	L = nil;
 
 	# --- Inverse RLE-1 -> original bytes ---
 	out := rle1_inverse(rle1);
+	rle1 = nil;
 
 	# Send to consumer.
 	if(len out > 0)
@@ -473,70 +521,17 @@ decode_one(bits: ref BitR, limits: array of int, bases: array of int, perm: arra
 	return -1;
 }
 
-# ---------------- Inverse RLE-2 ----------------
-# RUNA/RUNB symbols encode a zero-run length in bijective base 2:
-#   value = sum over emitted digits d_i of d_i * 2^i,
-#   with d_i in {1, 2} (RUNA=1, RUNB=2).
-# Output indices are MTF indices (0..alphaCount-1). Non-zero MTF indices
-# arrive as `sym - 1` for sym in 2..nSyms-2.
-rle2_inverse(syms: array of int, alphaCount: int): array of int
-{
-	out := array[len syms * 4 + 16] of int;
-	op := 0;
-	runPos := 0;
-	runVal := 0;
-
-	for(i := 0; i < len syms; i++){
-		s := syms[i];
-
-		if(s == RUNA || s == RUNB){
-			runVal += (s + 1) << runPos;
-			runPos++;
-			continue;
-		}
-
-		if(runPos > 0){
-			while(runVal > 0){
-				if(op >= len out)
-					out = growints(out, op + 64);
-				out[op++] = 0;
-				runVal--;
-			}
-			runPos = 0;
-			runVal = 0;
-		}
-
-		if(s >= alphaCount + 1)
-			break;
-
-		if(op >= len out)
-			out = growints(out, op + 64);
-		out[op++] = s - 1;
-	}
-
-	if(runPos > 0){
-		while(runVal > 0){
-			if(op >= len out)
-				out = growints(out, op + 64);
-			out[op++] = 0;
-			runVal--;
-		}
-	}
-
-	return out[0:op];
-}
-
 # ---------------- Inverse MTF ----------------
 # Given a stream of MTF indices and the initial alphabet (sorted byte
 # values), produce the byte stream.
-mtf_inverse(mtf: array of int, alpha: array of byte): array of byte
+mtf_inverse(mtf: array of byte, alpha: array of byte): array of byte
 {
 	count := len alpha;
 	stack := array[count] of byte;
 	stack[0:] = alpha;
 	out := array[len mtf] of byte;
 	for(i := 0; i < len mtf; i++){
-		idx := mtf[i];
+		idx := int mtf[i];
 		if(idx < 0 || idx >= count){
 			out[i] = byte 0;
 			continue;
@@ -587,7 +582,10 @@ bwt_inverse(L: array of byte, primary: int): array of byte
 rle1_inverse(src: array of byte): array of byte
 {
 	if(len src == 0) return array[0] of byte;
-	out := array[len src * 4 + 16] of byte;
+	# Output may be larger than `src` (each 5-byte rle marker expands to
+	# 4..259 bytes), but the worst case is rare. Start at `len src` and
+	# let growbytes double as needed; amortised cost stays linear.
+	out := array[len src + 16] of byte;
 	op := 0;
 	i := 0;
 	while(i < len src){
@@ -614,7 +612,11 @@ rle1_inverse(src: array of byte): array of byte
 			i++;
 		}
 	}
-	return out[0:op];
+	if(op == len out)
+		return out;
+	trimmed := array[op] of byte;
+	trimmed[0:] = out[0:op];
+	return trimmed;
 }
 
 # ---------------- Reader over the Filter Fill channel ----------------

@@ -24,6 +24,7 @@ TARG=\
 	auth9.dis\
 	bloomfilter.dis\
 	bufio.dis\
+	bwtdeflate.dis\
 	bwtinflate.dis\
 	cfg.dis\
 	cfgfile.dis\
