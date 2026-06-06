@@ -55,6 +55,7 @@ TARG=\
 	cook.dis\
 	cprof.dis\
 	cp.dis\
+	cpiofs.dis\
 	cpu.dis\
 	crypt.dis\
 	date.dis\

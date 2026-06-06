@@ -1,0 +1,72 @@
+.TH CPIOFS 4
+.SH NAME
+cpiofs \- mount cpio archive
+.SH SYNOPSIS
+.B cpiofs
+[
+.B -ab
+] [
+.B -p
+]
+.I cpiofile
+.I mountpt
+.SH DESCRIPTION
+.I Cpiofs
+makes the contents of the directories and files archived in the given
+.I cpio
+archive
+.I cpiofile
+visible in the name space under
+.IR mountpt .
+They can then be accessed in an obvious way by other commands
+such as
+.IR ls (1)
+and
+.IR cp (1).
+Only read access is supported.
+.PP
+Three portable
+.I cpio
+formats are recognised, distinguished by their leading six-character
+magic strings:
+.TP 12
+.B 070701
+the SVR4 portable (``newc'') format with ASCII hex headers
+.TP
+.B 070702
+the SVR4 portable format with CRC, treated identically (the CRC field is
+not verified)
+.TP
+.B 070707
+the old POSIX portable (``odc'') format with ASCII octal headers
+.PD
+.PP
+The older binary cpio formats are not supported because they are
+byte-order dependent and have not been produced by standard tools
+since the late 1980s.
+.PP
+User and group IDs are not preserved; all entries are reported as
+owned by uid/gid
+.BR 0 .
+Symbolic links present in the archive are silently skipped: only
+regular files and directories appear in the mounted view.
+.PP
+The
+.B -a
+and
+.B -b
+options cause the
+.IR cpiofile 's
+name space to be placed after or before the current contents of
+.IR mountpt ;
+the default is to replace that directory's contents.
+Option
+.B -p
+causes permissions in the cpio file to be discarded, making all
+entries read-only.
+.SH SOURCE
+.B /appl/cmd/cpiofs.b
+.SH SEE ALSO
+.IR tarfs (4),
+.IR archfs (4),
+.IR intro (5)
