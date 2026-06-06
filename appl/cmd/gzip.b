@@ -6,9 +6,6 @@ include "sys.m";
 
 include "draw.m";
 
-include "string.m";
-	str: String;
-
 include "daytime.m";
 	daytime: Daytime;
 
@@ -42,10 +39,12 @@ stderr:	ref Sys->FD;
 debug	:= 0;
 verbose	:= 0;
 level	:= 0;
+tostdout := 0;
+keep	:= 0;
 
 usage()
 {
-	fprint(stderr, "usage: %s [-vD1-9] [file ...]\n", argv0);
+	fprint(stderr, "usage: %s [-ckvD1-9] [file ...]\n", argv0);
 	raise "fail:usage";
 }
 
@@ -62,9 +61,6 @@ init(nil: ref Draw->Context, argv: list of string)
 	bufio = load Bufio Bufio->PATH;
 	if (bufio == nil)
 		nomod(Bufio->PATH);
-	str = load String String->PATH;
-	if (str == nil)
-		nomod(String->PATH);
 	daytime = load Daytime Daytime->PATH;
 	if (daytime == nil)
 		nomod(Daytime->PATH);
@@ -74,8 +70,14 @@ init(nil: ref Draw->Context, argv: list of string)
 
 	arg := Arg.init(argv);
 	level = 6;
+	tostdout = 0;
+	keep = 0;
 	while(c := arg.opt()){
 		case c{
+		'c' =>
+			tostdout = 1;
+		'k' =>
+			keep = 1;
 		'D' =>
 			debug++;
 		'v' =>
@@ -98,6 +100,25 @@ init(nil: ref Draw->Context, argv: list of string)
 		ok = gzip(nil, daytime->now(), bin, bout, "stdin", "stdout");
 		bout.close();
 		bin.close();
+	}else if(tostdout){
+		bout := bufio->fopen(sys->fildes(1), Bufio->OWRITE);
+		for(; argv != nil; argv = tl argv){
+			f := hd argv;
+			bin := bufio->open(f, Bufio->OREAD);
+			if(bin == nil){
+				fprint(stderr, "%s: can't open %s: %r\n", argv0, f);
+				ok = 0;
+				continue;
+			}
+			(rok, dir) := sys->fstat(bin.fd);
+			mtime := daytime->now();
+			if(rok >= 0)
+				mtime = dir.mtime;
+			if(!gzip(f, mtime, bin, bout, f, "stdout"))
+				ok = 0;
+			bin.close();
+		}
+		bout.close();
 	}else{
 		for(; argv != nil; argv = tl argv)
 			ok &= gzipf(hd argv);
@@ -118,8 +139,9 @@ gzipf(file: string): int
 	else
 		mtime = daytime->now();
 
-	(nil, ofile) := str->splitr(file, "/");
-	ofile += ".gz";
+	# Keep the directory prefix so `gzip /tmp/foo` writes to
+	# /tmp/foo.gz, not ./foo.gz in the caller's working directory.
+	ofile := file + ".gz";
 	bout := bufio->create(ofile, Bufio->OWRITE, 8r666);
 	if(bout == nil){
 		fprint(stderr, "%s: can't open %s: %r\n", argv0, ofile);
@@ -130,9 +152,10 @@ gzipf(file: string): int
 	ok = gzip(file, mtime, bin, bout, file, ofile);
 	bout.close();
 	bin.close();
-	if (ok)
-		sys->remove(file);
-	else
+	if (ok){
+		if(!keep)
+			sys->remove(file);
+	}else
 		sys->remove(ofile);
 		
 	return ok;

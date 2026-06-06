@@ -6,9 +6,6 @@ include "sys.m";
 
 include "draw.m";
 
-include "string.m";
-	str: String;
-
 include "bufio.m";
 	bufio:	Bufio;
 	Iobuf:	import bufio;
@@ -26,6 +23,15 @@ stderr:	ref Sys->FD;
 
 INFLATEPATH: con "/dis/lib/inflate.dis";
 
+tostdout	:= 0;
+keep		:= 0;
+
+usage()
+{
+	fprint(stderr, "usage: %s [-ck] [file ...]\n", argv0);
+	raise "fail:usage";
+}
+
 init(nil: ref Draw->Context, argv: list of string)
 {
 	sys = load Sys Sys->PATH;
@@ -33,29 +39,63 @@ init(nil: ref Draw->Context, argv: list of string)
 	bufio = load Bufio Bufio->PATH;
 	if (bufio == nil)
 		fatal(sys->sprint("cannot load %s: %r", Bufio->PATH));
-	str = load String String->PATH;
-	if (bufio == nil)
-		fatal(sys->sprint("cannot load %s: %r", String->PATH));
 	inflate = load Filter INFLATEPATH;
 	if (inflate == nil)
 		fatal(sys->sprint("cannot load %s: %r", INFLATEPATH));
 
 	inflate->init();
 
+	tostdout = 0;
+	keep = 0;
+
 	if(argv != nil)
 		argv = tl argv;
 
-	ok := 1;
+	while(argv != nil){
+		a := hd argv;
+		if(len a < 2 || a[0] != '-' || a == "--")
+			break;
+		ok := 1;
+		for(i := 1; i < len a; i++){
+			c := a[i];
+			case c {
+			'c' => tostdout = 1;
+			'k' => keep = 1;
+			* => ok = 0;
+			}
+		}
+		if(!ok)
+			usage();
+		argv = tl argv;
+	}
+
+	rc := 1;
 	if(len argv == 0){
 		bin := bufio->fopen(sys->fildes(0), Bufio->OREAD);
 		bout := bufio->fopen(sys->fildes(1), Bufio->OWRITE);
-		ok = gunzip(bin, bout, "stdin", "stdout");
+		rc = gunzip(bin, bout, "stdin", "stdout");
+		bout.close();
+		bin.close();
+	} else if(tostdout){
+		bout := bufio->fopen(sys->fildes(1), Bufio->OWRITE);
+		for(; argv != nil; argv = tl argv){
+			f := hd argv;
+			bin := bufio->open(f, Bufio->OREAD);
+			if(bin == nil){
+				fprint(stderr, "%s: can't open %s: %r\n", argv0, f);
+				rc = 0;
+				continue;
+			}
+			if(!gunzip(bin, bout, f, "stdout"))
+				rc = 0;
+			bin.close();
+		}
 		bout.close();
 	} else {
 		for(; argv != nil; argv = tl argv)
-			ok &= gunzipf(hd argv);
+			rc &= gunzipf(hd argv);
 	}
-	if(ok == 0)
+	if(rc == 0)
 		raise "fail:errors";
 }
 
@@ -67,14 +107,17 @@ gunzipf(file: string): int
 		return 0;
 	}
 
-	(nil, ofile) := str->splitr(file, "/");
-	n := len ofile;
-	if(n < 4 || ofile[n-3:] != ".gz"){
+	# Validate the .gz extension on the original name, then strip it
+	# while preserving any directory prefix so that `gunzip /tmp/foo.gz`
+	# writes to /tmp/foo, not to ./foo in the caller's working
+	# directory.
+	n := len file;
+	if(n < 4 || file[n-3:] != ".gz"){
 		fprint(stderr, "%s: .gz extension required: %s\n", argv0, file);
 		bin.close();
 		return 0;
-	} else
-		ofile = ofile[:n-3];
+	}
+	ofile := file[:n-3];
 	bout := bufio->create(ofile, Bufio->OWRITE, 8r666);
 	if(bout == nil){
 		fprint(stderr, "%s: can't open %s: %r\n", argv0, ofile);
@@ -82,16 +125,16 @@ gunzipf(file: string): int
 		return 0;
 	}
 
-	ok := gunzip(bin, bout, file, ofile);
+	rc := gunzip(bin, bout, file, ofile);
 	bin.close();
 	bout.close();
-	if(ok) {
+	if(rc && !keep) {
 		# did possibly rename file and update modification time here.
 		if (sys->remove(file) == -1)
 			sys->fprint(stderr, "%s: cannot remove %s: %r\n", argv0, file);
 	}
 
-	return ok;
+	return rc;
 }
 
 gunzip(bin, bout: ref Iobuf, fin, fout: string): int

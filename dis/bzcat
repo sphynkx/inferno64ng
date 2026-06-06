@@ -1,0 +1,2 @@
+#!/dis/sh
+bunzip2 -ck $* 

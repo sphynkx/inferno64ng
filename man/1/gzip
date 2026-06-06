@@ -4,7 +4,7 @@ gzip, gunzip \- compression and decompression utilities
 .SH SYNOPSIS
 .B gzip
 [
-.B \-v
+.B \-ckv
 ] [
 .BI \- level
 ] [
@@ -13,6 +13,8 @@ gzip, gunzip \- compression and decompression utilities
 .br
 .B gunzip
 [
+.B \-ck
+] [
 .IR file ...
 ]
 .SH DESCRIPTION
@@ -30,7 +32,7 @@ If no arguments are given
 compresses each
 .I file
 replacing it by a file of the same
-name with the a
+name with the
 .B .gz
 suffix appended.
 If no files are given, standard input
@@ -47,6 +49,13 @@ option causes
 .B gzip
 to report the compression ratio of each file that
 it compresses.
+The
+.B \-c
+option writes the compressed data to standard output and
+leaves the input file unchanged.
+The
+.B \-k
+option keeps (does not delete) the input file.
 .PP
 .B Gunzip
 performs the opposite operation to
@@ -60,10 +69,30 @@ by a file of the same name with the
 .B .gz
 suffix removed. If no files are given,
 standard input and standard output are used.
+The
+.B \-c
+option writes the decompressed data to standard output and
+leaves the input file unchanged.
+The
+.B \-k
+option keeps (does not delete) the input
+.B .gz
+file.
+.SH EXAMPLES
+The
+.B \-c
+flag makes it easy to write the customary
+.I zcat
+helper as a one-line shell function:
+.PP
+.EX
+fn zcat { gunzip -c $* }
+.EE
 .SH SOURCE
 .B /appl/cmd/gzip.b
 .br
 .B /appl/cmd/gunzip.b
 .SH SEE ALSO
+.IR bzip2 (1),
 .IR filter (2),
 .IR filter-deflate (2)
