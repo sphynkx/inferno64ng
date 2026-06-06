@@ -33,7 +33,7 @@ This build includes a number of system-level fixes and extensions compared to th
 - Implemented `icurses` - ncurses like TUI framework.
 - Implemented `ic` - icurses based file manager inspired by Midnight Commander.
 - Implemented `awk` (True AWK, 1988).
-- Implemented `bzip2` archiver.
+- Implemented archivers: `bzip2`, `cpio`.
 - Misc useful utilities and scripts: zcat, bzcat..
 - Default screen size for GUI expanded to 1024x768.
 - Added various build, packaging and usability improvements, including optional binary size reduction/compression work.
