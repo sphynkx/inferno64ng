@@ -25,6 +25,7 @@ bunzip2: Bunzip2Mod;
 dogunzip: fn(src, dst: string): int;
 dobunzip2: fn(src, dst: string): int;
 tmptarpath: fn(path: string): string;
+tmpcpiopath: fn(path: string): string;
 mounttag: fn(path: string): string;
 
 init()
@@ -73,6 +74,28 @@ istarbz2(path: string): int
 	return 0;
 }
 
+iscpiogz(path: string): int
+{
+	if(path == "")
+		return 0;
+
+	if(len path >= len ".cpio.gz" && path[len path - len ".cpio.gz":] == ".cpio.gz")
+		return 1;
+
+	return 0;
+}
+
+iscpiobz2(path: string): int
+{
+	if(path == "")
+		return 0;
+
+	if(len path >= len ".cpio.bz2" && path[len path - len ".cpio.bz2":] == ".cpio.bz2")
+		return 1;
+
+	return 0;
+}
+
 stagedtarpath(path: string): string
 {
 	if(path == "")
@@ -92,6 +115,20 @@ stagedtarpath(path: string): string
 
 	if(len path >= len ".tbz2" && path[len path - len ".tbz2":] == ".tbz2")
 		return tmptarpath(path[0:len path - len ".tbz2"] + ".tar");
+
+	return "";
+}
+
+stagedcpiopath(path: string): string
+{
+	if(path == "")
+		return "";
+
+	if(len path >= len ".cpio.gz" && path[len path - len ".cpio.gz":] == ".cpio.gz")
+		return tmpcpiopath(path[0:len path - len ".gz"]);
+
+	if(len path >= len ".cpio.bz2" && path[len path - len ".cpio.bz2":] == ".cpio.bz2")
+		return tmpcpiopath(path[0:len path - len ".bz2"]);
 
 	return "";
 }
@@ -116,6 +153,36 @@ preparetarpath(path: string): (string, string)
 	}
 
 	if(istarbz2(path)){
+		if(dobunzip2(path, staged) < 0){
+			sys->remove(staged);
+			return ("", "");
+		}
+		return (staged, staged);
+	}
+
+	return ("", "");
+}
+
+preparecpiopath(path: string): (string, string)
+{
+	staged: string;
+
+	if(!iscpiogz(path) && !iscpiobz2(path))
+		return (path, "");
+
+	staged = stagedcpiopath(path);
+	if(staged == "")
+		return ("", "");
+
+	if(iscpiogz(path)){
+		if(dogunzip(path, staged) < 0){
+			sys->remove(staged);
+			return ("", "");
+		}
+		return (staged, staged);
+	}
+
+	if(iscpiobz2(path)){
 		if(dobunzip2(path, staged) < 0){
 			sys->remove(staged);
 			return ("", "");
@@ -189,6 +256,33 @@ dobunzip2(src, dst: string): int
 }
 
 tmptarpath(path: string): string
+{
+	i: int;
+	base, tag, out: string;
+	fd: ref Sys->FD;
+	ticks: int;
+
+	base = "/tmp/ic";
+	fd = sys->open(base, Sys->OREAD);
+	if(fd == nil)
+		sys->create(base, Sys->OREAD, Sys->DMDIR | 8r777);
+
+	tag = mounttag(path);
+	ticks = sys->millisec();
+
+	for(i = 0; i < 64; i++){
+		out = base + "/" + tag + "_" + string ticks + "_" + string i;
+		fd = sys->open(out, Sys->OREAD);
+		if(fd != nil)
+			continue;
+
+		return out;
+	}
+
+	return "";
+}
+
+tmpcpiopath(path: string): string
 {
 	i: int;
 	base, tag, out: string;

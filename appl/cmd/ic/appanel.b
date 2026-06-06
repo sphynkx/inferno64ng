@@ -67,8 +67,12 @@ IcArchiveUtil: module
 	init: fn();
 	istargz: fn(path: string): int;
 	istarbz2: fn(path: string): int;
+	iscpiogz: fn(path: string): int;
+	iscpiobz2: fn(path: string): int;
 	stagedtarpath: fn(path: string): string;
+	stagedcpiopath: fn(path: string): string;
 	preparetarpath: fn(path: string): (string, string);
+	preparecpiopath: fn(path: string): (string, string);
 };
 
 TarFsMod: module
@@ -85,6 +89,13 @@ GunzipMod: module
 	init: fn(ctxt: ref Draw->Context, argv: list of string);
 };
 
+CpioFsMod: module
+{
+	PATH: con "/dis/cpiofs.dis";
+
+	init: fn(ctxt: ref Draw->Context, args: list of string);
+};
+
 sys: Sys;
 ui: IcUiMod;
 panelui: IcPanel;
@@ -93,6 +104,7 @@ view: IcViewMod;
 cfgdata: IcConfigData;
 panelinfo: IcPanelInfo;
 tarfs: TarFsMod;
+cpiofs: CpioFsMod;
 zipmount: IcZipMount;
 archiveutil: IcArchiveUtil;
 gunzip: GunzipMod;
@@ -145,6 +157,7 @@ clearpanelmount: fn(p: ref IcState->PanelState);
 taranalizeperms: fn(tarpath: string): int;
 tarascii: fn(b: array of byte): string;
 taroctal: fn(b: array of byte): big;
+mountcpio: fn(fullpath, mountdir: string): int;
 mounttar: fn(fullpath, mountdir: string): int;
 enterselected: fn(state: ref IcState->AppState, p: ref IcState->PanelState): int;
 pathrelative: fn(root, path: string): string;
@@ -212,6 +225,10 @@ init()
 	tarfs = load TarFsMod TarFsMod->PATH;
 	if(tarfs == nil)
 		raise "fail:load tarfs";
+
+	cpiofs = load CpioFsMod CpioFsMod->PATH;
+	if(cpiofs == nil)
+		raise "fail:load cpiofs";
 
 	gunzip = load GunzipMod GunzipMod->PATH;
 	if(gunzip == nil)
@@ -622,6 +639,15 @@ archivekind(path: string): string
 	if(archiveutil != nil && archiveutil->istarbz2(path))
 		return "tar";
 
+	if(hassuffix(path, ".cpio"))
+		return "cpio";
+
+	if(archiveutil != nil && archiveutil->iscpiogz(path))
+		return "cpio";
+
+	if(archiveutil != nil && archiveutil->iscpiobz2(path))
+		return "cpio";
+
 	if(hassuffix(path, ".zip"))
 		return "zip";
 
@@ -653,6 +679,15 @@ archivecaption(path: string): string
 
 	if(hassuffix(name, ".tar"))
 		return "tar";
+
+	if(hassuffix(name, ".cpio.gz"))
+		return "cpio.gz";
+
+	if(hassuffix(name, ".cpio.bz2"))
+		return "cpio.bz2";
+
+	if(hassuffix(name, ".cpio"))
+		return "cpio";
 
 	if(hassuffix(name, ".zip"))
 		return "zip";
@@ -902,6 +937,19 @@ taroctal(b: array of byte): big
 	}
 
 	return v;
+}
+
+mountcpio(fullpath, mountdir: string): int
+{
+	args: list of string;
+
+	if(cpiofs == nil || fullpath == "" || mountdir == "")
+		return -1;
+
+	args = "cpiofs" :: "-p" :: fullpath :: mountdir :: nil;
+	cpiofs->init(nil, args);
+
+	return 0;
 }
 
 mounttar(fullpath, mountdir: string): int
@@ -1255,7 +1303,7 @@ navigate(state: ref IcState->AppState, p: ref IcState->PanelState): int
 
 enterselected(state: ref IcState->AppState, p: ref IcState->PanelState): int
 {
-	name, kind, fullpath, mountdir, akind, tarpath, staged: string;
+	name, kind, fullpath, mountdir, akind, arpath, staged: string;
 	rc: int;
 
 	if(state == nil || p == nil || p.panel == nil)
@@ -1285,10 +1333,15 @@ enterselected(state: ref IcState->AppState, p: ref IcState->PanelState): int
 	rc = -1;
 	staged = "";
 	if(akind == "tar"){
-		(tarpath, staged) = archiveutil->preparetarpath(fullpath);
-		if(tarpath == "")
+		(arpath, staged) = archiveutil->preparetarpath(fullpath);
+		if(arpath == "")
 			return 0;
-		rc = mounttar(tarpath, mountdir);
+		rc = mounttar(arpath, mountdir);
+	}else if(akind == "cpio"){
+		(arpath, staged) = archiveutil->preparecpiopath(fullpath);
+		if(arpath == "")
+			return 0;
+		rc = mountcpio(arpath, mountdir);
 	}else if(akind == "zip")
 		rc = mountzip(fullpath, mountdir);
 
