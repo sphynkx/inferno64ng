@@ -70,8 +70,8 @@ cd /opt
 git clone https://github.com/sphynkx/inferno64ng
 cd inferno64ng
 export MKSH=`which bash`.exe
-export PATH=$PATH:/opt/inferno64/MinGW/amd64/bin/
 export ROOT=$(pwd)
+export PATH=$PATH:$ROOT/MinGW/amd64/bin/
 ./makemk.sh
 mk mkdirs
 mk install
@@ -92,8 +92,8 @@ cd inferno64ng
 ```
 Modify `mkconfig`: set `SYSHOST` and `SYSTARG` to "Linux". Next:
 ```bash
-export PATH=$PATH:/opt/inferno64/Linux/amd64/bin/
 export ROOT=$(pwd)
+export PATH=$PATH:$ROOT/Linux/amd64/bin/
 ./makemk.sh
 mk mkdirs
 mk install
