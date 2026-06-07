@@ -1,5 +1,4 @@
 implement Sh;
-
 include "sys.m";
 	sys: Sys;
 	sprint: import sys;
@@ -17,55 +16,44 @@ include "arg.m";
 include "sh.m";
 	myself: Sh;
 	myselfbuiltin: Shellbuiltin;
-
 YYSTYPE: adt {
 	node:	ref Node;
 	word:	string;
-
 	redir:	ref Redir;
 	optype:	int;
 };
-
 YYLEX: adt {
 	lval:			YYSTYPE;
 	err:			string;	# if error has occurred
 	errline:		int;		# line it occurred on.
 	path:			string;	# name of file that's being read.
-
 	# free caret state
 	wasdollar:		int;
 	atendword:	int;
 	eof:			int;
 	cbuf:			array of int;	# last chars read
 	ncbuf:		int;			# number of chars in cbuf
-
 	f:			ref Bufio->Iobuf;
 	s:			string;
 	strpos: 		int;			# string pos/cbuf index
-
 	linenum:		int;
 	prompt:		string;
 	lastnl:		int;
-
 	initstring:		fn(s: string): ref YYLEX;
 	initfile:		fn(fd: ref Sys->FD, path: string): ref YYLEX;
 	lex:			fn(l: self ref YYLEX): int;
 	error:		fn(l: self ref YYLEX, err: string);
 	getc:			fn(l: self ref YYLEX): int;
 	ungetc:		fn(l: self ref YYLEX);
-
 	EOF:			con -1;
 };
-
 Options: adt {
 	lflag,
 	nflag:		int;
 	ctxtflags:		int;
 	carg:			string;
 };
-
 # module definition is in shell.m
-
 DUP: con	57346;
 REDIR: con	57347;
 WORD: con	57348;
@@ -77,23 +65,16 @@ OROR: con	57353;
 YYEOFCODE: con 1;
 YYERRCODE: con 2;
 YYMAXDEPTH: con 200;
-
-
 EPERM: con "permission denied";
 EPIPE: con "write on closed pipe";
-
 LIBSHELLRC: con "/lib/sh/profile";
 BUILTINPATH: con "/dis/sh";
-
 DEBUG: con 0;
-
 ENVSEP: con 0;				# word seperator in external environment
 ENVHASHSIZE: con 7;			# XXX profile usage of this...
 OAPPEND: con 16r80000;		# make sure this doesn't clash with O* constants in sys.m
 OMASK: con 7;
-
 EKEYBOARD: con "/dev/ekeyboard";
-
 KeyUp: con	57362;
 KeyDown: con	57363;
 KeyLeft: con	57364;
@@ -105,39 +86,48 @@ KeyPgdown: con	57369;
 KeyIns: con	57370;
 KeyDel: con	57371;
 KeyEsc: con	16r1B;
-
-
+HISTORY_FALLBACK_HOME: con "/usr/inferno";
+# ---------------------------------------------------------------------------
+# Forward declarations
+#
+# Limbo has no `ref int`: `ref` is only valid for adts and modules. The
+# history index is therefore threaded through readekeyline as a plain
+# int parameter and returned back to the caller as part of the result
+# tuple.
+# ---------------------------------------------------------------------------
+gethomedir:		fn(ctxt: ref Context): string;
+historypath:		fn(ctxt: ref Context): string;
+appendhistory:		fn(ctxt: ref Context, cmd: string);
+loadhistory:		fn(ctxt: ref Context): array of string;
+clearline:		fn(prompt: string, line: string);
+readekeyline:		fn(fd: ref Sys->FD, prompt: string,
+				hist: array of string, nhist: int,
+				histidx: int): (string, string, int);
+runekeyboard:		fn(ctxt: ref Context, fd: ref Sys->FD);
+# ---------------------------------------------------------------------------
 badmodule(path: string)
 {
 	sys->fprint(sys->fildes(2), "sh: badmodule() cannot load %s: %r\n", path);
 	raise "fail:bad module" ;
 }
-
 ismingw(): int
 {
 	return env != nil && env->getenv("emuhost") == "Nt";
 }
-
 initialise()
 {
 	if (sys == nil) {
 		sys = load Sys Sys->PATH;
-
 		filepat = load Filepat Filepat->PATH;
 		if (filepat == nil) badmodule(Filepat->PATH);
-
 		str = load String String->PATH;
 		if (str == nil) badmodule(String->PATH);
-
 		bufio = load Bufio Bufio->PATH;
 		if (bufio == nil) badmodule(Bufio->PATH);
-
 		myself = load Sh "$self";
 		if (myself == nil) badmodule("$self(Sh)");
-
 		myselfbuiltin = load Shellbuiltin "$self";
 		if (myselfbuiltin == nil) badmodule("$self(Shellbuiltin)");
-
 		env = load Env Env->PATH;
 		if(env == nil) badmodule(Env->PATH);
 		
@@ -145,16 +135,12 @@ initialise()
 		if(argm == nil) badmodule(Arg->PATH);
 	}
 }
-
 blankopts: Options;
-
 init(drawcontext: ref Draw->Context, argv: list of string)
 {
 	initialise();
 	opts := blankopts;
-
 	interactive := 0;
-
 	argm->init(argv);
 	argm->setusage("sh [-ilexn] [-c command] [file [arg...]]");
  
@@ -178,13 +164,11 @@ init(drawcontext: ref Draw->Context, argv: list of string)
 	}
 	
 	argv = argm->argv();
-
 	sys->pctl(Sys->FORKFD, nil);
 	if (!opts.nflag)
 		sys->pctl(Sys->FORKNS, nil);
 	ctxt := Context.new(drawcontext);
 	ctxt.setoptions(opts.ctxtflags, 1);
-
 	# if login shell, run standard init script
 	if (opts.lflag)
 		runscript(ctxt, LIBSHELLRC, nil, 0);
@@ -202,15 +186,21 @@ init(drawcontext: ref Draw->Context, argv: list of string)
 		if (stdinconsole)
 			interactive |= ctxt.INTERACTIVE;
 		ctxt.setoptions(interactive, 1);
-		useekeyboard := (interactive & ctxt.INTERACTIVE) != 0 && !stdinconsole;
-
+		# Prefer /dev/ekeyboard for any interactive session that has
+		# one, so the Up/Down history navigation actually fires. The
+		# original logic only enabled ekeyboard when stdin was NOT
+		# /dev/cons (e.g. under mingw); but in a normal wm session
+		# stdin IS /dev/cons, so the ekeyboard path never ran and the
+		# history feature was effectively dormant. Fall back to plain
+		# runfile only if ekeyboard isn't available.
+		useekeyboard := (interactive & ctxt.INTERACTIVE) != 0 && hasekeyboard();
 		if(useekeyboard && ismingw()){
 			ekfd := sys->open(EKEYBOARD, Sys->OREAD);
 			if(ekfd != nil)
 				runekeyboard(ctxt, ekfd);
 			else
 				runfile(ctxt, sys->fildes(0), "stdin", nil);
-		}else if(useekeyboard && hasekeyboard())
+		}else if(useekeyboard)
 			runekeyboard(ctxt, nil);
 		else
 			runfile(ctxt, sys->fildes(0), "stdin", nil);
@@ -219,16 +209,13 @@ init(drawcontext: ref Draw->Context, argv: list of string)
 		runscript(ctxt, hd argv, stringlist2list(tl argv), 1);
 	}
 }
-
 parse(s: string): (ref Node, string)
 {
 	initialise();
 	
 	lex := YYLEX.initstring(s);
-
 	return doparse(lex, "", 0);
 }
-
 system(drawctxt: ref Draw->Context, cmd: string): string
 {
 	initialise();
@@ -244,7 +231,6 @@ system(drawctxt: ref Draw->Context, cmd: string): string
 		return failurestatus(e);
 	}
 }
-
 run(drawctxt: ref Draw->Context, argv: list of string): string
 {
 	initialise();
@@ -255,7 +241,6 @@ run(drawctxt: ref Draw->Context, argv: list of string): string
 		return failurestatus(e);
 	}
 }
-
 isconsole(fd: ref Sys->FD): int
 {
 	(ok1, d1) := sys->fstat(fd);
@@ -264,7 +249,6 @@ isconsole(fd: ref Sys->FD): int
 		return 0;
 	return d1.dtype == d2.dtype && d1.qid.path == d2.qid.path;
 }
-
 hasekeyboard(): int
 {
 	if(ismingw()){
@@ -276,21 +260,18 @@ hasekeyboard(): int
 		return 0;
 	return 1;
 }
-
 appendchar(s: string, c: int): string
 {
 	buf := array[1] of byte;
 	buf[0] = byte c;
 	return s + string buf;
 }
-
 appendbytes(s: string, buf: array of byte, n: int): string
 {
 	if(n <= 0)
 		return s;
 	return s + string buf[0:n];
 }
-
 utfseqlen(b: int): int
 {
 	if((b & 16r80) == 0)
@@ -303,105 +284,297 @@ utfseqlen(b: int): int
 		return 4;
 	return 1;
 }
-
 trimlastutf(s: string): string
 {
 	n := len s;
 	if(n <= 0)
 		return s;
-
 	i := n - 1;
-
 	# skip UTF-8 continuation bytes: 10xxxxxx
 	while(i > 0 && (int s[i] & 16rC0) == 16r80)
 		i--;
-
 	return s[0:i];
 }
-
-readekeyline(fd: ref Sys->FD, prompt: string): (string, string)
+# ---------------------------------------------------------------------------
+# History support: helper functions
+# ---------------------------------------------------------------------------
+# Read the user home directory from /env/home (which the running
+# Inferno system populates from the current namespace's user record).
+# Falls back to HISTORY_FALLBACK_HOME if anything goes wrong.
+#
+# We keep a one-time diagnostic in the failure path so that if for
+# some reason the file can't be read, the user sees why -- silent
+# failure here is what made the history feature appear to do nothing.
+gethomedir(ctxt: ref Context): string
+{
+	ctxt = ctxt;	# ctxt unused in this path; kept for future use
+	fd := sys->open("/env/home", Sys->OREAD);
+	if(fd == nil){
+		sys->fprint(stderr(), "esh: cannot open /env/home: %r (using %s)\n",
+			HISTORY_FALLBACK_HOME);
+		return HISTORY_FALLBACK_HOME;
+	}
+	buf := array[256] of byte;
+	n := sys->read(fd, buf, len buf);
+	if(n <= 0){
+		sys->fprint(stderr(), "esh: /env/home empty (using %s)\n",
+			HISTORY_FALLBACK_HOME);
+		return HISTORY_FALLBACK_HOME;
+	}
+	s := string buf[0:n];
+	# trim trailing CR / LF / spaces / NUL
+	while(len s > 0){
+		last := s[len s - 1];
+		if(last == '\n' || last == '\r' || last == ' ' || last == 0)
+			s = s[0: len s - 1];
+		else
+			break;
+	}
+	if(len s == 0)
+		return HISTORY_FALLBACK_HOME;
+	return s;
+}
+# Return the full path to the history file (~/.esh_history).
+historypath(ctxt: ref Context): string
+{
+	return gethomedir(ctxt) + "/.esh_history";
+}
+# Append one command line to the history file.
+# Creates the file if it does not exist yet.
+appendhistory(ctxt: ref Context, cmd: string)
+{
+	if(cmd == nil || len cmd == 0)
+		return;
+	path := historypath(ctxt);
+	fd := sys->open(path, Sys->OWRITE);
+	if(fd == nil)
+		fd = sys->create(path, Sys->OWRITE, 8r600);
+	if(fd == nil){
+		# One-time diagnostic so the user can see what went wrong;
+		# silent failure here used to make this feature look broken.
+		sys->fprint(stderr(), "esh: cannot write history to %s: %r\n", path);
+		return;
+	}
+	sys->seek(fd, big 0, Sys->SEEKEND);
+	line := cmd + "\n";
+	buf := array of byte line;
+	sys->write(fd, buf, len buf);
+}
+# Load the entire history file into an array of strings.
+# Returns nil if the file does not exist or is empty.
+loadhistory(ctxt: ref Context): array of string
+{
+	path := historypath(ctxt);
+	fd := sys->open(path, Sys->OREAD);
+	if(fd == nil)
+		return nil;
+	# read the whole file at once (up to 64 KB)
+	buf := array[65536] of byte;
+	n := sys->read(fd, buf, len buf);
+	if(n <= 0)
+		return nil;
+	s := string buf[0:n];
+	# split by newlines, skip blank lines
+	lines := array[4096] of string;
+	count := 0;
+	start := 0;
+	for(i := 0; i <= len s; i++){
+		if(i == len s || s[i] == '\n'){
+			if(i > start && count < len lines){
+				line := s[start:i];
+				if(len line > 0)
+					lines[count++] = line;
+			}
+			start = i + 1;
+		}
+	}
+	if(count == 0)
+		return nil;
+	result := array[count] of string;
+	result[0:] = lines[0:count];
+	return result;
+}
+# Erase the current input text from the terminal using backspace sequences.
+# Used before displaying a history entry or an updated line.
+#
+# `prompt` is currently unused but kept in the signature for future
+# multi-line prompt support; touched here to silence the unused-param
+# warning rather than dropping the parameter.
+clearline(prompt: string, line: string)
+{
+	prompt = prompt;
+	# byte length of the displayed line (UTF-8 aware cursor movement
+	# is not required here because ekeyboard sends/displays bytes)
+	nchars := len (array of byte line);
+	# Three passes (move-back, overwrite-with-space, move-back). In
+	# Limbo, `for(i := 0; ...)` does not introduce a fresh scope for
+	# `i`, so three consecutive `for(i := 0; ...; i++)` blocks would
+	# all collide at this block's scope. Declare one counter and
+	# reuse it without redeclaring.
+	i: int;
+	for(i = 0; i < nchars; i++)
+		sys->fprint(stderr(), "\b");
+	for(i = 0; i < nchars; i++)
+		sys->fprint(stderr(), " ");
+	for(i = 0; i < nchars; i++)
+		sys->fprint(stderr(), "\b");
+}
+# ---------------------------------------------------------------------------
+# Interactive line reading with history navigation
+# ---------------------------------------------------------------------------
+# Read one input line from the ekeyboard device.
+# hist      - array of history entries (may be nil)
+# nhist     - number of valid entries in hist
+# histidx   - current history browsing position on entry; the position
+#             updated by Up/Down navigation is returned as the third
+#             tuple element so the caller can remember it across lines.
+#             (Limbo has no `ref int`, hence the by-return idiom.)
+#
+# Returns (line, nil, new_histidx) on success,
+#         (nil, errstring, histidx) on error/EOF.
+readekeyline(fd: ref Sys->FD, prompt: string,
+             hist: array of string, nhist: int,
+             histidx: int): (string, string, int)
 {
 	activefd := fd;
 	if(activefd == nil)
 		activefd = sys->open(EKEYBOARD, Sys->OREAD);
 	if(activefd == nil)
-		return (nil, sys->sprint("can't open %s: %r", EKEYBOARD));
-
+		return (nil, sys->sprint("can't open %s: %r", EKEYBOARD), histidx);
 	sys->fprint(stderr(), "%s", prompt);
-
 	line := "";
+	savedline := "";	# saves user input while browsing history
+	curidx := nhist;	# nhist means "not currently browsing"
+	if(histidx >= 0 && histidx <= nhist)
+		curidx = histidx;
 	buf := array[64] of byte;
 	pending := array[8] of byte;
 	npending := 0;
-
 	for(;;){
 		n := sys->read(activefd, buf, len buf);
 		if(n < 0)
-			return (nil, sys->sprint("read error on %s: %r", EKEYBOARD));
+			return (nil, sys->sprint("read error on %s: %r", EKEYBOARD), curidx);
 		if(n == 0)
-			return (nil, "unexpected EOF on /dev/ekeyboard");
-
+			return (nil, "unexpected EOF on /dev/ekeyboard", curidx);
 		for(i := 0; i < n; i++){
 			b := int buf[i];
-
-			# accumulate one byte into pending
+			# Guard against runaway sequence: if pending fills up
+			# without forming a recognised multibyte token, drop it
+			# and start over with the current byte.
+			if(npending >= len pending)
+				npending = 0;
 			pending[npending++] = buf[i];
-
-			# ASCII controls are always single-byte
+			# single-byte ASCII controls are handled immediately
 			if(npending == 1){
-				if(b == '\r' || b == '\n')
-					return (line, nil);
-
+				if(b == '\r' || b == '\n'){
+					return (line, nil, curidx);
+				}
 				if(b == '\b' || b == 16r7F){
-					if(len line > 0)
+					# /dev/ekeyboard echoes a backspace as cursor-back
+					# only (it moves the cursor left but does not
+					# overwrite the previous glyph). Complete the
+					# erase ourselves by emitting " \b": space
+					# overwrites the glyph the cursor is now sitting
+					# on, then \b returns the cursor to its post-erase
+					# position. Combined with ekeyboard's leading \b,
+					# the visible effect is the standard "erase one
+					# character to the left".
+					if(len line > 0){
 						line = trimlastutf(line);
+						sys->fprint(stderr(), " \b");
+					}
 					npending = 0;
 					continue;
 				}
-
 				if(b == 16r04){
+					# Ctrl-D on empty line = EOF
 					if(len line == 0)
-						return (nil, "eof");
+						return (nil, "eof", curidx);
 					npending = 0;
 					continue;
 				}
-
 				if(b == KeyEsc){
+					# Escape: clear the current line
+					clearline(prompt, line);
 					line = "";
 					npending = 0;
 					continue;
 				}
+				# Tab: placeholder for future readline/completion support
+				if(b == '\t'){
+					npending = 0;
+					continue;
+				}
 			}
-
+			# determine how many bytes the current UTF-8 sequence needs
 			want := utfseqlen(int pending[0]);
 			if(want < 1)
 				want = 1;
-
+			# wait until the full sequence has arrived
 			if(npending < want)
 				continue;
-
-			# ignore known ekeyboard arrow keys encoded as private-use UTF-8
+			# handle ekeyboard special keys encoded as 3-byte
+			# private-use UTF-8 sequences (EE 80 xx)
 			if(npending == 3 &&
 			   int pending[0] == 16rEE &&
-			   int pending[1] == 16r80 &&
-			   (int pending[2] == 16r92 ||
-			    int pending[2] == 16r93 ||
-			    int pending[2] == 16r94 ||
-			    int pending[2] == 16r95)){
+			   int pending[1] == 16r80){
+				# decode keycode: private-use base 57344 + low 6 bits
+				keyval := 57344 + (int pending[2] & 16r3F);
+				case keyval {
+				KeyUp =>
+					# navigate backwards in history
+					if(hist != nil && nhist > 0){
+						if(curidx == nhist)
+							savedline = line;	# save current typing
+						if(curidx > 0)
+							curidx--;
+						clearline(prompt, line);
+						line = hist[curidx];
+						sys->fprint(stderr(), "%s", line);
+					}
+				KeyDown =>
+					# navigate forwards in history
+					if(hist != nil && curidx < nhist){
+						curidx++;
+						clearline(prompt, line);
+						if(curidx == nhist)
+							line = savedline;	# restore saved typing
+						else
+							line = hist[curidx];
+						sys->fprint(stderr(), "%s", line);
+					}
+				# KeyLeft, KeyRight, KeyHome, KeyEnd etc.
+				# are placeholders for future cursor-movement support
+				}
 				npending = 0;
 				continue;
 			}
-
+			# Ordinary UTF-8 character: append to the line buffer.
+			# We deliberately do NOT echo the character here ourselves
+			# because /dev/ekeyboard already does that. Earlier we
+			# echoed manually under the assumption that ekeyboard
+			# was a raw byte stream like /dev/cons, but the actual
+			# device emits keys to the screen on its own, and a
+			# second fprint would double every typed character.
 			line = appendbytes(line, pending, npending);
 			npending = 0;
 		}
 	}
 }
-
+# ---------------------------------------------------------------------------
+# Interactive shell loop using ekeyboard
+# ---------------------------------------------------------------------------
 runekeyboard(ctxt: ref Context, fd: ref Sys->FD)
 {
 	laststatus: string;
-
+	histidx := 0;
+	# load command history from ~/.esh_history at startup
+	hist := loadhistory(ctxt);
+	nhist := 0;
+	if(hist != nil)
+		nhist = len hist;
+	# start with "not browsing" position
+	histidx = nhist;
 	for(;;){
 		prompt := "esh; ";
 		pv := ctxt.get("prompt");
@@ -412,17 +585,29 @@ runekeyboard(ctxt: ref Context, fd: ref Sys->FD)
 					prompt = hd pl;
 			}
 		}
-
-		(line, err) := readekeyline(fd, prompt);
+		(line, err, newidx) := readekeyline(fd, prompt, hist, nhist, histidx);
+		histidx = newidx;
 		if(err != nil){
 			if(err == "eof")
 				break;
 			sys->fprint(stderr(), "esh: %s\n", err);
 			break;
 		}
+		# (No explicit "\n" emission here: /dev/ekeyboard already
+		# echoes the Enter as a newline. Emitting one ourselves would
+		# produce a blank line before each prompt.)
 		if(line == nil)
 			continue;
-
+		# save the command to the history file and in-memory array
+		appendhistory(ctxt, line);
+		newhist := array[nhist + 1] of string;
+		if(hist != nil)
+			newhist[0:] = hist[0:nhist];
+		newhist[nhist] = line;
+		hist = newhist;
+		nhist++;
+		# reset the browsing index to "past the end"
+		histidx = nhist;
 		(n, perr) := parse(line);
 		if(perr != nil){
 			if(perr != "")
@@ -431,20 +616,17 @@ runekeyboard(ctxt: ref Context, fd: ref Sys->FD)
 		}
 		if(n == nil)
 			continue;
-
 		{
 			laststatus = walk(ctxt, n, 0);
 		} exception e {
 		"fail:*" =>
 			laststatus = failurestatus(e);
 		}
-
 		setstatus(ctxt, laststatus);
 		if((ctxt.options() & ctxt.ERROREXIT) != 0 && laststatus != nil)
 			break;
 	}
 }
-
 runscript(ctxt: ref Context, path: string, args: list of ref Listnode, reporterr: int)
 {
 	{
@@ -460,7 +642,6 @@ runscript(ctxt: ref Context, path: string, args: list of ref Listnode, reporterr
 		raise;
 	}
 }
-
 runfile(ctxt: ref Context, fd: ref Sys->FD, path: string, args: list of ref Listnode)
 {
 	ctxt.push();
@@ -513,7 +694,6 @@ runfile(ctxt: ref Context, fd: ref Sys->FD, path: string, args: list of ref List
 		raise;
 	}
 }
-
 nonexistent(e: string): int
 {
 	errs := array[] of {"does not exist", "directory entry not found"};
@@ -524,24 +704,20 @@ nonexistent(e: string): int
 	}
 	return 0;
 }
-
 Redirword: adt {
 	fd: ref Sys->FD;
 	w: string;
 	r: Redir;
 };
-
 Redirlist: adt {
 	r: list of Redirword;
 };
-
 pipe2cmd(n: ref Node): ref Node
 {
 	if (n == nil || n.ntype != n_PIPE)
 		return n;
 	return mk(n_ADJ, mk(n_BLOCK,n,nil), mk(n_VAR,ref Node(n_WORD,nil,nil,"*",nil),nil));
 }
-
 walk(ctxt: ref Context, n: ref Node, last: int): string
 {
 	if (DEBUG) debug(sprint("walking: %s", cmd2string(n)));
@@ -567,10 +743,8 @@ walk(ctxt: ref Context, n: ref Node, last: int): string
 			bg = 1;
 			n = pipe2cmd(n.left);
 		}
-
 		redirs := ref Redirlist(nil);
 		line := glob(glom(ctxt, n, redirs, nil));
-
 		if (bg) {
 			startchan := chan of (int, ref Expropagate);
 			spawn runasync(ctxt, 1, line, redirs, startchan);
@@ -584,7 +758,6 @@ walk(ctxt: ref Context, n: ref Node, last: int): string
 		}
 	}
 }
-
 assign(ctxt: ref Context, n: ref Node): list of ref Listnode
 {
 	redirs := ref Redirlist;
@@ -617,12 +790,10 @@ assign(ctxt: ref Context, n: ref Node): list of ref Listnode
 	}
 	return val;
 }
-
 walkpipeline(ctxt: ref Context, n: ref Node, wrpipe: ref Sys->FD, wfdno: int): list of int
 {
 	if (n == nil)
 		return nil;
-
 	fds := array[2] of ref Sys->FD;
 	pids: list of int;
 	rfdno := -1;
@@ -658,22 +829,17 @@ walkpipeline(ctxt: ref Context, n: ref Node, wrpipe: ref Sys->FD, wfdno: int): l
 	if (DEBUG) debug("started pipe process "+string pid);
 	return pid :: pids;
 }
-
 makeredir(f: string, mode: int, fd: int): Redirword
 {
 	return Redirword(nil, f, Redir(mode, fd, -1));
 }
-
 glom(ctxt: ref Context, n: ref Node, redirs: ref Redirlist, onto: list of ref Listnode)
 		: list of ref Listnode
 {
 	if (n == nil) return nil;
-
 	if (n.ntype != n_ADJ)
 		return listjoin(glomoperation(ctxt, n, redirs), onto);
-
 	nlist := glom(ctxt, n.right, redirs, onto);
-
 	if (n.left.ntype != n_ADJ) {
 		# if it's a terminal node
 		nlist = listjoin(glomoperation(ctxt, n.left, redirs), nlist);
@@ -681,7 +847,6 @@ glom(ctxt: ref Context, n: ref Node, redirs: ref Redirlist, onto: list of ref Li
 		nlist = glom(ctxt, n.left, redirs, nlist);
 	return nlist;
 }
-
 listjoin(left, right: list of ref Listnode): list of ref Listnode
 {
 	l: list of ref Listnode;
@@ -691,7 +856,6 @@ listjoin(left, right: list of ref Listnode): list of ref Listnode
 		right = hd l :: right;
 	return right;
 }
-
 pipecmd(ctxt: ref Context, cmd: list of ref Listnode, redir: ref Redir): ref Sys->FD
 {
 	if(redir.fd2 != -1 || (redir.rtype & OAPPEND))
@@ -713,12 +877,10 @@ pipecmd(ctxt: ref Context, cmd: list of ref Listnode, redir: ref Redir): ref Sys
 	<-startchan;
 	return p[0];
 }
-
 glomoperation(ctxt: ref Context, n: ref Node, redirs: ref Redirlist): list of ref Listnode
 {
 	if (n == nil)
 		return nil;
-
 	nlist: list of ref Listnode;
 	case n.ntype {
 	n_WORD =>
@@ -774,7 +936,6 @@ glomoperation(ctxt: ref Context, n: ref Node, redirs: ref Redirlist): list of re
 	}
 	return nlist;
 }
-
 subsbuiltin(ctxt: ref Context, n: ref Node): list of ref Listnode
 {
 	if (n == nil || n.ntype == n_SEQ ||
@@ -787,15 +948,12 @@ subsbuiltin(ctxt: ref Context, n: ref Node): list of ref Listnode
 	r = nil;
 	if (cmd == nil || (hd cmd).word == nil || (hd cmd).cmd != nil)
 		ctxt.fail("bad $ arg", "sh: bad builtin name");
-
 	(nil, bmods) := findbuiltin(ctxt.env.sbuiltins, (hd cmd).word);
 	if (bmods == nil)
 		ctxt.fail("builtin not found",
 			sys->sprint("sh: builtin %s not found", (hd cmd).word));
 	return (hd bmods)->runsbuiltin(ctxt, myself, cmd);
 }
-
-
 getbq(nil: ref Context, fd: ref Sys->FD, seps: string): list of ref Listnode
 {
 	buf := array[Sys->ATOMICIO] of byte;
@@ -816,13 +974,11 @@ getbq(nil: ref Context, fd: ref Sys->FD, seps: string): list of ref Listnode
 	buf = nil;
 	return stringlist2list(l);
 }
-
 bq(ctxt: ref Context, cmd: list of ref Listnode, seps: string): (list of ref Listnode, string)
 {
 	fds := array[2] of ref Sys->FD;
 	if (sys->pipe(fds) == -1)
 		ctxt.fail("no pipe", sys->sprint("sh: cannot make pipe: %r"));
-
 	r := rdir(fds[1]);
 	fds[1] = nil;
 	startchan := chan of (int, ref Expropagate);
@@ -835,13 +991,10 @@ bq(ctxt: ref Context, cmd: list of ref Listnode, seps: string): (list of ref Lis
 		raise exprop.name;
 	return (bqlist, nil);
 }
-
 rdir(fd: ref Sys->FD): ref Redirlist
 {
 	return  ref Redirlist(Redirword(fd, nil, Redir(Sys->OWRITE, 1, -1)) :: nil);
 }
-
-
 concatwords(p1, p2: ref Listnode): ref Listnode
 {
 	if (p1.word == nil && p1.cmd != nil)
@@ -850,7 +1003,6 @@ concatwords(p1, p2: ref Listnode): ref Listnode
 		p2.word = cmd2string(p2.cmd);
 	return ref Listnode(nil, p1.word + p2.word);
 }
-
 concat(ctxt: ref Context, nl1, nl2: list of ref Listnode): list of ref Listnode
 {
 	if (nl1 == nil || nl2 == nil) {
@@ -858,7 +1010,6 @@ concat(ctxt: ref Context, nl1, nl2: list of ref Listnode): list of ref Listnode
 			return nil;
 		ctxt.fail("bad concatenation", "sh: null list in concatenation");
 	}
-
 	ret: list of ref Listnode;
 	if (tl nl1 == nil || tl nl2 == nil) {
 		for (p1 := nl1; p1 != nil; p1 = tl p1)
@@ -874,16 +1025,13 @@ concat(ctxt: ref Context, nl1, nl2: list of ref Listnode): list of ref Listnode
 	}
 	return revlist(ret);
 }
-
 Expropagate: adt {
 	name: string;
 };
-
 runasync(ctxt: ref Context, copyenv: int, argv: list of ref Listnode, redirs: ref Redirlist,
 		startchan: chan of (int, ref Expropagate))
 {
 	status: string;
-
 	pid := sys->pctl(sys->FORKFD, nil);
 	if (DEBUG) debug(sprint("in async (len redirs: %d)", len redirs.r));
 	ctxt = ctxt.copy(copyenv);
@@ -914,7 +1062,6 @@ runasync(ctxt: ref Context, copyenv: int, argv: list of ref Listnode, redirs: re
 		raise "fail:" + status;
 	}
 }
-
 runsync(ctxt: ref Context, argv: list of ref Listnode,
 		redirs: ref Redirlist, last: int): string
 {
@@ -937,7 +1084,6 @@ runsync(ctxt: ref Context, argv: list of ref Listnode,
 		return ctxt.run(argv, last);
 	}
 }
-
 absolute(p: string): int
 {
 	if (len p < 2)
@@ -952,33 +1098,26 @@ absolute(p: string): int
 		return 1;
 	return 0;
 }
-
 # Expand a program name to the full path
 pathexpand(ctxt: ref Context, progname: string): string 
 {
 	disfile := 0;
 	pathlist: list of string;
-
 	if (len progname >= 4 && progname[len progname-4:] == ".dis")
 		disfile = 1;
-
 	if (absolute(progname))
 		pathlist = nil;
-
 	else if ((pl := ctxt.get("path")) != nil)
 		pathlist = list2stringlist(pl);
 	else
 		pathlist = list of {"/dis", "."};
-
 	for(; pathlist != nil; pathlist = tl pathlist)
 	{
 		npath := hd pathlist + "/" + progname;
-
 		fd := sys->open(npath, sys->OREAD);
 		if(fd != nil){
 			return npath;
 		}
-
 		if (!disfile) {
 			npath += ".dis";
 			fd = sys->open(npath, sys->OREAD);
@@ -987,10 +1126,8 @@ pathexpand(ctxt: ref Context, progname: string): string
 			}
 		}
 	}
-
 	return progname;
 }
-
 runexternal(ctxt: ref Context, args: list of ref Listnode, last: int): string
 {
 	progname := (hd args).word;
@@ -1005,7 +1142,6 @@ runexternal(ctxt: ref Context, args: list of ref Listnode, last: int): string
 		pathlist = list2stringlist(pl);
 	else
 		pathlist = list of {"/dis", "."};
-
 	err := "";
 	do {
 		path: string;
@@ -1013,7 +1149,6 @@ runexternal(ctxt: ref Context, args: list of ref Listnode, last: int): string
 			path = hd pathlist + "/" + progname;
 		else
 			path = progname;
-
 		if (DEBUG) debug(sys->sprint("runexternal path %s", path));
 		npath := path;
 		if (!disfile)
@@ -1024,7 +1159,6 @@ runexternal(ctxt: ref Context, args: list of ref Listnode, last: int): string
 			if (DEBUG) debug(sys->sprint("runexternal npath %s mod != nil\n", npath));
 			argv := list2stringlist(args);
 			export(ctxt.env.localenv);
-
 			if (DEBUG) debug(sys->sprint("runexternal mod != nil"));
 			if (last) {
 				{
@@ -1064,7 +1198,6 @@ runexternal(ctxt: ref Context, args: list of ref Listnode, last: int): string
 	diagnostic(ctxt, sys->sprint("%s: %s", progname, err));
 	return err;
 }
-
 failurestatus(e: string): string
 {
 	s := e[5:];
@@ -1074,7 +1207,6 @@ failurestatus(e: string): string
 		return s;
 	return "failed";
 }
-
 runhashpling(ctxt: ref Context, fd: ref Sys->FD,
 		path: string, argv: list of ref Listnode, last: int): string
 {
@@ -1102,7 +1234,6 @@ runhashpling(ctxt: ref Context, fd: ref Sys->FD,
 		nargs = hd argv :: nargs;
 	return runexternal(ctxt, revlist(nargs), last);
 }
-
 runblock(ctxt: ref Context, args: list of ref Listnode, last: int): string
 {
 	# block execute (we know that hd args represents a block)
@@ -1110,12 +1241,10 @@ runblock(ctxt: ref Context, args: list of ref Listnode, last: int): string
 	if (cmd == nil) {
 		# parse block from first argument
 		lex := YYLEX.initstring((hd args).word);
-
 		err: string;
 		(cmd, err) = doparse(lex, "", 0);
 		if (cmd == nil)
 			ctxt.fail("parse error", "sh: "+err);
-
 		(hd args).cmd = cmd;
 	}
 	# now we've got a parsed block
@@ -1134,7 +1263,6 @@ runblock(ctxt: ref Context, args: list of ref Listnode, last: int): string
 		raise;
 	}
 }
-
 trybuiltin(ctxt: ref Context, args: list of ref Listnode, lseq: int)
 		: (int, string)
 {
@@ -1143,7 +1271,6 @@ trybuiltin(ctxt: ref Context, args: list of ref Listnode, lseq: int)
 		return (0, nil);
 	return (1, (hd bmods)->runbuiltin(ctxt, myself, args, lseq));
 }
-
 keepfdstr(ctxt: ref Context): string
 {
 	s := "";
@@ -1154,7 +1281,6 @@ keepfdstr(ctxt: ref Context): string
 	}
 	return s;
 }
-
 externalexec(mod: Command,
 		drawcontext: ref Draw->Context, argv: list of string, startchan: chan of int, keepfds: list of int)
 {
@@ -1169,7 +1295,6 @@ externalexec(mod: Command,
 	* => raise e; # TODO the manual says that leaving this out is intentional. Not sure how man pages work without this
 	}
 }
-
 dup(ctxt: ref Context, fd1, fd2: int): int
 {
 	# shuffle waitfd out of the way if it's being attacked
@@ -1180,7 +1305,6 @@ dup(ctxt: ref Context, fd1, fd2: int): int
 	}
 	return sys->dup(fd1, fd2);
 }
-
 doredirs(ctxt: ref Context, redirs: ref Redirlist): list of int
 {
 	if (redirs.r == nil)
@@ -1194,7 +1318,6 @@ doredirs(ctxt: ref Context, redirs: ref Redirlist): list of int
 			# dup
 			if (fd1 == -1 || fd2 == -1)
 				ctxt.fail("bad redir", "sh: invalid dup");
-
 			if (dup(ctxt, fd2, fd1) == -1)
 				ctxt.fail("bad redir", sys->sprint("sh: cannot dup: %r"));
 			keepfds = fd1 :: keepfds;
@@ -1248,8 +1371,6 @@ doredirs(ctxt: ref Context, redirs: ref Redirlist): list of int
 	ctxt.keepfds = keepfds;
 	return ctxt.waitfd.fd :: keepfds;
 }
-
-
 waitfd(): ref Sys->FD
 {
 	wf := string sys->pctl(0, nil) + "/wait";
@@ -1260,7 +1381,6 @@ waitfd(): ref Sys->FD
 		panic(sys->sprint("cannot open wait file: %r"));
 	return waitfd;
 }
-
 waitfor(ctxt: ref Context, pids: list of int): string
 {
 	if (pids == nil)
@@ -1300,7 +1420,6 @@ waitfor(ctxt: ref Context, pids: list of int): string
 		r += "|" + status[i];
 	return r;
 }
-
 parsewaitstatus(ctxt: ref Context, status: string): (int, string, string)
 {
 	for (i := 0; i < len status; i++)
@@ -1309,30 +1428,24 @@ parsewaitstatus(ctxt: ref Context, status: string): (int, string, string)
 	if (i == len status - 1 || status[i+1] != '"')
 		ctxt.fail("bad wait read",
 			sys->sprint("sh: bad exit status '%s'", status));
-
 	for (i+=2; i < len status; i++)
 		if (status[i] == '"')
 			break;
 	if (i > len status - 2 || status[i+1] != ':')
 		ctxt.fail("bad wait read",
 			sys->sprint("sh: bad exit status '%s'", status));
-
 	return (int status, status, status[i+2:]);
 }
-
 panic(s: string)
 {
 	sys->fprint(stderr(), "sh panic: %s\n", s);
 	raise "panic";
 }
-
 diagnostic(ctxt: ref Context, s: string)
 {
 	if (ctxt.options() & Context.VERBOSE)
 		sys->fprint(stderr(), "sh: %s\n", s);
 }
-
-
 Context.new(drawcontext: ref Draw->Context): ref Context
 {
 	initialise();
@@ -1356,7 +1469,6 @@ Context.new(drawcontext: ref Draw->Context): ref Context
 			loadmodule(ctxt, (hd vl).word);
 	return ctxt;
 }
-
 Context.copy(ctxt: self ref Context, copyenv: int): ref Context
 {
 	# XXX could check to see that we are definitely in a
@@ -1376,7 +1488,6 @@ Context.copy(ctxt: self ref Context, copyenv: int): ref Context
 	}
 	return nctxt;
 }
-
 Context.set(ctxt: self ref Context, name: string, val: list of ref Listnode)
 {
 	e := ctxt.env.localenv;
@@ -1399,12 +1510,10 @@ Context.set(ctxt: self ref Context, name: string, val: list of ref Listnode)
 		e = e.pushed;
 	}
 }
-
 Context.get(ctxt: self ref Context, name: string): list of ref Listnode
 {
 	if (name == nil)
 		return nil;
-
 	idx := -1;
 	# cope with $1, $2, etc
 	if (name[0] > '0' && name[0] <= '9') {
@@ -1417,7 +1526,6 @@ Context.get(ctxt: self ref Context, name: string): list of ref Listnode
 			name = "*";
 		}
 	}
-
 	v := varfind(ctxt.env.localenv, name);
 	if (v != nil) {
 		if (idx != -1)
@@ -1426,7 +1534,6 @@ Context.get(ctxt: self ref Context, name: string): list of ref Listnode
 	}
 	return nil;
 }
-
 Context.envlist(ctxt: self ref Context): list of (string, list of ref Listnode)
 {
 	t := array[ENVHASHSIZE] of list of ref Var;
@@ -1440,7 +1547,6 @@ Context.envlist(ctxt: self ref Context): list of (string, list of ref Listnode)
 			}
 		}
 	}
-
 	l: list of (string, list of ref Listnode);
 	for (i := 0; i < ENVHASHSIZE; i++) {
 		for (vl := t[i]; vl != nil; vl = tl vl) {
@@ -1450,7 +1556,6 @@ Context.envlist(ctxt: self ref Context): list of (string, list of ref Listnode)
 	}
 	return l;
 }
-
 Context.setlocal(ctxt: self ref Context, name: string, val: list of ref Listnode)
 {
 	e := ctxt.env.localenv;
@@ -1466,13 +1571,10 @@ Context.setlocal(ctxt: self ref Context, name: string, val: list of ref Listnode
 		v.flags |= Var.CHANGED;
 	}
 }
-
-
 Context.push(ctxt: self ref Context)
 {
 	ctxt.env.localenv = newlocalenv(ctxt.env.localenv);
 }
-
 Context.pop(ctxt: self ref Context)
 {
 	if (ctxt.env.localenv.pushed == nil)
@@ -1490,7 +1592,6 @@ Context.pop(ctxt: self ref Context)
 		}
 	}
 }
-
 Context.run(ctxt: self ref Context, args: list of ref Listnode, last: int): string
 {
 	if (args == nil || ((hd args).cmd == nil && (hd args).word == nil))
@@ -1498,42 +1599,34 @@ Context.run(ctxt: self ref Context, args: list of ref Listnode, last: int): stri
 	cmd := hd args;
 	if (cmd.cmd != nil || cmd.word[0] == '{')	# }
 		return runblock(ctxt, args, last);
-
 	if (ctxt.options() & ctxt.EXECPRINT)
 		sys->fprint(stderr(), "%s\n", quoted(args, 0));
 	(doneit, status) := trybuiltin(ctxt, args, last);
 	if (!doneit)
 		status = runexternal(ctxt, args, last);
-
 	return status;
 }
-
 Context.addmodule(ctxt: self ref Context, name: string, mod: Shellbuiltin)
 {
 	mod->initbuiltin(ctxt, myself);
 	ctxt.env.bmods = (name, mod->getself()) :: ctxt.env.bmods;
 }
-
 Context.addbuiltin(c: self ref Context, name: string, mod: Shellbuiltin)
 {
 	addbuiltin(c.env.builtins, name, mod);
 }
-
 Context.removebuiltin(c: self ref Context, name: string, mod: Shellbuiltin)
 {
 	removebuiltin(c.env.builtins, name, mod);
 }
-
 Context.addsbuiltin(c: self ref Context, name: string, mod: Shellbuiltin)
 {
 	addbuiltin(c.env.sbuiltins, name, mod);
 }
-
 Context.removesbuiltin(c: self ref Context, name: string, mod: Shellbuiltin)
 {
 	removebuiltin(c.env.sbuiltins, name, mod);
 }
-
 varfind(e: ref Localenv, name: string): ref Var
 {
 	idx := hashfn(name, len e.vars);
@@ -1543,14 +1636,12 @@ varfind(e: ref Localenv, name: string): ref Var
 				return hd vl;
 	return nil;
 }
-
 Context.fail(ctxt: self ref Context, ename: string, err: string)
 {
 	if (ctxt.options() & Context.VERBOSE)
 		sys->fprint(stderr(), "%s\n", err);
 	raise "fail:" + ename;
 }
-
 Context.setoptions(ctxt: self ref Context, flags, on: int): int
 {
 	old := ctxt.env.localenv.flags;
@@ -1560,12 +1651,10 @@ Context.setoptions(ctxt: self ref Context, flags, on: int): int
 		ctxt.env.localenv.flags &= ~flags;
 	return old;
 }
-
 Context.options(ctxt: self ref Context): int
 {
 	return ctxt.env.localenv.flags;
 }
-
 hashfn(s: string, n: int): int
 {
 	h := 0;
@@ -1575,7 +1664,6 @@ hashfn(s: string, n: int): int
 	}
 	return (h & 16r7fffffff) % n;
 }
-
 hashfind(ht: array of list of ref Var, idx: int, n: string): ref Var
 {
 	for (ent := ht[idx]; ent != nil; ent = tl ent)
@@ -1583,12 +1671,10 @@ hashfind(ht: array of list of ref Var, idx: int, n: string): ref Var
 			return hd ent;
 	return nil;
 }
-
 hashadd(ht: array of list of ref Var, idx: int, v: ref Var)
 {
 	ht[idx] = v :: ht[idx];
 }
-
 copylocalenv(e: ref Localenv): ref Localenv
 {
 	nvars := array[len e.vars] of list of ref Var;
@@ -1602,7 +1688,6 @@ copylocalenv(e: ref Localenv): ref Localenv
 			}
 	return ref Localenv(nvars, nil, flags);
 }
-
 newlocalenv(pushed: ref Localenv): ref Localenv
 {
 	e := ref Localenv(array[ENVHASHSIZE] of list of ref Var, pushed, 0);
@@ -1616,14 +1701,12 @@ newlocalenv(pushed: ref Localenv): ref Localenv
 		e.flags = pushed.flags;
 	return e;
 }
-
 copybuiltins(b: ref Builtins): ref Builtins
 {
 	nb := ref Builtins(array[b.n] of (string, list of Shellbuiltin), b.n);
 	nb.ba[0:] = b.ba[0:b.n];
 	return nb;
 }
-
 findbuiltin(b: ref Builtins, name: string): (int, list of Shellbuiltin)
 {
 	lo := 0;
@@ -1640,7 +1723,6 @@ findbuiltin(b: ref Builtins, name: string): (int, list of Shellbuiltin)
 	}
 	return (lo, nil);
 }
-
 removebuiltin(b: ref Builtins, name: string, mod: Shellbuiltin)
 {
 	(n, bmods) := findbuiltin(b, name);
@@ -1655,7 +1737,6 @@ removebuiltin(b: ref Builtins, name: string, mod: Shellbuiltin)
 		}
 	}
 }
-
 addbuiltin(b: ref Builtins, name: string, mod: Shellbuiltin)
 {
 	if (mod == nil || (name == "builtin" && mod != myselfbuiltin))
@@ -1677,7 +1758,6 @@ addbuiltin(b: ref Builtins, name: string, mod: Shellbuiltin)
 		b.n++;
 	}
 }
-
 removebuiltinmod(b: ref Builtins, mod: Shellbuiltin)
 {
 	j := 0;
@@ -1692,14 +1772,12 @@ removebuiltinmod(b: ref Builtins, mod: Shellbuiltin)
 	for (; j < i; j++)
 		b.ba[j] = (nil, nil);
 }
-
 export(e: ref Localenv)
 {
 	if (env == nil)
 		return;
 	if (e.pushed != nil)
 		export(e.pushed);
-
 	for (i := 0; i < len e.vars; i++) {
 		for (vl := e.vars[i]; vl != nil; vl = tl vl) {
 			v := hd vl;
@@ -1711,7 +1789,6 @@ export(e: ref Localenv)
 		}
 	}
 }
-
 noexport(name: string): int
 {
 	case name {
@@ -1719,7 +1796,6 @@ noexport(name: string): int
 	}
 	return 0;
 }
-
 index(val: list of ref Listnode, k: int): list of ref Listnode
 {
 	for (; k > 0 && val != nil; k--)
@@ -1728,19 +1804,16 @@ index(val: list of ref Listnode, k: int): list of ref Listnode
 		val = hd val :: nil;
 	return val;
 }
-
 getenv(name: string): list of ref Listnode
 {
 	if (env == nil)
 		return nil;
 	return envstringtoval(env->getenv(name));
 }
-
 envstringtoval(v: string): list of ref Listnode
 {
 	return stringlist2list(str->unquoted(v));
 }
-
 XXXenvstringtoval(v: string): list of ref Listnode
 {
 	if (len v == 0)
@@ -1755,7 +1828,6 @@ XXXenvstringtoval(v: string): list of ref Listnode
 	}
 	return ref Listnode(nil, v[0:start]) :: val;
 }
-
 # the correct way to set environment variables is to
 # be able to catch errors if there is a failure.
 # this is not happening and is propogating to a triple fault.
@@ -1774,8 +1846,6 @@ setenv(name: string, val: list of ref Listnode)
 	}
 	env->setenv(name, valstr);
 }
-
-
 containswildchar(s: string): int
 {
 	# try and avoid being fooled by GLOB characters in quoted
@@ -1791,7 +1861,6 @@ containswildchar(s: string): int
 	}
 	return 0;
 }
-
 patquote(word: string): string
 {
 	outword := "";
@@ -1810,7 +1879,6 @@ patquote(word: string): string
 	}
 	return outword;
 }
-
 deglob(s: string): string
 {
 	j := 0;
@@ -1825,7 +1893,6 @@ deglob(s: string): string
 		return s;
 	return s[0:j];
 }
-
 glob(nl: list of ref Listnode): list of ref Listnode
 {
 	new: list of ref Listnode;
@@ -1847,12 +1914,9 @@ glob(nl: list of ref Listnode): list of ref Listnode
 	ret := revlist(new);
 	return ret;
 }
-
-
 list2stringlist(nl: list of ref Listnode): list of string
 {
 	ret: list of string = nil;
-
 	while (nl != nil) {
 		newel: string;
 		el := hd nl;
@@ -1863,45 +1927,36 @@ list2stringlist(nl: list of ref Listnode): list of string
 		ret = newel::ret;
 		nl = tl nl;
 	}
-
 	sl := revstringlist(ret);
 	return sl;
 }
-
 stringlist2list(sl: list of string): list of ref Listnode
 {
 	ret: list of ref Listnode;
-
 	while (sl != nil) {
 		ret = ref Listnode(nil, hd sl) :: ret;
 		sl = tl sl;
 	}
 	return revlist(ret);
 }
-
 revstringlist(l: list of string): list of string
 {
 	t: list of string;
-
 	while(l != nil) {
 		t = hd l :: t;
 		l = tl l;
 	}
 	return t;
 }
-
 revlist(l: list of ref Listnode): list of ref Listnode
 {
 	t: list of ref Listnode;
-
 	while(l != nil) {
 		t = hd l :: t;
 		l = tl l;
 	}
 	return t;
 }
-
-
 fdassignstr(isassign: int, redir: ref Redir): string
 {
 	l: string = nil;
@@ -1916,7 +1971,6 @@ fdassignstr(isassign: int, redir: ref Redir): string
 	}
 	return "[" + l + "]";
 }
-
 redirstr(rtype: int): string
 {
 	case rtype {
@@ -1927,12 +1981,10 @@ redirstr(rtype: int): string
 	Sys->ORDWR =>	return "<>";
 	}
 }
-
 cmd2string(n: ref Node): string
 {
 	if (n == nil)
 		return "";
-
 	s: string;
 	case n.ntype {
 	n_BLOCK =>	s = "{" + cmd2string(n.left) + "}";
@@ -1965,7 +2017,6 @@ cmd2string(n: ref Node): string
 	}
 	return s;
 }
-
 quote(s: string, glob: int): string
 {
 	needquote := 0;
@@ -1990,7 +2041,6 @@ quote(s: string, glob: int): string
 		t = "'" + t + "'";
 	return t;
 }
-
 squash(l: list of string, sep: string): string
 {
 	if (l == nil)
@@ -2000,13 +2050,10 @@ squash(l: list of string, sep: string): string
 		s += sep + hd l;
 	return s;
 }
-
 debug(s: string)
 {
 	if (DEBUG) sys->fprint(stderr(), "%s\n", string sys->pctl(0, nil) + ": " + s);
 }
-
-
 initbuiltin(c: ref Context, nil: Sh): string
 {
 	names := array[] of {"load", "unload", "loaded", "builtin", "syncenv", "whatis", "run", "exit", "@"};
@@ -2019,12 +2066,10 @@ initbuiltin(c: ref Context, nil: Sh): string
 	c.addsbuiltin("builtin", myselfbuiltin);
 	return nil;
 }
-
 whatis(nil: ref Sh->Context, nil: Sh, nil: string, nil: int): string
 {
 	return nil;
 }
-
 runsbuiltin(ctxt: ref Context, nil: Sh, argv: list of ref Listnode): list of ref Listnode
 {
 	case (hd argv).word {
@@ -2036,7 +2081,6 @@ runsbuiltin(ctxt: ref Context, nil: Sh, argv: list of ref Listnode): list of ref
 	}
 	return nil;
 }
-
 runbuiltin(ctxt: ref Context, nil: Sh, args: list of ref Listnode, lseq: int): string
 {
 	status := "";
@@ -2054,7 +2098,6 @@ runbuiltin(ctxt: ref Context, nil: Sh, args: list of ref Listnode, lseq: int): s
 	}
 	return status;
 }
-
 sbuiltin_loaded(ctxt: ref Context, nil: list of ref Listnode): list of ref Listnode
 {
 	v: list of ref Listnode;
@@ -2064,12 +2107,10 @@ sbuiltin_loaded(ctxt: ref Context, nil: list of ref Listnode): list of ref Listn
 	}
 	return v;
 }
-
 sbuiltin_quote(nil: ref Context, argv: list of ref Listnode, quoteblocks: int): list of ref Listnode
 {
 	return ref Listnode(nil, quoted(tl argv, quoteblocks)) :: nil;
 }
-
 sbuiltin_builtin(ctxt: ref Context, args: list of ref Listnode): list of ref Listnode
 {
 	if (args == nil || tl args == nil)
@@ -2082,7 +2123,6 @@ sbuiltin_builtin(ctxt: ref Context, args: list of ref Listnode): list of ref Lis
 	ctxt.fail("builtin not found", sys->sprint("sh: builtin %s not found", name));
 	return nil;
 }
-
 sbuiltin_unquote(ctxt: ref Context, argv: list of ref Listnode): list of ref Listnode
 {
 	argv = tl argv;
@@ -2094,24 +2134,20 @@ sbuiltin_unquote(ctxt: ref Context, argv: list of ref Listnode): list of ref Lis
 		arg = cmd2string((hd argv).cmd);
 	return stringlist2list(str->unquoted(arg));
 }
-
 getself(): Shellbuiltin
 {
 	return myselfbuiltin;
 }
-
 builtinusage(ctxt: ref Context, s: string)
 {
 	ctxt.fail("usage", "sh: usage: " + s);
 }
-
 builtin_exit(nil: ref Context, nil: list of ref Listnode, nil: int): string
 {
 	# XXX using this primitive can cause
 	# environment stack not to be popped properly.
 	exit;
 }
-
 builtin_subsh(ctxt: ref Context, args: list of ref Listnode, nil: int): string
 {
 	if (tl args == nil)
@@ -2124,7 +2160,6 @@ builtin_subsh(ctxt: ref Context, args: list of ref Listnode, nil: int): string
 		raise exprop.name;
 	return status;
 }
-
 builtin_loaded(ctxt: ref Context, nil: list of ref Listnode, nil: int): string
 {
 	b := ctxt.env.builtins;
@@ -2139,7 +2174,6 @@ builtin_loaded(ctxt: ref Context, nil: list of ref Listnode, nil: int): string
 	}
 	return nil;
 }
-
 builtin_load(ctxt: ref Context, args: list of ref Listnode, nil: int): string
 {
 	if (tl args == nil || (hd tl args).word == nil)
@@ -2154,7 +2188,6 @@ builtin_load(ctxt: ref Context, args: list of ref Listnode, nil: int): string
 	}
 	return nil;
 }
-
 builtin_unload(ctxt: ref Context, args: list of ref Listnode, nil: int): string
 {
 	if (tl args == nil)
@@ -2165,7 +2198,6 @@ builtin_unload(ctxt: ref Context, args: list of ref Listnode, nil: int): string
 			status = s;
 	return status;
 }
-
 builtin_run(ctxt: ref Context, args: list of ref Listnode, nil: int): string
 {
 	if (tl args == nil || (hd tl args).word == nil)
@@ -2183,7 +2215,6 @@ builtin_run(ctxt: ref Context, args: list of ref Listnode, nil: int): string
 		return failurestatus(e);
 	}
 }
-
 builtin_whatis(ctxt: ref Context, args: list of ref Listnode, nil: int): string
 {
 	if (len args < 2)
@@ -2194,7 +2225,6 @@ builtin_whatis(ctxt: ref Context, args: list of ref Listnode, nil: int): string
 			err = e;
 	return err;
 }
-
 whatisit(ctxt: ref Context, el: ref Listnode): string
 {
 	if (el.cmd != nil) {
@@ -2288,7 +2318,6 @@ whatisit(ctxt: ref Context, el: ref Listnode): string
 	sys->print("%s", w);
 	return nil;
 }
-
 builtin_builtin(ctxt: ref Context, args: list of ref Listnode, last: int): string
 {
 	if (len args < 2)
@@ -2306,7 +2335,6 @@ builtin_builtin(ctxt: ref Context, args: list of ref Listnode, last: int): strin
 		sys->fprint(stderr(), "%s\n", quoted(tl args, 0));
 	return runexternal(ctxt, tl args, last);
 }
-
 modname(ctxt: ref Context, mod: Shellbuiltin): string
 {
 	for (ml := ctxt.env.bmods; ml != nil; ml = tl ml) {
@@ -2316,7 +2344,6 @@ modname(ctxt: ref Context, mod: Shellbuiltin): string
 	}
 	return "builtin";
 }
-
 loadmodule(ctxt: ref Context, name: string): string
 {
 	# avoid loading the same module twice (it's convenient
@@ -2344,7 +2371,6 @@ loadmodule(ctxt: ref Context, name: string): string
 	}
 	return s;
 }
-
 unloadmodule(ctxt: ref Context, name: string): string
 {
 	bl: list of (string, Shellbuiltin);
@@ -2366,14 +2392,12 @@ unloadmodule(ctxt: ref Context, name: string): string
 	removebuiltinmod(ctxt.env.sbuiltins, mod);
 	return nil;
 }
-
 executable(s: (int, Sys->Dir), mode: int): int
 {
 	(ok, info) := s;
 	return ok != -1 && (info.mode & Sys->DMDIR) == 0
 			&& (info.mode & mode) != 0;
 }
-
 quoted(val: list of ref Listnode, quoteblocks: int): string
 {
 	s := "";
@@ -2392,14 +2416,11 @@ quoted(val: list of ref Listnode, quoteblocks: int): string
 	}
 	return s;
 }
-
 setstatus(ctxt: ref Context, val: string): string
 {
 	ctxt.setlocal("status", ref Listnode(nil, val) :: nil);
 	return val;
 }
-
-
 doparse(l: ref YYLEX, prompt: string, showline: int): (ref Node, string)
 {
 	l.prompt = prompt;
@@ -2419,9 +2440,7 @@ doparse(l: ref YYLEX, prompt: string, showline: int): (ref Node, string)
 	}
 	return (l.lval.node, nil);
 }
-
 blanklex: YYLEX;	# for hassle free zero initialisation
-
 YYLEX.initstring(s: string): ref YYLEX
 {
 	ret := ref blanklex;
@@ -2430,7 +2449,6 @@ YYLEX.initstring(s: string): ref YYLEX
 	ret.strpos = 0;
 	return ret;
 }
-
 YYLEX.initfile(fd: ref Sys->FD, path: string): ref YYLEX
 {
 	lex := ref blanklex;
@@ -2441,7 +2459,6 @@ YYLEX.initfile(fd: ref Sys->FD, path: string): ref YYLEX
 	lex.prompt = "";
 	return lex;
 }
-
 YYLEX.error(l: self ref YYLEX, s: string)
 {
 	if (l.err == nil) {
@@ -2449,9 +2466,7 @@ YYLEX.error(l: self ref YYLEX, s: string)
 		l.errline = l.linenum;
 	}
 }
-
 NOTOKEN: con -1;
-
 YYLEX.lex(l: self ref YYLEX): int
 {
 	# the following are allowed a free caret:
@@ -2553,7 +2568,6 @@ YYLEX.lex(l: self ref YYLEX): int
 				tok = OROR;
 			else
 				l.ungetc();
-
 		'\'' =>
 			if (l.atendword) {
 				l.ungetc();
@@ -2578,7 +2592,6 @@ YYLEX.lex(l: self ref YYLEX): int
 			l.lval.word = s;
 			tok = WORD;
 			endword = 1;
-
 		* =>
 			if (c == ':') {
 				if (l.getc() == '=') {
@@ -2621,7 +2634,6 @@ YYLEX.lex(l: self ref YYLEX): int
 	}
 	return tok;
 }
-
 tokstr(t: int): string
 {
 	s: string;
@@ -2639,7 +2651,6 @@ tokstr(t: int): string
 	}
 	return s;
 }
-
 YYLEX.ungetc(lex: self ref YYLEX)
 {
 	lex.strpos--;
@@ -2684,7 +2695,6 @@ YYLEX.getc(lex: self ref YYLEX): int
 	}
 	return c;
 }
-
 readnum(lex: ref YYLEX): int
 {
 	sum := nc := 0;
@@ -2697,14 +2707,12 @@ readnum(lex: ref YYLEX): int
 		return -1;
 	return sum;
 }
-
 readfdassign(lex: ref YYLEX): (int, ref Redir)
 {
 	n1 := readnum(lex);
 	if ((c := lex.getc()) != '=') {
 		if (c == ']')
 			return (REDIR, ref Redir(-1, n1, -1));
-
 		return (ERROR, nil);
 	}
 	n2 := readnum(lex);
@@ -2712,7 +2720,6 @@ readfdassign(lex: ref YYLEX): (int, ref Redir)
 		return (ERROR, nil);
 	return (DUP, ref Redir(-1, n1, n2));
 }
-
 mkseq(left, right: ref Node): ref Node
 {
 	if (left != nil && right != nil)
@@ -2721,12 +2728,10 @@ mkseq(left, right: ref Node): ref Node
 		return right;
 	return left;
 }
-
 mk(ntype: int, left, right: ref Node): ref Node
 {
 	return ref Node(ntype, left, right, nil, nil);
 }
-
 stderr(): ref Sys->FD
 {
 	return sys->fildes(2);
@@ -2828,7 +2833,6 @@ yytok2 := array[] of {
 yytok3 := array[] of {
    0
 };
-
 YYSys: module
 {
 	FD: adt
@@ -2838,27 +2842,21 @@ YYSys: module
 	fildes:		fn(fd: int): ref FD;
 	fprint:		fn(fd: ref FD, s: string, *): int;
 };
-
 yysys: YYSys;
 yystderr: ref YYSys->FD;
-
 YYFLAG: con -1000;
-
-
 yytokname(yyc: int): string
 {
 	if(yyc > 0 && yyc <= len yytoknames && yytoknames[yyc-1] != nil)
 		return yytoknames[yyc-1];
 	return "<"+string yyc+">";
 }
-
 yystatname(yys: int): string
 {
 	if(yys >= 0 && yys < len yystates && yystates[yys] != nil)
 		return yystates[yys];
 	return "<"+string yys+">\n";
 }
-
 yylex1(yylex: ref YYLEX): int
 {
 	c : int;
@@ -2885,22 +2883,18 @@ yylex1(yylex: ref YYLEX): int
 		yysys->fprint(yystderr, "lex %.4ux %s\n", yychar, yytokname(c));
 	return c;
 }
-
 YYS: adt
 {
 	yyv: YYSTYPE;
 	yys: int;
 };
-
 yyparse(yylex: ref YYLEX): int
 {
 	if(yydebug >= 1 && yysys == nil) {
 		yysys = load YYSys "$Sys";
 		yystderr = yysys->fildes(2);
 	}
-
 	yys := array[YYMAXDEPTH] of YYS;
-
 	yyval: YYSTYPE;
 	yystate := 0;
 	yychar := -1;
@@ -2908,19 +2902,16 @@ yyparse(yylex: ref YYLEX): int
 	yyerrflag := 0;		# error recovery flag
 	yyp := -1;
 	yyn := 0;
-
 yystack:
 	for(;;){
 		# put a state and value onto the stack
 		if(yydebug >= 4)
 			yysys->fprint(yystderr, "char %s in %s", yytokname(yychar), yystatname(yystate));
-
 		yyp++;
 		if(yyp >= len yys)
 			yys = (array[len yys * 2] of YYS)[0:] = yys;
 		yys[yyp].yys = yystate;
 		yys[yyp].yyv = yyval;
-
 		for(;;){
 			yyn = yypact[yystate];
 			if(yyn > YYFLAG) {	# simple state
@@ -2967,10 +2958,8 @@ yystack:
 					break yystack;
 				}
 			}
-
 			if(yyn != 0)
 				break;
-
 			# error ... attempt to resume parsing
 			if(yyerrflag == 0) { # brand new error
 				yylex.error("syntax error");
@@ -2980,7 +2969,6 @@ yystack:
 					yysys->fprint(yystderr, "saw %s\n", yytokname(yychar));
 				}
 			}
-
 			if(yyerrflag != 3) { # incompletely recovered error ... try again
 				yyerrflag = 3;
 	
@@ -3003,7 +2991,6 @@ yystack:
 				yyn = 1;
 				break yystack;
 			}
-
 			# no shift yet; clobber input char
 			if(yydebug >= 2)
 				yysys->fprint(yystderr, "error recovery discards %s\n", yytokname(yychar));
@@ -3130,6 +3117,5 @@ yyval.node = yys[yyp+1].yyv.node;
 {yyval.node = mk(n_BLOCK, yys[yypt-1].yyv.node, nil); }
 		}
 	}
-
 	return yyn;
 }

@@ -29,7 +29,7 @@ This build includes a number of system-level fixes and extensions compared to th
   blocked keyboard and mouse readers.
 - Added support for building console TUI applications through the
   [`icurses`](https://github.com/sphynkx/icurses) framework.
-- Added an extended shell, `esh`.
+- Added an extended shell, `esh` with commands history.
 - Implemented `icurses` - ncurses like TUI framework.
 - Implemented `ic` - icurses based file manager inspired by Midnight Commander.
 - Implemented `awk` (True AWK, 1988).
