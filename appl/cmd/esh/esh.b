@@ -130,7 +130,7 @@ initialise()
 		if (myselfbuiltin == nil) badmodule("$self(Shellbuiltin)");
 		env = load Env Env->PATH;
 		if(env == nil) badmodule(Env->PATH);
-		
+
 		argm = load Arg Arg->PATH;
 		if(argm == nil) badmodule(Arg->PATH);
 	}
@@ -143,7 +143,7 @@ init(drawcontext: ref Draw->Context, argv: list of string)
 	interactive := 0;
 	argm->init(argv);
 	argm->setusage("sh [-ilexn] [-c command] [file [arg...]]");
- 
+
 	while ((c := argm->opt()) != 0) {
 		case c {
 		'i' =>
@@ -162,7 +162,7 @@ init(drawcontext: ref Draw->Context, argv: list of string)
 			argm->usage();
 		}
 	}
-	
+
 	argv = argm->argv();
 	sys->pctl(Sys->FORKFD, nil);
 	if (!opts.nflag)
@@ -212,7 +212,7 @@ init(drawcontext: ref Draw->Context, argv: list of string)
 parse(s: string): (ref Node, string)
 {
 	initialise();
-	
+
 	lex := YYLEX.initstring(s);
 	return doparse(lex, "", 0);
 }
@@ -442,6 +442,13 @@ readekeyline(fd: ref Sys->FD, prompt: string,
 	if(activefd == nil)
 		return (nil, sys->sprint("can't open %s: %r", EKEYBOARD), histidx);
 	sys->fprint(stderr(), "%s", prompt);
+	# /dev/ekeyboard self-echo behaviour differs between host
+	# platforms. On the mingw build the device prints typed glyphs,
+	# Enter and a (non-erasing) backspace to the screen on its own;
+	# on the Linux build it is a pure byte stream and the application
+	# has to do every screen update itself. `ekecho` is true when WE
+	# have to drive the echo, false when ekeyboard handles it.
+	ekecho := !ismingw();
 	line := "";
 	savedline := "";	# saves user input while browsing history
 	curidx := nhist;	# nhist means "not currently browsing"
@@ -467,21 +474,27 @@ readekeyline(fd: ref Sys->FD, prompt: string,
 			# single-byte ASCII controls are handled immediately
 			if(npending == 1){
 				if(b == '\r' || b == '\n'){
+					if(ekecho)
+						sys->fprint(stderr(), "\n");
 					return (line, nil, curidx);
 				}
 				if(b == '\b' || b == 16r7F){
-					# /dev/ekeyboard echoes a backspace as cursor-back
-					# only (it moves the cursor left but does not
-					# overwrite the previous glyph). Complete the
-					# erase ourselves by emitting " \b": space
-					# overwrites the glyph the cursor is now sitting
-					# on, then \b returns the cursor to its post-erase
-					# position. Combined with ekeyboard's leading \b,
-					# the visible effect is the standard "erase one
-					# character to the left".
+					# Backspace handling. The screen-erase sequence
+					# we emit depends on what /dev/ekeyboard already
+					# did:
+					#   - On mingw the device echoes a (non-erasing)
+					#     \b, so we add " \b" to overwrite the glyph
+					#     and return the cursor.
+					#   - On Linux the device echoes nothing, so we
+					#     produce the full standard "\b \b".
+					# In both cases we still synchronise the internal
+					# line buffer with trimlastutf.
 					if(len line > 0){
 						line = trimlastutf(line);
-						sys->fprint(stderr(), " \b");
+						if(ekecho)
+							sys->fprint(stderr(), "\b \b");
+						else
+							sys->fprint(stderr(), " \b");
 					}
 					npending = 0;
 					continue;
@@ -549,14 +562,14 @@ readekeyline(fd: ref Sys->FD, prompt: string,
 				npending = 0;
 				continue;
 			}
-			# Ordinary UTF-8 character: append to the line buffer.
-			# We deliberately do NOT echo the character here ourselves
-			# because /dev/ekeyboard already does that. Earlier we
-			# echoed manually under the assumption that ekeyboard
-			# was a raw byte stream like /dev/cons, but the actual
-			# device emits keys to the screen on its own, and a
-			# second fprint would double every typed character.
+			# Ordinary UTF-8 character: append to the line buffer
+			# and echo it to the screen *only* on platforms where
+			# /dev/ekeyboard does not echo for us (Linux build).
+			# On the mingw build the device echoes itself and a
+			# second fprint here would double every character.
 			line = appendbytes(line, pending, npending);
+			if(ekecho)
+				sys->fprint(stderr(), "%s", string pending[0:npending]);
 			npending = 0;
 		}
 	}
@@ -658,7 +671,7 @@ runfile(ctxt: ref Context, fd: ref Sys->FD, path: string, args: list of ref List
 				prompt = list2stringlist(ctxt.get("prompt"));
 				if (prompt == nil)
 					prompt = "esh; " :: "" :: nil;
-	
+
 				sys->fprint(stderr(), "%s", hd prompt);
 				if (tl prompt == nil) {
 					prompt = hd prompt :: "" :: nil;
@@ -774,7 +787,7 @@ assign(ctxt: ref Context, n: ref Node): list of ref Listnode
 	tval := val;
 	for (; vars != nil; vars = tl vars) {
 		vname := deglob((hd vars).word);
-		if (vname == nil) 
+		if (vname == nil)
 			ctxt.fail("bad assign", "sh: bad variable name");
 		v: list of ref Listnode = nil;
 		if (tl vars == nil)
@@ -867,7 +880,7 @@ pipecmd(ctxt: ref Context, cmd: list of ref Listnode, redir: ref Redir): ref Sys
 	Sys->OWRITE =>
 		r.rtype = Sys->OREAD;
 	}
-			
+
 	p := array[2] of ref Sys->FD;
 	if(sys->pipe(p) == -1)
 		ctxt.fail("no pipe", sys->sprint("sh: cannot make pipe: %r"));
@@ -1099,7 +1112,7 @@ absolute(p: string): int
 	return 0;
 }
 # Expand a program name to the full path
-pathexpand(ctxt: ref Context, progname: string): string 
+pathexpand(ctxt: ref Context, progname: string): string
 {
 	disfile := 0;
 	pathlist: list of string;
@@ -1475,7 +1488,7 @@ Context.copy(ctxt: self ref Context, copyenv: int): ref Context
 	# new process, because there'll be problems if not (two processes
 	# simultaneously reading the same wait file)
 	nctxt := ref Context(ctxt.env, waitfd(), ctxt.drawcontext, ctxt.keepfds);
-			
+
 	if (copyenv) {
 		if (env != nil)
 			env->clone();
@@ -1962,7 +1975,7 @@ fdassignstr(isassign: int, redir: ref Redir): string
 	l: string = nil;
 	if (redir.fd1 >= 0)
 		l = string redir.fd1;
-	
+
 	if (isassign) {
 		r: string = nil;
 		if (redir.fd2 >= 0)
@@ -2128,7 +2141,7 @@ sbuiltin_unquote(ctxt: ref Context, argv: list of ref Listnode): list of ref Lis
 	argv = tl argv;
 	if (argv == nil || tl argv != nil)
 		builtinusage(ctxt, "unquote arg");
-	
+
 	arg := (hd argv).word;
 	if (arg == nil && (hd argv).cmd != nil)
 		arg = cmd2string((hd argv).cmd);
@@ -2271,7 +2284,7 @@ whatisit(ctxt: ref Context, el: ref Listnode): string
 		}
 		found++;
 	} else {
-		disfile := 0;	
+		disfile := 0;
 		if (len name >= 4 && name[len name-4:] == ".dis")
 			disfile = 1;
 		pathlist: list of string;
@@ -2281,7 +2294,7 @@ whatisit(ctxt: ref Context, el: ref Listnode): string
 			pathlist = list2stringlist(pl);
 		else
 			pathlist = list of {"/dis", "."};
-	
+
 		foundpath := "";
 		while (pathlist != nil) {
 			path: string;
@@ -2660,7 +2673,7 @@ YYLEX.ungetc(lex: self ref YYLEX)
 			lex.strpos = len lex.cbuf - 1;
 	}
 }
-		
+
 YYLEX.getc(lex: self ref YYLEX): int
 {
 	if (lex.eof)				# EOF sticks
@@ -2936,13 +2949,13 @@ yystack:
 					}
 				}
 			}
-		
+
 			# default state action
 			yyn = yydef[yystate];
 			if(yyn == -2) {
 				if(yychar < 0)
 					yychar = yylex1(yylex);
-		
+
 				# look through exception table
 				for(yyxi:=0;; yyxi+=2)
 					if(yyexca[yyxi] == -1 && yyexca[yyxi+1] == yystate)
@@ -2971,7 +2984,7 @@ yystack:
 			}
 			if(yyerrflag != 3) { # incompletely recovered error ... try again
 				yyerrflag = 3;
-	
+
 				# find a state where "error" is a legal shift action
 				while(yyp >= 0) {
 					yyn = yypact[yys[yyp].yys] + YYERRCODE;
@@ -2980,7 +2993,7 @@ yystack:
 						if(yychk[yystate] == YYERRCODE)
 							continue yystack;
 					}
-	
+
 					# the current yyp has no shift onn "error", pop stack
 					if(yydebug >= 2)
 						yysys->fprint(yystderr, "error recovery pops state %d, uncovers %d\n",
@@ -3001,24 +3014,24 @@ yystack:
 			yychar = -1;
 			# try again in the same state
 		}
-	
+
 		# reduction by production yyn
 		if(yydebug >= 2)
 			yysys->fprint(yystderr, "reduce %d in:\n\t%s", yyn, yystatname(yystate));
-	
+
 		yypt := yyp;
 		yyp -= yyr2[yyn];
 		yym := yyn;
-	
+
 		# consult goto table to find next state
 		yyn = yyr1[yyn];
 		yyg := yypgo[yyn];
 		yyj := yyg + yys[yyp].yys + 1;
-	
+
 		if(yyj >= YYLAST || yychk[yystate=yyact[yyj]] != -yyn)
 			yystate = yyact[yyg];
 		case yym {
-			
+
 1=>
 {yylex.lval.node = yys[yypt-1].yyv.node; return 0;}
 2=>
