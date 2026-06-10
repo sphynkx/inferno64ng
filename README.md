@@ -85,11 +85,16 @@ emu.exe -r. -g1200x600
 ### Linux
 
 ```bash
-dnf install upx libX11-devel libXext-devel pulseaudio-libs-devel
+dnf install gcc upx libX11-devel libXext-devel pulseaudio-libs-devel
 cd /opt
 git clone https://github.com/sphynkx/inferno64ng
 cd inferno64ng
 ```
+Note: for Debian packages install command:
+```bash
+apt install gcc upx-ucl libx11-dev libxext-dev libpulse-dev
+```
+
 Modify `mkconfig`: set `SYSHOST` and `SYSTARG` to "Linux". Next:
 ```bash
 export ROOT=$(pwd)
