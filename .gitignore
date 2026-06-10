@@ -388,6 +388,7 @@ _wrk
 usr/sphynkx
 n/local/
 run
+*~
 *.c~
 *.c~~
 *.h~

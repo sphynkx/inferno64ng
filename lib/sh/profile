@@ -1,24 +1,17 @@
 # sh initialisation here
 load std
 
-host = `{cat /env/emuhost}
 user = `{cat /dev/user}
-home = /usr/^$user
-local = /n/local
-and {~ $host Linux} {
-	user = inferno
-	home = /usr/inferno
-	path = (/dis $local .)
-	cd $local
-}
-bind -c '#U*'^$emuwdir $local
-and {! ~ $host Linux} {bind -a '#U*'/home /usr}
-and {! ~ $host Linux} {cd $local}
+home = /usr/$user
+mkdir -p $home
+#bind -c '#U*'^$emuwdir /n/local
+#bind -a '#U*'/home /usr
+##cd /n/local
 and {ftest -e namespace}	{nsbuild}
-#cd $home
+cd $home
 font=/fonts/pelm/unicode.8.font
 
-# build any namespace in cwd
+# build any namespace in cwd /n/local
 and {ftest -e $home/namespace}	{nsbuild $home/namespace}
 
 # Run the local profile
