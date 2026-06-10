@@ -95,7 +95,7 @@ Note: for Debian packages install command:
 apt install gcc upx-ucl libx11-dev libxext-dev libpulse-dev
 ```
 
-Modify `mkconfig`: set `SYSHOST` and `SYSTARG` to "Linux". Next:
+Next:
 ```bash
 export ROOT=$(pwd)
 export PATH=$PATH:$ROOT/Linux/amd64/bin/

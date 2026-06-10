@@ -9,7 +9,8 @@
 # change these defines as appropriate here or in mkconfig
 # ROOT should be the root of the Inferno tree
 ROOT=${ROOT:-~/inferno64}
-SYSTARG=${SYSTARG:-MinGW}
+#SYSTARG=${SYSTARG:-MinGW}
+SYSTARG=`[[ $(uname -s | cut -d_ -f1) == "Linux" ]] && echo -n Linux || echo -n MinGW`
 OBJTYPE=${objtype:-${OBJTYPE:-arm64}}
 SYSTYPE=${SYSTYPE:-}
 
